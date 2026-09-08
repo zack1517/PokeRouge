@@ -1,0 +1,22 @@
+# id,name,increasedStat,decreasedStat
+hardy,勤奋,,
+lonely,怕寂寞,ATTACK,DEFENSE
+brave,勇敢,ATTACK,SPEED
+adamant,固执,ATTACK,SP_ATTACK
+naughty,顽皮,ATTACK,SP_DEFENSE
+bold,大胆,DEFENSE,ATTACK
+relaxed,悠闲,DEFENSE,SPEED
+impish,淘气,DEFENSE,SP_ATTACK
+lax,乐天,DEFENSE,SP_DEFENSE
+timid,胆小,SPEED,ATTACK
+hasty,急躁,SPEED,DEFENSE
+jolly,爽朗,SPEED,SP_ATTACK
+naive,天真,SPEED,SP_DEFENSE
+modest,内敛,SP_ATTACK,ATTACK
+mild,慢吞吞,SP_ATTACK,DEFENSE
+quiet,冷静,SP_ATTACK,SPEED
+rash,马虎,SP_ATTACK,SP_DEFENSE
+calm,温和,SP_DEFENSE,ATTACK
+gentle,温顺,SP_DEFENSE,DEFENSE
+sassy,慎重,SP_DEFENSE,SPEED
+careful,仔细,SP_DEFENSE,SP_ATTACK
