@@ -10,7 +10,10 @@ public final class AppConfig {
     }
 
     /** 窗口标题。 */
-    public static final String APP_TITLE = "JavaFX";
+    public static final String APP_TITLE = "PokeRouge";
+
+    /** 默认训练家名字。 */
+    public static final String PLAYER_NAME = "小红";
 
     /** 是否允许用户调整窗口大小。 */
     public static final boolean RESIZABLE = false;

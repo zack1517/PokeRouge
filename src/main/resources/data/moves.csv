@@ -1,0 +1,30 @@
+# 技能统一格式：id,name,type,category,power,pp
+# type 取属性英文名(NORMAL/FIRE/WATER/GRASS/ELECTRIC/ICE/FIGHTING/POISON/GROUND/FLYING/BUG/ROCK/GHOST/DRAGON)
+# category 取 PHYSICAL(物理)/SPECIAL(特殊)
+id,name,type,category,power,pp
+m_tackle,撞击,NORMAL,PHYSICAL,40,35
+m_quick,电光一闪,NORMAL,PHYSICAL,40,30
+m_ember,火花,FIRE,SPECIAL,40,25
+m_flamethrower,喷射火焰,FIRE,SPECIAL,90,15
+m_flame_wheel,火焰轮,FIRE,PHYSICAL,60,25
+m_bubble,水枪,WATER,SPECIAL,40,25
+m_hydro_pump,水炮,WATER,SPECIAL,110,5
+m_aqua_jet,水流喷射,WATER,PHYSICAL,40,20
+m_vine_whip,藤鞭,GRASS,PHYSICAL,45,25
+m_razor_leaf,飞叶快刀,GRASS,PHYSICAL,55,25
+m_giga_drain,终极吸取,GRASS,SPECIAL,75,10
+m_thunder_shock,电击,ELECTRIC,SPECIAL,40,30
+m_thunderbolt,十万伏特,ELECTRIC,SPECIAL,90,15
+m_thunder,打雷,ELECTRIC,SPECIAL,110,10
+m_icy_wind,冰冻之风,ICE,SPECIAL,55,15
+m_ice_fang,冰冻牙,ICE,PHYSICAL,65,15
+m_rock_slide,岩崩,ROCK,PHYSICAL,75,10
+m_rock_throw,落石,ROCK,PHYSICAL,50,15
+m_mud_slap,掷泥,GROUND,SPECIAL,20,10
+m_earthquake,地震,GROUND,PHYSICAL,100,10
+m_wing_attack,翅膀攻击,FLYING,PHYSICAL,60,35
+m_cross_poison,十字毒刃,POISON,PHYSICAL,70,20
+m_fire_blast,大字爆炎,FIRE,SPECIAL,110,5
+m_muddy_water,浊流,WATER,SPECIAL,90,10
+m_leaf_blade,叶刃,GRASS,PHYSICAL,90,15
+m_volt_tackle,伏特冲击,ELECTRIC,PHYSICAL,120,15

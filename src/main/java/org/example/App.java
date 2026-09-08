@@ -1,11 +1,9 @@
 package org.example;
 
 import javafx.application.Application;
-import javafx.scene.Scene;
 import javafx.stage.Stage;
 import org.example.config.AppConfig;
 import org.example.controller.MainController;
-import org.example.view.MainView;
 
 /**
  * JavaFX 应用主类。
@@ -20,16 +18,12 @@ public class App extends Application {
         stage.setTitle(AppConfig.APP_TITLE);
         stage.setResizable(AppConfig.RESIZABLE);
 
-        // 2. 组装视图（Scene -> Pane -> Node）
-        MainView mainView = new MainView();
-        Scene scene = mainView.createScene();
-        stage.setScene(scene);
-
-        // 3. 绑定控制器（交互与窗口事件）
+        // 2. 主控制器负责会话与场景切换
         MainController controller = new MainController(stage);
         controller.bindStageEvents();
+        controller.showMainMenu();
 
-        // 4. 显示窗口
+        // 3. 显示窗口
         stage.show();
     }
 }

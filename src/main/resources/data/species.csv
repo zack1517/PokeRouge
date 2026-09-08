@@ -1,0 +1,17 @@
+# 精灵统一格式：
+# id,name,type1,type2,hp,atk,def,spatk,spdef,speed,catchRate,wild,evolvesTo,evolveLevel,moves,learns
+# type2 可为空；wild 1 进野怪随机池、0 不进；evolvesTo 进化目标 id（空=不进化）；
+# evolveLevel 进化等级；moves 出生即会的技能（; 分隔、最多 4 个）；
+# learns 按等级习得，格式 等级:技能id;等级:技能id（如 8:m_flame_wheel）
+id,name,type1,type2,hp,atk,def,spatk,spdef,speed,catchRate,wild,evolvesTo,evolveLevel,moves,learns
+s_fire_cat,焰尾猫,FIRE,,45,52,43,60,50,65,45,1,s_flame_lion,16,m_tackle;m_ember,8:m_flame_wheel;13:m_flamethrower
+s_flame_lion,烈焰狮,FIRE,,65,75,58,90,68,95,45,0,,0,m_tackle;m_ember;m_flame_wheel;m_fire_blast,
+s_water_tad,泡泡蛙,WATER,,44,48,65,50,64,43,45,1,s_surge_frog,16,m_tackle;m_bubble,9:m_aqua_jet;15:m_hydro_pump
+s_surge_frog,涌浪蛙,WATER,,68,70,80,85,80,70,45,0,,0,m_tackle;m_bubble;m_aqua_jet;m_muddy_water,
+s_leaf_chick,叶芽雀,GRASS,FLYING,45,49,49,65,65,45,45,1,s_gale_owl,16,m_tackle;m_vine_whip,9:m_razor_leaf;15:m_wing_attack
+s_gale_owl,苍翼枭,GRASS,FLYING,65,75,60,85,75,90,45,0,,0,m_tackle;m_vine_whip;m_razor_leaf;m_leaf_blade,
+s_spark_rat,电光鼠,ELECTRIC,,35,55,40,50,50,90,190,1,s_volt_mink,22,m_tackle;m_thunder_shock,8:m_quick;18:m_thunderbolt
+s_volt_mink,迅雷貂,ELECTRIC,,60,80,55,85,65,125,190,0,,0,m_tackle;m_quick;m_thunder_shock;m_volt_tackle,
+s_ice_fox,冰晶狐,ICE,,40,45,40,65,45,65,120,1,,0,m_tackle;m_icy_wind;m_ice_fang;m_quick,
+s_rock_tort,岩甲龟,ROCK,GROUND,44,48,65,50,64,43,45,1,,0,m_tackle;m_rock_throw;m_rock_slide;m_mud_slap,
+s_wing_viper,翼毒蛇,POISON,FLYING,55,60,44,40,54,55,90,1,,0,m_tackle;m_wing_attack;m_cross_poison;m_quick,
