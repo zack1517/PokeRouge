@@ -4,11 +4,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * 精灵个体（等级 + 种族 + 技能槽 + 当前/最大 HP + 经验）。
  * <p>HP 上限与六项实际属性由种族值与等级演算而来，演算规则集中在 {@link #computeStats}。
  * 个体可以积累经验升级（属性随之提升），达到条件时进化并更换种族。</p>
+ * <p>契约补充（接口文档 v1.0 §2.11）：提供 uuid/IV/性格/异常状态 字段与读取方法。
+ * 现有个体由 {@link #create} 创建时以随机 IV + 勤奋性格初始化；异常状态当前仅作为
+ * 状态字段维护，尚未接入战斗结算。</p>
  */
 public class Pokemon {
 
@@ -17,22 +21,31 @@ public class Pokemon {
     /** 技能槽上限。 */
     public static final int MAX_MOVES = 4;
 
+    private final String uuid;
     private Species species;
     private int level;
     private Stats stats;
+    private Stats ivs;
+    private Nature nature;
     private int maxHp;
     private final List<MoveSlot> moveSlots;
     private int currentHp;
+    /** 异常状态（当前仅维护字段，战斗结算未接入）。 */
+    private StatusCondition status;
     /** 当前等级内累积的经验（跨级归零后进入下一级）。 */
     private long exp;
 
     private Pokemon(Species species, int level, Stats stats, int maxHp, List<MoveSlot> slots) {
+        this.uuid = UUID.randomUUID().toString();
         this.species = species;
         this.level = level;
         this.stats = stats;
+        this.ivs = Stats.randomIv();
+        this.nature = Nature.HARDY;
         this.maxHp = maxHp;
         this.currentHp = maxHp;
         this.moveSlots = slots;
+        this.status = StatusCondition.NONE;
     }
 
     /** 依据种族、等级创建满血个体。 */
@@ -59,6 +72,31 @@ public class Pokemon {
 
     public Species getSpecies() {
         return species;
+    }
+
+    /** 契约补充：个体唯一标识（§2.11）。 */
+    public String getUuid() {
+        return uuid;
+    }
+
+    /** 契约补充：个体值（0~31，创建时随机，§2.11）。 */
+    public Stats getIvs() {
+        return ivs;
+    }
+
+    /** 契约补充：性格（默认勤奋，§2.11）。 */
+    public Nature getNature() {
+        return nature;
+    }
+
+    /** 契约补充：当前异常状态（§2.11）。 */
+    public StatusCondition getStatus() {
+        return status;
+    }
+
+    /** 供战斗系统按需设置异常状态（当前战斗结算尚未消费该状态）。 */
+    public void setStatus(StatusCondition status) {
+        this.status = status == null ? StatusCondition.NONE : status;
     }
 
     public String getName() {
@@ -147,6 +185,12 @@ public class Pokemon {
         }
     }
 
+    /** 契约补充：仅回满 HP 并清除异常状态（§2.11 fullHeal）。 */
+    public void fullHeal() {
+        currentHp = maxHp;
+        status = StatusCondition.NONE;
+    }
+
     /** 是否满足进化条件（定义了进化目标且达到等级）。 */
     public boolean canEvolve() {
         return species.canEvolveAt(level);
@@ -195,13 +239,42 @@ public class Pokemon {
         return forgotten;
     }
 
+    /** 契约补充：增加经验并结算升级；升级后按契约 §2.11 回满 HP（学习/进化由调用方处理）。 */
+    public void gainExp(int amount) {
+        int gained = addExp(amount);
+        if (gained > 0) {
+            currentHp = maxHp;
+        }
+    }
+
     /** 该技能是否已学会（返回被替换时配合判断，这里用于“已学会”场景）。 */
     public boolean hasMove(Move move) {
         if (move == null) {
             return false;
         }
+        return hasMove(move.getId());
+    }
+
+    /** 契约补充：按技能 id 判断是否已学会（§2.11）。 */
+    public boolean hasMove(String moveId) {
+        if (moveId == null) {
+            return false;
+        }
         for (MoveSlot slot : moveSlots) {
-            if (slot.getMove().getId().equals(move.getId())) {
+            if (slot.getMove().getId().equals(moveId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 契约补充：当前等级下能否习得指定技能（需在种族习得表且已到等级，§2.11）。 */
+    public boolean canLearnMove(Move move) {
+        if (move == null) {
+            return false;
+        }
+        for (LearnableMove lm : species.getLearnableMoves()) {
+            if (lm.getMoveId().equals(move.getId()) && lm.getLevel() <= level) {
                 return true;
             }
         }

@@ -87,4 +87,14 @@ public class Move {
     public boolean isStatus() {
         return category == MoveCategory.STATUS;
     }
+
+    /** 是否为物理技能（{@link MoveCategory#PHYSICAL}）。 */
+    public boolean isPhysical() {
+        return category == MoveCategory.PHYSICAL;
+    }
+
+    /** 是否为特殊技能（{@link MoveCategory#SPECIAL}）。 */
+    public boolean isSpecial() {
+        return category == MoveCategory.SPECIAL;
+    }
 }

@@ -30,6 +30,8 @@ public class Species {
     private final int evolveLevel;
     /** 等级 → 该等级新习得的技能 id。 */
     private final Map<Integer, String> learnAt;
+    /** 契约补充：可学习技能表（§2.9）。{@link #learnAt} 之外额外追加的条目。 */
+    private final List<LearnableMove> extraLearnable = new ArrayList<>();
 
     public Species(String id, String name, ElementType type1, ElementType type2,
                    Stats baseStats, int catchRate, List<String> moveIds,
@@ -110,6 +112,28 @@ public class Species {
         List<Map.Entry<Integer, String>> sorted = new ArrayList<>(learnAt.entrySet());
         sorted.sort(Comparator.comparingInt(Map.Entry::getKey));
         return Collections.unmodifiableList(sorted);
+    }
+
+    /**
+     * 契约补充：可学习技能表（§2.9）。
+     * <p>由出生技能（1 级习得）与「等级 → 技能」习得表合并而来，另含 {@link #addLearnableMove}
+     * 追加的条目；用于外部按等级查询。</p>
+     */
+    public List<LearnableMove> getLearnableMoves() {
+        List<LearnableMove> all = new ArrayList<>();
+        for (String moveId : moveIds) {
+            all.add(new LearnableMove(moveId, 1));
+        }
+        for (Map.Entry<Integer, String> e : getLearnSchedule()) {
+            all.add(new LearnableMove(e.getValue(), e.getKey()));
+        }
+        all.addAll(extraLearnable);
+        return Collections.unmodifiableList(all);
+    }
+
+    /** 契约补充：追加一个可学习技能条目（§2.9）。 */
+    public void addLearnableMove(LearnableMove move) {
+        extraLearnable.add(move);
     }
 
     @Override
