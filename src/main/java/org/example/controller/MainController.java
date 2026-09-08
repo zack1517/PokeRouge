@@ -4,7 +4,8 @@ import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.stage.Stage;
-import org.example.battle.BattleEngine;
+import org.example.battle.BattleService;
+import org.example.battle.BattleServices;
 import org.example.config.AppConfig;
 import org.example.data.GameData;
 import org.example.model.Bag;
@@ -85,14 +86,14 @@ public class MainController {
         }
         player.leadWithFirstHealthy();
         Pokemon lead = player.getActive();
-        int level = BattleEngine.wildLevelAround(lead.getLevel());
-        Optional<Pokemon> wild = BattleEngine.randomWild(level);
+        int level = BattleServices.wildLevelAround(lead.getLevel());
+        Optional<Pokemon> wild = BattleServices.randomWild(level);
         if (wild.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的野生精灵（数据缺失）。");
             return;
         }
         try {
-            BattleEngine engine = new BattleEngine(player, wild.get());
+            BattleService engine = BattleServices.newBattle(player, wild.get());
             BattleController battle = new BattleController(engine, this::showMainMenu);
             stage.setScene(battle.createScene());
         } catch (IllegalArgumentException ex) {

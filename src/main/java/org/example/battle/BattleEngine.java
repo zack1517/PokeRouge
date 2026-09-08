@@ -17,31 +17,19 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Random;
 
 /**
- * 回合制对战引擎。
+ * 回合制对战引擎：{@link BattleService} 的默认实现。
  *
- * <p>规则：玩家与野生精灵每回合各执行一次行动（技能 / 道具 / 逃跑）。双方都用技能时按
+ * <p>规则：玩家与野生精灵每回合各执行一次行动（技能 / 道具 / 逃跑 / 换宠）。双方都用技能时按
  * 速度快者先动（相同速度随机）。物理技能取 物攻 vs 物防，特殊技能取 特攻 vs 特防，
  * 伤害受克制倍率、STAB(本系加成) 与随机浮动影响。捕捉成功、逃跑成功或一方全灭即结束。</p>
+ *
+ * <p>战斗行为契约见 {@link BattleService}，实例统一由 {@link BattleServices} 工厂创建，
+ * 调用方不应直接持有本实现类。</p>
  */
-public class BattleEngine {
-
-    /** 战斗状态。 */
-    public enum Status {
-        /** 进行中。 */
-        ONGOING,
-        /** 玩家获胜（野生精灵倒下）。 */
-        PLAYER_WIN,
-        /** 玩家战败（队伍全部倒下）。 */
-        PLAYER_LOSE,
-        /** 逃跑成功。 */
-        FLED,
-        /** 捕捉成功。 */
-        CAUGHT
-    }
+public class BattleEngine implements BattleService {
 
     private final Player player;
     private final Pokemon wild;
@@ -71,32 +59,39 @@ public class BattleEngine {
     // 查询
     // ------------------------------------------------------------------
 
+    @Override
     public Player getPlayer() {
         return player;
     }
 
+    @Override
     public Pokemon getWild() {
         return wild;
     }
 
+    @Override
     public Pokemon playerActive() {
         return player.getActive();
     }
 
+    @Override
     public Status getStatus() {
         return status;
     }
 
+    @Override
     public boolean isOngoing() {
         return status == Status.ONGOING;
     }
 
     /** 完整战斗日志（只读）。 */
+    @Override
     public List<String> getLog() {
         return Collections.unmodifiableList(log);
     }
 
     /** 背包（从玩家处转发，便捷）。 */
+    @Override
     public org.example.model.Bag getBag() {
         return player.getBag();
     }
@@ -110,6 +105,7 @@ public class BattleEngine {
      *
      * @return 本回合产生的新日志
      */
+    @Override
     public List<String> useMove(MoveSlot slot) {
         int mark = log.size();
         requireOngoing();
@@ -150,6 +146,7 @@ public class BattleEngine {
      *
      * @return 本回合产生的新日志
      */
+    @Override
     public List<String> useItem(Item item) {
         int mark = log.size();
         requireOngoing();
@@ -186,6 +183,7 @@ public class BattleEngine {
      *
      * @return 本回合产生的新日志
      */
+    @Override
     public List<String> tryRun() {
         int mark = log.size();
         requireOngoing();
@@ -211,6 +209,7 @@ public class BattleEngine {
      *
      * @return 本回合产生的新日志
      */
+    @Override
     public List<String> switchActive(int partyIndex) {
         int mark = log.size();
         requireOngoing();
@@ -457,20 +456,5 @@ public class BattleEngine {
     /** 返回自 mark 起新增的日志行。 */
     private List<String> slice(int mark) {
         return new ArrayList<>(log.subList(Math.max(0, mark), log.size()));
-    }
-
-    /** 便捷静态方法：野生等级围绕玩家等级浮动。 */
-    public static int wildLevelAround(int playerLevel) {
-        return Math.max(2, playerLevel + (int) (Math.random() * 5) - 2);
-    }
-
-    /** 便捷静态方法：从数据注册表随机挑一只野生精灵。 */
-    public static Optional<Pokemon> randomWild(int aroundLevel) {
-        java.util.List<String> pool = org.example.data.GameData.instance().wildPool();
-        if (pool.isEmpty()) {
-            return Optional.empty();
-        }
-        String id = pool.get((int) (Math.random() * pool.size()));
-        return org.example.data.GameData.instance().createPokemon(id, aroundLevel);
     }
 }

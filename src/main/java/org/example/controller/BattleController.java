@@ -1,7 +1,7 @@
 package org.example.controller;
 
 import javafx.scene.Scene;
-import org.example.battle.BattleEngine;
+import org.example.battle.BattleService;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
 import org.example.model.ItemStack;
@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 战斗控制器：桥接 {@link BattleView} 与 {@link BattleEngine}。
+ * 战斗控制器：桥接 {@link BattleView} 与 {@link BattleService}。
  *
  * <p>流程：刷新精灵面板与日志 → 展示主菜单（技能/背包/精灵/逃跑）→ 引擎结算 → 依据状态
  * 继续或展示结局。战斗中精灵倒下会被引擎自动切换，玩家也可在行动回合主动切换，每次渲染都
@@ -20,13 +20,14 @@ import java.util.List;
  */
 public class BattleController implements BattleView.Actions {
 
-    private final BattleEngine engine;
+    private final BattleService engine;
     private final Runnable onExit;
     private final BattleView view = new BattleView(this);
 
-    /** @param engine 已就绪的战斗引擎（玩家与野生精灵均已非倒下）
+    /** @param engine 已就绪的战斗服务实例（玩家与野生精灵均已非倒下，通常来自
+     *                {@link org.example.battle.BattleServices#newBattle}）
      *  @param onExit 战斗结束（含逃跑/捕捉/胜负）后返回主菜单的回调 */
-    public BattleController(BattleEngine engine, Runnable onExit) {
+    public BattleController(BattleService engine, Runnable onExit) {
         this.engine = engine;
         this.onExit = onExit;
     }
