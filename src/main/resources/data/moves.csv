@@ -1,7 +1,8 @@
-# 技能统一格式：id,name,type,category,power,pp
-# type 取属性英文名(NORMAL/FIRE/WATER/GRASS/ELECTRIC/ICE/FIGHTING/POISON/GROUND/FLYING/BUG/ROCK/GHOST/DRAGON)
-# category 取 PHYSICAL(物理)/SPECIAL(特殊)
-id,name,type,category,power,pp
+# 技能统一格式：id,name,type,category,power,pp[,effect]
+# type 取属性英文名(NORMAL/FIRE/WATER/GRASS/ELECTRIC/ICE/FIGHTING/POISON/GROUND/FLYING/BUG/ROCK/GHOST/DRAGON/PSYCHIC/FAIRY)
+# category 取 PHYSICAL(物理)/SPECIAL(特殊)/STATUS(变化)；STATUS 的 power 为 0
+# effect 可选的技能效果英文名（如 SUNNY_DAY/GRASSY_TERRAIN），不填视为无效果
+id,name,type,category,power,pp,effect
 m_tackle,撞击,NORMAL,PHYSICAL,40,35
 m_quick,电光一闪,NORMAL,PHYSICAL,40,30
 m_ember,火花,FIRE,SPECIAL,40,25
@@ -27,4 +28,12 @@ m_cross_poison,十字毒刃,POISON,PHYSICAL,70,20
 m_fire_blast,大字爆炎,FIRE,SPECIAL,110,5
 m_muddy_water,浊流,WATER,SPECIAL,90,10
 m_leaf_blade,叶刃,GRASS,PHYSICAL,90,15
-m_volt_tackle,伏特冲击,ELECTRIC,PHYSICAL,120,15
+m_volt_tackle,伏特冲击,ELECTRIC,PHYSICAL,120,15,
+m_sunny_day,大晴天,FIRE,STATUS,0,5,SUNNY_DAY
+m_rain_dance,求雨,WATER,STATUS,0,5,RAIN_DANCE
+m_sandstorm,沙暴,ROCK,STATUS,0,10,SANDSTORM
+m_hail,冰雹,ICE,STATUS,0,10,HAIL
+m_electric_terrain,电气场地,ELECTRIC,STATUS,0,10,ELECTRIC_TERRAIN
+m_grassy_terrain,青草场地,GRASS,STATUS,0,10,GRASSY_TERRAIN
+m_misty_terrain,薄雾场地,FAIRY,STATUS,0,10,MISTY_TERRAIN
+m_psychic_terrain,精神场地,PSYCHIC,STATUS,0,10,PSYCHIC_TERRAIN

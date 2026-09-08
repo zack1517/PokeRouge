@@ -35,7 +35,11 @@ public enum ElementType {
     /** 幽灵。 */
     GHOST("幽灵"),
     /** 龙。 */
-    DRAGON("龙");
+    DRAGON("龙"),
+    /** 超能力。 */
+    PSYCHIC("超能力"),
+    /** 妖精。 */
+    FAIRY("妖精");
 
     private final String displayName;
 

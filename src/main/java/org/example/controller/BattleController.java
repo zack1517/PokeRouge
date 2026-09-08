@@ -5,7 +5,9 @@ import org.example.battle.BattleService;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
 import org.example.model.ItemStack;
+import org.example.model.Move;
 import org.example.model.MoveSlot;
+import org.example.model.Pokemon;
 import org.example.view.BattleView;
 
 import java.util.ArrayList;
@@ -80,12 +82,35 @@ public class BattleController implements BattleView.Actions {
 
     private void render() {
         view.refreshPokemon(engine.playerActive(), engine.getWild());
+        view.refreshFieldStatus(engine.getWeather(), engine.getTerrain());
         view.showLog(engine.getLog());
         if (!engine.isOngoing()) {
-            view.showResult(resultText());
+            if (!engine.pendingLearnChoices().isEmpty()) {
+                showLearnMenu(); // 获胜后还有待玩家抉择的学招，先处理完再展示结局
+            } else {
+                view.showResult(resultText());
+            }
             return;
         }
         view.showMainMenu(this::showMoveMenu, this::showBagMenu, canSwitch(), this::showPartyMenu);
+    }
+
+    /** 展示队首一项「技能满、想学新招」的抉择菜单。 */
+    private void showLearnMenu() {
+        BattleService.LearnChoice choice = engine.pendingLearnChoices().get(0);
+        Pokemon p = choice.pokemon();
+        Move move = choice.move();
+        String prompt = p.getName() + " 想学会【" + move.getName() + "】，但它已经掌握 "
+                + p.getMoveSlots().size() + " 个技能！请选择要遗忘的技能，或放弃学习。";
+        view.showLearnMoveMenu(prompt, p.getMoveSlots(),
+                index -> {
+                    engine.decideLearn(index);
+                    render();
+                },
+                () -> {
+                    engine.decideLearn(-1);
+                    render();
+                });
     }
 
     /** 是否存在一只健康且非当前出战的精灵可切换。 */

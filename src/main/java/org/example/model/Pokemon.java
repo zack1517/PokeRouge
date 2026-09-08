@@ -162,28 +162,36 @@ public class Pokemon {
         fullRestore();
     }
 
+    /** 技能槽是否已满（已掌握 4 招）。 */
+    public boolean moveSlotsFull() {
+        return moveSlots.size() >= MAX_MOVES;
+    }
+
     /**
-     * 尝试学会一个技能：已学会则忽略；有空槽则追加；无空槽则自动遗忘威力最低的技能来腾位。
+     * 学会一个技能：仅当有空槽且尚未学过该技能时加入，绝不覆盖已有技能。
      *
-     * @return 被遗忘替换的技能；null 表示「新学成」或「无需替换」，与 {@link #learnedMove}
-     *         搭配判断。
+     * @return 是否成功学会（空槽且未重复）
      */
-    public Move learnMove(Move move) {
-        if (move == null || hasMove(move)) {
+    public boolean learnMove(Move move) {
+        if (move == null || hasMove(move) || moveSlotsFull()) {
+            return false;
+        }
+        moveSlots.add(new MoveSlot(move));
+        return true;
+    }
+
+    /**
+     * 用新技能替换指定槽位的已有技能（技能槽已满时玩家手动选择遗忘哪一招）。
+     *
+     * @return 被替换遗忘的技能；槽位越界、技能无效或该技能已学会时返回 {@code null}
+     */
+    public Move replaceMove(int slotIndex, Move move) {
+        if (slotIndex < 0 || slotIndex >= moveSlots.size()
+                || move == null || hasMove(move)) {
             return null;
         }
-        if (moveSlots.size() < MAX_MOVES) {
-            moveSlots.add(new MoveSlot(move));
-            return null;
-        }
-        int weakest = 0;
-        for (int i = 1; i < moveSlots.size(); i++) {
-            if (moveSlots.get(i).getMove().getPower() < moveSlots.get(weakest).getMove().getPower()) {
-                weakest = i;
-            }
-        }
-        Move forgotten = moveSlots.get(weakest).getMove();
-        moveSlots.set(weakest, new MoveSlot(move));
+        Move forgotten = moveSlots.get(slotIndex).getMove();
+        moveSlots.set(slotIndex, new MoveSlot(move));
         return forgotten;
     }
 

@@ -14,8 +14,11 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import org.example.config.AppConfig;
+import org.example.model.Move;
 import org.example.model.MoveSlot;
 import org.example.model.Pokemon;
+import org.example.model.Terrain;
+import org.example.model.Weather;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,7 +64,8 @@ public class BattleView {
     private final ProgressBar wildHpBar = new ProgressBar();
     private final Label wildHpText = new Label();
 
-    // ---- 中部：日志 ----
+    // ---- 中部：天气/场地状态 + 日志 ----
+    private final Label fieldStatus = new Label();
     private final TextArea logArea = new TextArea();
 
     // ---- 底部：行动按钮容器（重建） ----
@@ -127,8 +131,13 @@ public class BattleView {
         logArea.setEditable(false);
         logArea.setWrapText(true);
         logArea.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px;");
+        fieldStatus.setWrapText(true);
+        fieldStatus.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 12px;"
+                + "-fx-font-weight: bold; -fx-text-fill: #2a6cb6;");
         VBox.setVgrow(logArea, Priority.ALWAYS);
-        return logArea;
+        VBox center = new VBox(4, fieldStatus, logArea);
+        VBox.setMargin(fieldStatus, new Insets(0, 0, 4, 0));
+        return center;
     }
 
     private Parent buildBottom() {
@@ -151,6 +160,21 @@ public class BattleView {
         wildName.setText(wild.getName());
         wildInfo.setText(typeOf(wild) + "  Lv." + wild.getLevel());
         refreshHp(wildHpBar, wildHpText, wild);
+    }
+
+    /** 刷新天气/场地状态栏（无天气/场地时清空）。 */
+    public void refreshFieldStatus(Weather weather, Terrain terrain) {
+        StringBuilder sb = new StringBuilder();
+        if (weather.isActive()) {
+            sb.append("天气：").append(weather.getDisplayName());
+        }
+        if (terrain.isActive()) {
+            if (sb.length() > 0) {
+                sb.append("    ");
+            }
+            sb.append("场地：").append(terrain.getDisplayName());
+        }
+        fieldStatus.setText(sb.toString());
     }
 
     /** 显示战斗日志（覆盖整个日志框）。 */
@@ -190,7 +214,7 @@ public class BattleView {
         for (MoveSlot slot : slots) {
             String ppText = slot.exhausted() ? "PP 不足" : "PP " + slot.getPp() + "/" + slot.getMove().getMaxPp();
             Button b = styledButton(slot.getMove().getName() + "\n"
-                    + slot.getMove().getType().getDisplayName() + " · 威力 " + slot.getMove().getPower() + " · " + ppText);
+                    + slot.getMove().getType().getDisplayName() + " · " + moveBrief(slot.getMove()) + " · " + ppText);
             b.setDisable(slot.exhausted());
             b.setOnAction(e -> actions.onMoveSelected(slot));
             buttons.add(b);
@@ -249,6 +273,40 @@ public class BattleView {
         actionBox.getChildren().add(v);
     }
 
+    /**
+     * 显示「学会新技能」抉择：精灵已掌握 4 个技能，玩家点选一个当前技能将其遗忘并学习
+     * 新技能，或点击「放弃学习」跳过。
+     *
+     * @param prompt    说明文字（含精灵与新技能名）
+     * @param slots     当前已掌握的技能（必为 4 个）
+     * @param onForget  选中槽位下标（0~3）时回调
+     * @param onDecline 选择放弃学习时回调
+     */
+    public void showLearnMoveMenu(String prompt, List<MoveSlot> slots,
+                                  IntConsumer onForget, Runnable onDecline) {
+        actionBox.getChildren().clear();
+        Label title = new Label(prompt);
+        title.setWrapText(true);
+        title.setMaxWidth(600);
+        title.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px;"
+                + "-fx-font-weight: bold;");
+        HBox row = new HBox(10);
+        row.setAlignment(Pos.CENTER);
+        for (int i = 0; i < slots.size(); i++) {
+            MoveSlot slot = slots.get(i);
+            int index = i;
+            Button b = styledButton(slot.getMove().getName() + "\n"
+                    + slot.getMove().getType().getDisplayName() + " · " + moveBrief(slot.getMove()));
+            b.setOnAction(e -> onForget.accept(index));
+            row.getChildren().add(b);
+        }
+        Button decline = styledButton("放弃学习");
+        decline.setOnAction(e -> onDecline.run());
+        VBox v = new VBox(8, title, row, decline);
+        v.setAlignment(Pos.CENTER);
+        actionBox.getChildren().add(v);
+    }
+
     public void clearActions() {
         actionBox.getChildren().clear();
     }
@@ -276,6 +334,11 @@ public class BattleView {
         List<String> types = p.getSpecies().getTypes().stream()
                 .map(t -> t.getDisplayName()).toList();
         return String.join(" / ", types);
+    }
+
+    /** 技能威力/类别简写：变化类显示「变化」，其余显示「威力 X」。 */
+    private static String moveBrief(Move move) {
+        return move.isStatus() ? "变化" : "威力 " + move.getPower();
     }
 
     private static void refreshHp(ProgressBar bar, Label text, Pokemon p) {

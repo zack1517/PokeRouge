@@ -5,6 +5,7 @@ import org.example.model.Item;
 import org.example.model.ItemCategory;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
+import org.example.model.MoveEffect;
 import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.Stats;
@@ -31,8 +32,9 @@ import java.util.function.Consumer;
  *
  * <p>CSV 统一格式（首行为表头，自动跳过，# 开头视为注释）：</p>
  * <ul>
- *     <li>moves.csv：id,name,type,category,power,pp
- *     —— type 用属性英文名，category 取 PHYSICAL/SPECIAL</li>
+ *     <li>moves.csv：id,name,type,category,power,pp[,effect]
+ *     —— type 用属性英文名，category 取 PHYSICAL/SPECIAL/STATUS（变化类 power 为 0）；
+ *     effect 为可选的技能效果英文名（如 SUNNY_DAY/GRASSY_TERRAIN），不填为无效果</li>
  *     <li>species.csv：id,name,type1,type2,hp,atk,def,spatk,spdef,speed,catchRate,wild,evolvesTo,evolveLevel,moves,learns
  *     —— type2 可为空；wild 1/0 决定是否进野怪池；evolvesTo 为进化目标 id（可空），
  *     evolveLevel 为进化等级（0/空 = 不进化）；moves 为出生即会的技能（“;”分隔、最多 4 个）；
@@ -176,6 +178,16 @@ public final class GameData {
         putMove("m_muddy_water", "浊流", ElementType.WATER, MoveCategory.SPECIAL, 90, 10);
         putMove("m_leaf_blade", "叶刃", ElementType.GRASS, MoveCategory.PHYSICAL, 90, 15);
         putMove("m_volt_tackle", "伏特冲击", ElementType.ELECTRIC, MoveCategory.PHYSICAL, 120, 15);
+
+        // ---- 天气/场地变化技能：power=0、STATUS，效果开启对应天气/场地 ----
+        putMove("m_sunny_day", "大晴天", ElementType.FIRE, MoveCategory.STATUS, 0, 5, MoveEffect.SUNNY_DAY);
+        putMove("m_rain_dance", "求雨", ElementType.WATER, MoveCategory.STATUS, 0, 5, MoveEffect.RAIN_DANCE);
+        putMove("m_sandstorm", "沙暴", ElementType.ROCK, MoveCategory.STATUS, 0, 10, MoveEffect.SANDSTORM);
+        putMove("m_hail", "冰雹", ElementType.ICE, MoveCategory.STATUS, 0, 10, MoveEffect.HAIL);
+        putMove("m_electric_terrain", "电气场地", ElementType.ELECTRIC, MoveCategory.STATUS, 0, 10, MoveEffect.ELECTRIC_TERRAIN);
+        putMove("m_grassy_terrain", "青草场地", ElementType.GRASS, MoveCategory.STATUS, 0, 10, MoveEffect.GRASSY_TERRAIN);
+        putMove("m_misty_terrain", "薄雾场地", ElementType.FAIRY, MoveCategory.STATUS, 0, 10, MoveEffect.MISTY_TERRAIN);
+        putMove("m_psychic_terrain", "精神场地", ElementType.PSYCHIC, MoveCategory.STATUS, 0, 10, MoveEffect.PSYCHIC_TERRAIN);
     }
 
     private void registerBuiltinSpecies() {
@@ -183,7 +195,7 @@ public final class GameData {
         putSpecies("s_fire_cat", "焰尾猫", ElementType.FIRE, null,
                 new Stats(45, 52, 43, 60, 50, 65), 45, true,
                 "s_flame_lion", 16, List.of("m_tackle", "m_ember"),
-                "8:m_flame_wheel", "13:m_flamethrower");
+                "8:m_flame_wheel", "10:m_sunny_day", "13:m_flamethrower");
         putSpecies("s_flame_lion", "烈焰狮", ElementType.FIRE, null,
                 new Stats(65, 75, 58, 90, 68, 95), 45, false,
                 null, 0, List.of("m_tackle", "m_ember", "m_flame_wheel", "m_fire_blast"));
@@ -191,7 +203,7 @@ public final class GameData {
         putSpecies("s_water_tad", "泡泡蛙", ElementType.WATER, null,
                 new Stats(44, 48, 65, 50, 64, 43), 45, true,
                 "s_surge_frog", 16, List.of("m_tackle", "m_bubble"),
-                "9:m_aqua_jet", "15:m_hydro_pump");
+                "9:m_aqua_jet", "12:m_rain_dance", "15:m_hydro_pump");
         putSpecies("s_surge_frog", "涌浪蛙", ElementType.WATER, null,
                 new Stats(68, 70, 80, 85, 80, 70), 45, false,
                 null, 0, List.of("m_tackle", "m_bubble", "m_aqua_jet", "m_muddy_water"));
@@ -199,7 +211,7 @@ public final class GameData {
         putSpecies("s_leaf_chick", "叶芽雀", ElementType.GRASS, ElementType.FLYING,
                 new Stats(45, 49, 49, 65, 65, 45), 45, true,
                 "s_gale_owl", 16, List.of("m_tackle", "m_vine_whip"),
-                "9:m_razor_leaf", "15:m_wing_attack");
+                "9:m_razor_leaf", "13:m_grassy_terrain", "15:m_wing_attack");
         putSpecies("s_gale_owl", "苍翼枭", ElementType.GRASS, ElementType.FLYING,
                 new Stats(65, 75, 60, 85, 75, 90), 45, false,
                 null, 0, List.of("m_tackle", "m_vine_whip", "m_razor_leaf", "m_leaf_blade"));
@@ -207,7 +219,7 @@ public final class GameData {
         putSpecies("s_spark_rat", "电光鼠", ElementType.ELECTRIC, null,
                 new Stats(35, 55, 40, 50, 50, 90), 190, true,
                 "s_volt_mink", 22, List.of("m_tackle", "m_thunder_shock"),
-                "8:m_quick", "18:m_thunderbolt");
+                "8:m_quick", "14:m_electric_terrain", "18:m_thunderbolt");
         putSpecies("s_volt_mink", "迅雷貂", ElementType.ELECTRIC, null,
                 new Stats(60, 80, 55, 85, 65, 125), 190, false,
                 null, 0, List.of("m_tackle", "m_quick", "m_thunder_shock", "m_volt_tackle"));
@@ -216,11 +228,11 @@ public final class GameData {
         putSpecies("s_ice_fox", "冰晶狐", ElementType.ICE, null,
                 new Stats(40, 45, 40, 65, 45, 65), 120, true,
                 null, 0, List.of("m_tackle", "m_icy_wind"),
-                "7:m_quick", "12:m_ice_fang");
+                "7:m_quick", "10:m_hail", "12:m_ice_fang");
         putSpecies("s_rock_tort", "岩甲龟", ElementType.ROCK, ElementType.GROUND,
                 new Stats(44, 48, 65, 50, 64, 43), 45, true,
                 null, 0, List.of("m_tackle", "m_rock_throw"),
-                "6:m_mud_slap", "11:m_rock_slide");
+                "6:m_mud_slap", "11:m_rock_slide", "14:m_sandstorm");
         putSpecies("s_wing_viper", "翼毒蛇", ElementType.POISON, ElementType.FLYING,
                 new Stats(55, 60, 44, 40, 54, 55), 90, true,
                 null, 0, List.of("m_tackle", "m_wing_attack"),
@@ -238,7 +250,13 @@ public final class GameData {
 
     private void putMove(String id, String name, ElementType type, MoveCategory category,
                          int power, int pp) {
-        moveMap.put(id, new Move(id, name, type, category, power, 100, pp));
+        putMove(id, name, type, category, power, pp, MoveEffect.NONE);
+    }
+
+    /** 带效果注册技能（天气/场地变化类技能使用）。 */
+    private void putMove(String id, String name, ElementType type, MoveCategory category,
+                         int power, int pp, MoveEffect effect) {
+        moveMap.put(id, new Move(id, name, type, category, power, 100, pp, effect));
     }
 
     /**
@@ -321,11 +339,16 @@ public final class GameData {
             return;
         }
         ElementType type = ElementType.parse(c[2]);
-        MoveCategory category = "SPECIAL".equalsIgnoreCase(c[3].trim())
-                ? MoveCategory.SPECIAL : MoveCategory.PHYSICAL;
+        String cat = c[3].trim().toUpperCase(java.util.Locale.ROOT);
+        MoveCategory category = switch (cat) {
+            case "SPECIAL" -> MoveCategory.SPECIAL;
+            case "STATUS" -> MoveCategory.STATUS;
+            default -> MoveCategory.PHYSICAL;
+        };
         int power = parseInt(c[4]);
         int pp = parseInt(c[5]);
-        moveMap.put(c[0].trim(), new Move(c[0].trim(), c[1].trim(), type, category, power, 100, pp));
+        MoveEffect effect = c.length > 6 ? MoveEffect.parse(c[6]) : MoveEffect.NONE;
+        moveMap.put(c[0].trim(), new Move(c[0].trim(), c[1].trim(), type, category, power, 100, pp, effect));
     }
 
     private void applySpeciesRow(String line) {

@@ -6,6 +6,7 @@ import java.util.Set;
 import static org.example.model.ElementType.BUG;
 import static org.example.model.ElementType.DRAGON;
 import static org.example.model.ElementType.ELECTRIC;
+import static org.example.model.ElementType.FAIRY;
 import static org.example.model.ElementType.FIGHTING;
 import static org.example.model.ElementType.FIRE;
 import static org.example.model.ElementType.FLYING;
@@ -15,6 +16,7 @@ import static org.example.model.ElementType.GROUND;
 import static org.example.model.ElementType.ICE;
 import static org.example.model.ElementType.NORMAL;
 import static org.example.model.ElementType.POISON;
+import static org.example.model.ElementType.PSYCHIC;
 import static org.example.model.ElementType.ROCK;
 import static org.example.model.ElementType.WATER;
 
@@ -70,9 +72,9 @@ public final class TypeChart {
                 if (in(defend, NORMAL, ICE, ROCK)) {
                     return 2.0;
                 }
-                return in(defend, POISON, FLYING, BUG) ? 0.5 : 1.0;
+                return in(defend, POISON, FLYING, BUG, PSYCHIC, FAIRY) ? 0.5 : 1.0;
             case POISON:
-                if (defend == GRASS) {
+                if (in(defend, GRASS, FAIRY)) {
                     return 2.0;
                 }
                 return in(defend, POISON, GROUND, ROCK, GHOST) ? 0.5 : 1.0;
@@ -90,10 +92,10 @@ public final class TypeChart {
                 }
                 return in(defend, ELECTRIC, ROCK) ? 0.5 : 1.0;
             case BUG:
-                if (in(defend, GRASS, POISON)) {
+                if (in(defend, GRASS, POISON, PSYCHIC)) {
                     return 2.0;
                 }
-                return in(defend, FIRE, FLYING, ROCK) ? 0.5 : 1.0;
+                return in(defend, FIRE, FLYING, ROCK, FAIRY) ? 0.5 : 1.0;
             case ROCK:
                 if (in(defend, FIRE, ICE, FLYING, BUG)) {
                     return 2.0;
@@ -103,9 +105,25 @@ public final class TypeChart {
                 if (immune(defend, NORMAL)) {
                     return 0.0;
                 }
-                return defend == GHOST ? 2.0 : 1.0;
+                if (in(defend, GHOST, PSYCHIC)) {
+                    return 2.0;
+                }
+                return 1.0;
             case DRAGON:
+                if (immune(defend, FAIRY)) {
+                    return 0.0;
+                }
                 return defend == DRAGON ? 2.0 : 1.0;
+            case PSYCHIC:
+                if (in(defend, FIGHTING, POISON)) {
+                    return 2.0;
+                }
+                return defend == PSYCHIC ? 0.5 : 1.0;
+            case FAIRY:
+                if (in(defend, FIGHTING, DRAGON)) {
+                    return 2.0;
+                }
+                return in(defend, FIRE, POISON) ? 0.5 : 1.0;
             default:
                 return 1.0;
         }

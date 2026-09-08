@@ -6,12 +6,15 @@ import org.example.model.Item;
 import org.example.model.ItemCategory;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
+import org.example.model.MoveEffect;
 import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.Stats;
+import org.example.model.Terrain;
 import org.example.model.TypeChart;
+import org.example.model.Weather;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,6 +29,14 @@ import java.util.Random;
  * 速度快者先动（相同速度随机）。物理技能取 物攻 vs 物防，特殊技能取 特攻 vs 特防，
  * 伤害受克制倍率、STAB(本系加成) 与随机浮动影响。捕捉成功、逃跑成功或一方全灭即结束。</p>
  *
+ * <p>获胜发放经验升级时，若有空格则直接学会到级技能；技能已满则不自动遗忘，挂起为待抉择
+ * （{@link #pendingLearnChoices()}），由玩家经 {@link #decideLearn(int)} 手动选择遗忘
+ * 哪一招或放弃学习。</p>
+ *
+ * <p>战斗支持天气与场地（原版宝可梦风格）：携带 {@link MoveEffect} 的变化类技能会开启对应
+ * 天气/场地，持续 {@value Weather#DURATION_TURNS} 回合（含开启当回合）后自然消退；生效期间
+ * 按各自倍率调整招式威力，沙暴/冰雹回合末对非免疫精灵扣血，青草场地回合末回复场上精灵。</p>
+ *
  * <p>战斗行为契约见 {@link BattleService}，实例统一由 {@link BattleServices} 工厂创建，
  * 调用方不应直接持有本实现类。</p>
  */
@@ -36,8 +47,18 @@ public class BattleEngine implements BattleService {
     private final Random random;
     /** 全程日志（按行累积）。 */
     private final List<String> log = new ArrayList<>();
+    /** 获胜升级后「技能满、待玩家抉择是否/如何学习」的请求队列。 */
+    private final List<LearnChoice> pendingLearns = new ArrayList<>();
 
     private Status status = Status.ONGOING;
+    /** 当前天气（无天气为 {@link Weather#NONE}）。 */
+    private Weather weather = Weather.NONE;
+    /** 当前场地（无场地为 {@link Terrain#NONE}）。 */
+    private Terrain terrain = Terrain.NONE;
+    /** 当前天气剩余回合数（含开启当回合；0 表示无天气）。 */
+    private int weatherTurnsLeft = 0;
+    /** 当前场地剩余回合数（含开启当回合；0 表示无场地）。 */
+    private int terrainTurnsLeft = 0;
 
     public BattleEngine(Player player, Pokemon wild) {
         this(player, wild, new Random());
@@ -84,6 +105,16 @@ public class BattleEngine implements BattleService {
         return status == Status.ONGOING;
     }
 
+    @Override
+    public Weather getWeather() {
+        return weather;
+    }
+
+    @Override
+    public Terrain getTerrain() {
+        return terrain;
+    }
+
     /** 完整战斗日志（只读）。 */
     @Override
     public List<String> getLog() {
@@ -94,6 +125,40 @@ public class BattleEngine implements BattleService {
     @Override
     public org.example.model.Bag getBag() {
         return player.getBag();
+    }
+
+    // ------------------------------------------------------------------
+    // 获胜结算：学招抉择
+    // ------------------------------------------------------------------
+
+    @Override
+    public List<LearnChoice> pendingLearnChoices() {
+        return List.copyOf(pendingLearns);
+    }
+
+    /** 处理队首一项待抉择学招：替换指定槽位（0~3），或传 -1 放弃学习。 */
+    @Override
+    public List<String> decideLearn(int forgetSlotIndex) {
+        int mark = log.size();
+        if (pendingLearns.isEmpty()) {
+            throw new IllegalStateException("当前没有待抉择的新技能学习");
+        }
+        LearnChoice choice = pendingLearns.remove(0);
+        Pokemon p = choice.pokemon();
+        Move move = choice.move();
+        if (forgetSlotIndex >= 0 && forgetSlotIndex < p.getMoveSlots().size()) {
+            Move forgotten = p.replaceMove(forgetSlotIndex, move);
+            if (forgotten == null) {
+                append(p.getName() + " 想学习【" + move.getName()
+                        + "】，但没有可遗忘的槽位。");
+            } else {
+                append(p.getName() + " 忘记了【" + forgotten.getName()
+                        + "】，学会了【" + move.getName() + "】！");
+            }
+        } else {
+            append(p.getName() + " 没有学习【" + move.getName() + "】。");
+        }
+        return slice(mark);
     }
 
     // ------------------------------------------------------------------
@@ -126,17 +191,17 @@ public class BattleEngine implements BattleService {
                 || (playerSpeed == wildSpeed && random.nextBoolean());
 
         if (playerFirst) {
-            performAttack(playerActive(), wild, usable.getMove());
+            executeMove(playerActive(), wild, usable.getMove());
             if (isOngoing() && !wild.isFainted() && !playerActive().isFainted()) {
                 wildTurn();
             }
         } else {
             wildTurn();
             if (isOngoing() && !playerActive().isFainted() && !wild.isFainted()) {
-                performAttack(playerActive(), wild, usable.getMove());
+                executeMove(playerActive(), wild, usable.getMove());
             }
         }
-        resolveRoundEnd();
+        finishRound();
         return slice(mark);
     }
 
@@ -174,7 +239,7 @@ public class BattleEngine implements BattleService {
         } else {
             append("该道具暂时无法使用");
         }
-        resolveRoundEnd();
+        finishRound();
         return slice(mark);
     }
 
@@ -200,7 +265,7 @@ public class BattleEngine implements BattleService {
         if (!wild.isFainted() && !playerActive().isFainted()) {
             wildTurn();
         }
-        resolveRoundEnd();
+        finishRound();
         return slice(mark);
     }
 
@@ -223,7 +288,7 @@ public class BattleEngine implements BattleService {
         if (!wild.isFainted() && !target.isFainted()) {
             wildTurn();
         }
-        resolveRoundEnd();
+        finishRound();
         return slice(mark);
     }
 
@@ -244,7 +309,7 @@ public class BattleEngine implements BattleService {
         } else {
             usable.use();
             append(wild.getName() + " 使用了【" + usable.getMove().getName() + "】！");
-            performAttack(wild, playerActive(), usable.getMove());
+            executeMove(wild, playerActive(), usable.getMove());
         }
     }
 
@@ -273,6 +338,58 @@ public class BattleEngine implements BattleService {
                 .filter(s -> !s.exhausted())
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * 执行一次行动：变化类技能改换天气/场地，其余（物理/特殊）技能正常造成伤害。
+     */
+    private void executeMove(Pokemon attacker, Pokemon defender, Move move) {
+        if (move.isStatus()) {
+            applyFieldEffect(move.getEffect());
+            return;
+        }
+        performAttack(attacker, defender, move);
+    }
+
+    /** 应用变化类技能的天气/场地效果；无对应效果视为失败。 */
+    private void applyFieldEffect(MoveEffect effect) {
+        if (effect == null || effect == MoveEffect.NONE) {
+            append("但是什么也没有发生……");
+            return;
+        }
+        Weather w = effect.toWeather();
+        if (w != null) {
+            setWeather(w);
+            return;
+        }
+        Terrain t = effect.toTerrain();
+        if (t != null) {
+            setTerrain(t);
+            return;
+        }
+        append("但是什么也没有发生……");
+    }
+
+    /** 开启指定天气并重置持续回合数。 */
+    private void setWeather(Weather target) {
+        boolean refreshing = weather == target;
+        weather = target;
+        weatherTurnsLeft = Weather.DURATION_TURNS;
+        append(target.getStartMessage());
+        if (refreshing) {
+            append("持续回合重置了！");
+        }
+    }
+
+    /** 开启指定场地并重置持续回合数。 */
+    private void setTerrain(Terrain target) {
+        boolean refreshing = terrain == target;
+        terrain = target;
+        terrainTurnsLeft = Terrain.DURATION_TURNS;
+        append(target.getStartMessage());
+        if (refreshing) {
+            append("持续回合重置了！");
+        }
     }
 
     private void performAttack(Pokemon attacker, Pokemon defender, Move move) {
@@ -311,8 +428,11 @@ public class BattleEngine implements BattleService {
                 * (atk / Math.max(1.0, def)) / 50.0 + 2.0;
         double stab = attacker.hasType(move.getType()) ? 1.5 : 1.0;
         double effectiveness = typeEffectiveness(move.getType(), defender);
+        // 天气与场地对招式威力的加成
+        double field = weather.moveTypeMultiplier(move.getType())
+                * terrain.moveTypeMultiplier(move.getType());
         double randomFactor = 0.85 + random.nextDouble() * 0.15;
-        int raw = (int) Math.floor(base * stab * effectiveness * randomFactor);
+        int raw = (int) Math.floor(base * stab * effectiveness * field * randomFactor);
         return Math.max(1, raw);
     }
 
@@ -366,6 +486,86 @@ public class BattleEngine implements BattleService {
     }
 
     /**
+     * 回合收尾：双方都仍站场时先结算天气/场地回合效果（沙暴/冰雹扣血、青草回复），
+     * 再做胜负判定与自动换宠，最后推进天气/场地持续回合。
+     */
+    private void finishRound() {
+        if (status != Status.ONGOING) {
+            return;
+        }
+        Pokemon pa = playerActive();
+        boolean bothStanding = !wild.isFainted() && pa != null && !pa.isFainted();
+        if (bothStanding) {
+            applyFieldEndEffects(pa);
+        }
+        resolveRoundEnd();
+        if (status == Status.ONGOING) {
+            tickFields();
+        }
+    }
+
+    /** 回合末天气/场地效果：沙暴/冰雹对双方扣血；青草场地对双方回复。 */
+    private void applyFieldEndEffects(Pokemon pa) {
+        weatherChip(pa);
+        weatherChip(wild);
+        if (terrain == Terrain.GRASSY) {
+            grassyHeal(pa);
+            grassyHeal(wild);
+        }
+    }
+
+    /** 沙暴/冰雹回合末扣血：岩石/地面（沙暴）、冰系（冰雹）免疫，扣最大 HP 的 1/16。 */
+    private void weatherChip(Pokemon p) {
+        if (p == null || p.isFainted() || weather == Weather.NONE || weather.chipRatio() <= 0) {
+            return;
+        }
+        boolean immune = switch (weather) {
+            case SANDSTORM -> p.hasType(ElementType.ROCK) || p.hasType(ElementType.GROUND);
+            case HAIL -> p.hasType(ElementType.ICE);
+            default -> false;
+        };
+        if (immune) {
+            return;
+        }
+        int dealt = p.takeDamage(Math.max(1, (int) (p.getMaxHp() * weather.chipRatio())));
+        append(weather.getDisplayName() + " 侵蚀着 " + p.getName() + "，造成了 " + dealt + " 点伤害！");
+        if (p.isFainted()) {
+            append(p.getName() + " 倒下了！");
+        }
+    }
+
+    /** 青草场地回合末回复：飞行系不受益，回复最大 HP 的 1/16。 */
+    private void grassyHeal(Pokemon p) {
+        if (p == null || p.isFainted() || p.hasType(ElementType.FLYING)) {
+            return;
+        }
+        int healed = p.heal(Math.max(1, (int) (p.getMaxHp() * Terrain.GRASSY.healRatio())));
+        if (healed > 0) {
+            append("青草场地 让 " + p.getName() + " 回复了 " + healed + " HP！");
+        }
+    }
+
+    /** 推进天气/场地剩余回合数，归零时消退并广播结束消息。 */
+    private void tickFields() {
+        if (weather != Weather.NONE) {
+            weatherTurnsLeft--;
+            if (weatherTurnsLeft <= 0) {
+                append(weather.getEndMessage());
+                weather = Weather.NONE;
+                weatherTurnsLeft = 0;
+            }
+        }
+        if (terrain != Terrain.NONE) {
+            terrainTurnsLeft--;
+            if (terrainTurnsLeft <= 0) {
+                append(terrain.getEndMessage());
+                terrain = Terrain.NONE;
+                terrainTurnsLeft = 0;
+            }
+        }
+    }
+
+    /**
      * 胜利后向队伍发放经验：每只未倒下的精灵获得全额经验，结算逐级升级、
      * 到级学招与进化。
      */
@@ -399,7 +599,7 @@ public class BattleEngine implements BattleService {
         return Math.max(30, total * defeated.getLevel() / 5);
     }
 
-    /** 等级达到习得表要求时尝试学会新技能（4 招满时自动遗忘最弱的）。 */
+    /** 等级达到习得表要求时尝试学会新技能：有空槽直接学会；4 招全满则挂起等待玩家抉择。 */
     private void tryLearnAt(Pokemon p, int level) {
         String moveId = p.getSpecies().moveLearnedAt(level);
         if (moveId == null) {
@@ -409,13 +609,13 @@ public class BattleEngine implements BattleService {
         if (move == null || p.hasMove(move)) {
             return;
         }
-        Move forgotten = p.learnMove(move);
-        if (forgotten == null) {
-            append(p.getName() + " 记住了【" + move.getName() + "】！");
-        } else {
-            append(p.getName() + " 记住了【" + move.getName()
-                    + "】，遗忘了【" + forgotten.getName() + "】！");
+        if (p.moveSlotsFull()) {
+            // 技能已满：不自动遗忘，交给玩家手动选择（见 pendingLearnChoices/decideLearn）
+            pendingLearns.add(new LearnChoice(p, move));
+            return;
         }
+        p.learnMove(move);
+        append(p.getName() + " 记住了【" + move.getName() + "】！");
     }
 
     /** 达到进化等级时进化为目标形态（重新演算属性并回满状态）。 */

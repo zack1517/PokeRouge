@@ -2,9 +2,12 @@ package org.example.battle;
 
 import org.example.model.Bag;
 import org.example.model.Item;
+import org.example.model.Move;
 import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.Terrain;
+import org.example.model.Weather;
 
 import java.util.List;
 
@@ -17,6 +20,10 @@ import java.util.List;
  * <p><b>回合规则</b>：双方每回合各执行一次行动（技能 / 道具 / 逃跑 / 换宠）。双方都用技能时
  * 按速度快者先动（相同速度随机）。物理技能取 物攻 vs 物防，特殊技能取 特攻 vs 特防，伤害受
  * 克制倍率、STAB(本系加成) 与随机浮动影响。捕捉成功、逃跑成功或一方全灭即结束。</p>
+ *
+ * <p><b>天气与场地</b>：携带效果的变化类技能会开启对应天气/场地（见 {@link Weather}/
+ * {@link Terrain}，通过 {@link #getWeather()}/{@link #getTerrain()} 查询）。生效期间按各自
+ * 倍率调整招式威力；沙暴/冰雹每回合末对非免疫精灵扣血，青草场地每回合末回复场上精灵。</p>
  *
  * <p><b>使用方式</b>：通过 {@link BattleServices} 工厂获得实例；每回合在
  * {@link #isOngoing()} 为 {@code true} 时调用任意一个行动方法，行动结束后依据返回的日志行
@@ -40,6 +47,17 @@ public interface BattleService {
         FLED,
         /** 捕捉成功。 */
         CAUGHT
+    }
+
+    /**
+     * 一次待玩家抉择的「学习新技能」：获胜发放经验升级后，若精灵已掌握 4 个技能，
+     * 不再自动遗忘，而是挂起等待玩家选择遗忘哪一招或放弃学习（见
+     * {@link #decideLearn(int)}）。
+     *
+     * @param pokemon 受益精灵
+     * @param move    想学习的新技能
+     */
+    record LearnChoice(Pokemon pokemon, Move move) {
     }
 
     // ------------------------------------------------------------------
@@ -103,9 +121,39 @@ public interface BattleService {
     /** @return 战斗是否仍在进行中（{@code status == Status.ONGOING}） */
     boolean isOngoing();
 
+    /** @return 当前天气（无天气为 {@link Weather#NONE}），由携带天气效果的变化类技能开启 */
+    Weather getWeather();
+
+    /** @return 当前场地（无场地为 {@link Terrain#NONE}），由携带场地效果的变化类技能开启 */
+    Terrain getTerrain();
+
     /** @return 完整战斗日志（只读） */
     List<String> getLog();
 
     /** @return 玩家背包（便捷转发，等价于 {@code getPlayer().getBag()}） */
     Bag getBag();
+
+    // ------------------------------------------------------------------
+    // 获胜结算：学招抉择
+    // ------------------------------------------------------------------
+
+    /**
+     * 战斗胜利（{@link Status#PLAYER_WIN}）且发放经验升级后，尚未由玩家决定的
+     * 「学习新技能」请求，按产生顺序排列。
+     *
+     * <p>精灵有空格时新技能已被直接学会，不会进入本队列；仅当 4 招全满时才挂起等待
+     * 玩家决定。</p>
+     *
+     * @return 只读的待抉择列表；为空表示没有待处理的学招抉择
+     */
+    List<LearnChoice> pendingLearnChoices();
+
+    /**
+     * 处理队首一项待抉择学招（见 {@link #pendingLearnChoices()}）。
+     *
+     * @param forgetSlotIndex 要遗忘（替换）的技能槽下标，取值 0~3；传 -1 表示放弃学习
+     * @return 本次抉择产生的新日志行
+     * @throws IllegalStateException 当前没有待抉择的学招请求时
+     */
+    List<String> decideLearn(int forgetSlotIndex);
 }
