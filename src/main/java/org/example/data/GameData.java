@@ -110,7 +110,10 @@ public final class GameData {
         return List.copyOf(wildPool);
     }
 
-    /** 按物种 id 创建一只满血个体（等级任意）。技能槽不足 4 时用已有技能补满为上限。 */
+    /**
+     * 按物种 id 创建一只满血个体（等级任意）。技能按成长解锁：先给「出生即会」的技能，
+     * 再按等级升序补入该等级已经习得的技能（最多 4 招），因此低等级个体技能较少。
+     */
     public Optional<Pokemon> createPokemon(String speciesId, int level) {
         Species sp = species(speciesId);
         if (sp == null) {
@@ -119,7 +122,16 @@ public final class GameData {
         List<Move> pool = new ArrayList<>();
         for (String moveId : sp.getMoveIds()) {
             Move mv = moveMap.get(moveId);
-            if (mv != null) {
+            if (mv != null && !pool.contains(mv)) {
+                pool.add(mv);
+            }
+        }
+        for (Map.Entry<Integer, String> e : sp.getLearnSchedule()) {
+            if (e.getKey() > level || pool.size() >= Pokemon.MAX_MOVES) {
+                break;
+            }
+            Move mv = moveMap.get(e.getValue());
+            if (mv != null && !pool.contains(mv)) {
                 pool.add(mv);
             }
         }
@@ -200,16 +212,19 @@ public final class GameData {
                 new Stats(60, 80, 55, 85, 65, 125), 190, false,
                 null, 0, List.of("m_tackle", "m_quick", "m_thunder_shock", "m_volt_tackle"));
 
-        // ---- 无进化的独立精灵 ----
+        // ---- 无进化的独立精灵（出生只带 1~2 招，其余按等级习得，保证低等级技能较少） ----
         putSpecies("s_ice_fox", "冰晶狐", ElementType.ICE, null,
                 new Stats(40, 45, 40, 65, 45, 65), 120, true,
-                null, 0, List.of("m_tackle", "m_icy_wind", "m_ice_fang", "m_quick"));
+                null, 0, List.of("m_tackle", "m_icy_wind"),
+                "7:m_quick", "12:m_ice_fang");
         putSpecies("s_rock_tort", "岩甲龟", ElementType.ROCK, ElementType.GROUND,
                 new Stats(44, 48, 65, 50, 64, 43), 45, true,
-                null, 0, List.of("m_tackle", "m_rock_throw", "m_rock_slide", "m_mud_slap"));
+                null, 0, List.of("m_tackle", "m_rock_throw"),
+                "6:m_mud_slap", "11:m_rock_slide");
         putSpecies("s_wing_viper", "翼毒蛇", ElementType.POISON, ElementType.FLYING,
                 new Stats(55, 60, 44, 40, 54, 55), 90, true,
-                null, 0, List.of("m_tackle", "m_wing_attack", "m_cross_poison", "m_quick"));
+                null, 0, List.of("m_tackle", "m_wing_attack"),
+                "7:m_quick", "12:m_cross_poison");
     }
 
     private void registerBuiltinItems() {

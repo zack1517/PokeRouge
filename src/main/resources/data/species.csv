@@ -12,6 +12,6 @@ s_leaf_chick,叶芽雀,GRASS,FLYING,45,49,49,65,65,45,45,1,s_gale_owl,16,m_tackl
 s_gale_owl,苍翼枭,GRASS,FLYING,65,75,60,85,75,90,45,0,,0,m_tackle;m_vine_whip;m_razor_leaf;m_leaf_blade,
 s_spark_rat,电光鼠,ELECTRIC,,35,55,40,50,50,90,190,1,s_volt_mink,22,m_tackle;m_thunder_shock,8:m_quick;18:m_thunderbolt
 s_volt_mink,迅雷貂,ELECTRIC,,60,80,55,85,65,125,190,0,,0,m_tackle;m_quick;m_thunder_shock;m_volt_tackle,
-s_ice_fox,冰晶狐,ICE,,40,45,40,65,45,65,120,1,,0,m_tackle;m_icy_wind;m_ice_fang;m_quick,
-s_rock_tort,岩甲龟,ROCK,GROUND,44,48,65,50,64,43,45,1,,0,m_tackle;m_rock_throw;m_rock_slide;m_mud_slap,
-s_wing_viper,翼毒蛇,POISON,FLYING,55,60,44,40,54,55,90,1,,0,m_tackle;m_wing_attack;m_cross_poison;m_quick,
+s_ice_fox,冰晶狐,ICE,,40,45,40,65,45,65,120,1,,0,m_tackle;m_icy_wind,7:m_quick;12:m_ice_fang
+s_rock_tort,岩甲龟,ROCK,GROUND,44,48,65,50,64,43,45,1,,0,m_tackle;m_rock_throw,6:m_mud_slap;11:m_rock_slide
+s_wing_viper,翼毒蛇,POISON,FLYING,55,60,44,40,54,55,90,1,,0,m_tackle;m_wing_attack,7:m_quick;12:m_cross_poison

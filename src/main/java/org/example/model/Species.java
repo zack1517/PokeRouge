@@ -2,6 +2,7 @@ package org.example.model;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -95,6 +96,20 @@ public class Species {
     /** 指定等级是否会新习得技能（返回技能 id，无则为 null）。 */
     public String moveLearnedAt(int level) {
         return learnAt.get(level);
+    }
+
+    /**
+     * 按等级升序的习得技能表（用于批量按当前等级解锁技能）。
+     *
+     * @return 不可变的 “等级 → 技能 id” 升序快照
+     */
+    public List<Map.Entry<Integer, String>> getLearnSchedule() {
+        if (learnAt.isEmpty()) {
+            return List.of();
+        }
+        List<Map.Entry<Integer, String>> sorted = new ArrayList<>(learnAt.entrySet());
+        sorted.sort(Comparator.comparingInt(Map.Entry::getKey));
+        return Collections.unmodifiableList(sorted);
     }
 
     @Override
