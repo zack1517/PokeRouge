@@ -21,7 +21,7 @@ public class App extends Application {
         // 2. 主控制器负责会话与场景切换
         MainController controller = new MainController(stage);
         controller.bindStageEvents();
-        controller.showMainMenu();
+        controller.showStarterSelection();
 
         // 3. 显示窗口
         stage.show();

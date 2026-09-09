@@ -32,9 +32,6 @@ public class MainView {
 
         void onHealAll();
 
-        /** 打开新宝可梦系统的 JavaFX 验证页面。 */
-        void onOpenPokemonLab();
-
         void onExit();
     }
 
@@ -135,15 +132,11 @@ public class MainView {
         heal.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
         heal.setOnAction(e -> actions.onHealAll());
 
-        Button pokemonLab = new Button("新宝可梦系统");
-        pokemonLab.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
-        pokemonLab.setOnAction(e -> actions.onOpenPokemonLab());
-
         Button exit = new Button("退出游戏");
         exit.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
         exit.setOnAction(e -> actions.onExit());
 
-        HBox bar = new HBox(12, battle, heal, pokemonLab, exit);
+        HBox bar = new HBox(12, battle, heal, exit);
         bar.setAlignment(Pos.CENTER);
         bar.setPadding(new Insets(10, 0, 0, 0));
         return bar;

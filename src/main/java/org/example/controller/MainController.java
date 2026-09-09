@@ -4,7 +4,6 @@ import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.stage.Stage;
-import org.example.GameBootstrap;
 import org.example.GameSession;
 import org.example.battle.BattleService;
 import org.example.battle.BattleServices;
@@ -13,7 +12,8 @@ import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.util.LogUtil;
 import org.example.view.MainView;
-import org.example.view.PokemonLabView;
+import org.example.view.StarterSelectionView;
+import org.example.integration.PokemonBattleAdapter;
 
 import java.util.Optional;
 
@@ -26,13 +26,22 @@ import java.util.Optional;
 public class MainController {
 
     private final Stage stage;
-    private final GameSession session;
-    private final Player player;
+    private GameSession session;
+    private Player player;
 
     public MainController(Stage stage) {
         this.stage = stage;
-        this.session = new GameSession(GameBootstrap.createStarterPlayer());
-        this.player = this.session.getPlayer();
+    }
+
+    /** 游戏第一屏：使用新 pokemon 系统选择初始宝可梦。 */
+    public void showStarterSelection() {
+        stage.setScene(new StarterSelectionView(this::startWithStarter).createScene());
+    }
+
+    private void startWithStarter(String trainerName, org.example.pokemon.domain.Pokemon starter) {
+        this.player = PokemonBattleAdapter.createBattlePlayer(trainerName, starter);
+        this.session = new GameSession(player);
+        showMainMenu();
     }
 
     /** 显示主菜单（重新构建，反映最新的队伍/背包）。 */
@@ -53,11 +62,6 @@ public class MainController {
             public void onHealAll() {
                 session.healAll();
                 showMainMenu();
-            }
-
-            @Override
-            public void onOpenPokemonLab() {
-                stage.setScene(new PokemonLabView(MainController.this::showMainMenu).createScene());
             }
 
             @Override
@@ -85,7 +89,7 @@ public class MainController {
         }
         Pokemon lead = session.getActive();
         int level = BattleServices.wildLevelAround(lead.getLevel());
-        Optional<Pokemon> wild = BattleServices.randomWild(level);
+        Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level);
         if (wild.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的野生精灵（数据缺失）。");
             return;
