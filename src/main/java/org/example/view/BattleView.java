@@ -10,6 +10,7 @@ import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TextArea;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -20,7 +21,6 @@ import org.example.model.Pokemon;
 import org.example.model.Terrain;
 import org.example.model.Weather;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntConsumer;
 
@@ -187,7 +187,7 @@ public class BattleView {
 
     // ---- 底部按钮组 ----
 
-    /** 主菜单按钮：技能 / 背包 / 精灵 / 逃跑 / 退出。 */
+    /** 主菜单按钮：技能 / 背包 / 精灵 / 逃跑。 */
     public void showMainMenu(Runnable onSkills, Runnable onBag, boolean canSwitch, Runnable onSwitch) {
         actionBox.getChildren().clear();
         Button skillBtn = styledButton("技能");
@@ -199,34 +199,43 @@ public class BattleView {
         switchBtn.setOnAction(e -> onSwitch.run());
         Button runBtn = styledButton("逃跑");
         runBtn.setOnAction(e -> actions.onRun());
-        Button exitBtn = styledButton("退出战斗");
-        exitBtn.setOnAction(e -> actions.onExit());
 
-        HBox row = new HBox(10, skillBtn, bagBtn, switchBtn, runBtn, exitBtn);
+        HBox row = new HBox(10, skillBtn, bagBtn, switchBtn, runBtn);
         row.setAlignment(Pos.CENTER);
         actionBox.getChildren().add(row);
     }
 
-    /** 显示技能选择（最多 4 个）。 */
+    /** 显示技能选择（最多 4 个）：2×2 网格，技能名与 PP 同行，避免单行放不下被截断。 */
     public void showMoveMenu(List<MoveSlot> slots, Runnable onBack) {
         actionBox.getChildren().clear();
-        List<Button> buttons = new ArrayList<>();
-        for (MoveSlot slot : slots) {
-            String ppText = slot.exhausted() ? "PP 不足" : "PP " + slot.getPp() + "/" + slot.getMove().getMaxPp();
-            Button b = styledButton(slot.getMove().getName() + "\n"
-                    + slot.getMove().getType().getDisplayName() + " · " + moveBrief(slot.getMove()) + " · " + ppText);
-            b.setDisable(slot.exhausted());
-            b.setOnAction(e -> actions.onMoveSelected(slot));
-            buttons.add(b);
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(8);
+        grid.setAlignment(Pos.CENTER);
+        for (int i = 0; i < 4; i++) {
+            MoveSlot slot = i < slots.size() ? slots.get(i) : null;
+            Button b;
+            if (slot == null) {
+                b = styledButton("—");
+                b.setDisable(true);
+            } else {
+                String pp = slot.exhausted()
+                        ? "PP 不足"
+                        : "PP " + slot.getPp() + "/" + slot.getMove().getMaxPp();
+                b = styledButton(slot.getMove().getName() + "    " + pp + "\n"
+                        + slot.getMove().getType().getDisplayName()
+                        + " · " + moveBrief(slot.getMove()));
+                b.setDisable(slot.exhausted());
+                b.setOnAction(e -> actions.onMoveSelected(slot));
+            }
+            b.setMaxWidth(300);
+            grid.add(b, i % 2, i / 2);
         }
-        while (buttons.size() < 4) {
-            buttons.add(styledButton("—"));
-        }
-        HBox row = new HBox(10, buttons.toArray(new Button[0]));
-        row.setAlignment(Pos.CENTER);
         Button back = styledButton("返回");
         back.setOnAction(e -> onBack.run());
-        actionBox.getChildren().addAll(row, back);
+        VBox v = new VBox(8, grid, back);
+        v.setAlignment(Pos.CENTER);
+        actionBox.getChildren().add(v);
     }
 
     /** 背包中的一个可点击道具条目。 */
@@ -290,19 +299,24 @@ public class BattleView {
         title.setMaxWidth(600);
         title.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px;"
                 + "-fx-font-weight: bold;");
-        HBox row = new HBox(10);
-        row.setAlignment(Pos.CENTER);
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(8);
+        grid.setAlignment(Pos.CENTER);
         for (int i = 0; i < slots.size(); i++) {
             MoveSlot slot = slots.get(i);
             int index = i;
-            Button b = styledButton(slot.getMove().getName() + "\n"
+            String pp = slot.exhausted()
+                    ? "PP 不足"
+                    : "PP " + slot.getPp() + "/" + slot.getMove().getMaxPp();
+            Button b = styledButton(slot.getMove().getName() + "    " + pp + "\n"
                     + slot.getMove().getType().getDisplayName() + " · " + moveBrief(slot.getMove()));
             b.setOnAction(e -> onForget.accept(index));
-            row.getChildren().add(b);
+            grid.add(b, i % 2, i / 2);
         }
         Button decline = styledButton("放弃学习");
         decline.setOnAction(e -> onDecline.run());
-        VBox v = new VBox(8, title, row, decline);
+        VBox v = new VBox(8, title, grid, decline);
         v.setAlignment(Pos.CENTER);
         actionBox.getChildren().add(v);
     }

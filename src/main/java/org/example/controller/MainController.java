@@ -84,7 +84,11 @@ public class MainController {
             infoAlert("没有能战斗的精灵", "队伍已全部倒下，先去治疗队伍吧。");
             return;
         }
-        player.leadWithFirstHealthy();
+        // 尊重玩家在主页设好的先发精灵；仅当当前出战精灵已倒下（或被清空）时才重置为首只健康精灵
+        Pokemon active = player.getActive();
+        if (active == null || active.isFainted()) {
+            player.leadWithFirstHealthy();
+        }
         Pokemon lead = player.getActive();
         int level = BattleServices.wildLevelAround(lead.getLevel());
         Optional<Pokemon> wild = BattleServices.randomWild(level);
