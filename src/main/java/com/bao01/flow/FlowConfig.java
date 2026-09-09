@@ -1,7 +1,5 @@
 package com.bao01.flow;
 
-import com.bao01.config.Items;
-
 /**
  * 流程与经济的全局数值常量（数值平衡统一在此调整）。
  *
@@ -167,19 +165,19 @@ public final class FlowConfig {
         return Math.min(3 + (Math.max(1, segmentNo) - 1) / 2, 6);
     }
 
-    /** 商店售价（数值 [待配置]）；未知道具返回 -1（不出售）。 */
-    public static int itemPrice(String itemName) {
-        if (itemName == null) {
+    /**
+     * 商店售价（数值 [待配置]），键为 {@code GameData} 中的道具 id；
+     * 未知道具 / 不出售返回 -1。
+     */
+    public static int itemPrice(String itemId) {
+        if (itemId == null) {
             return -1;
         }
-        if (itemName.equals(Items.POTION.getName())) {
+        if (itemId.equals("i_potion")) {
             return 150;
         }
-        if (itemName.equals(Items.SUPER_POTION.getName())) {
+        if (itemId.equals("i_super_potion")) {
             return 350;
-        }
-        if (itemName.equals(Items.FULL_RESTORE.getName())) {
-            return 800;
         }
         return -1;
     }

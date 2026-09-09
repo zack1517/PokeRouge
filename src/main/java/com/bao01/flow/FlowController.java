@@ -1,11 +1,10 @@
 package com.bao01.flow;
 
-import com.bao01.config.SamplePokemon;
-import com.bao01.config.Items;
-import com.bao01.model.Bag;
-import com.bao01.model.Battle;
-import com.bao01.model.Pokemon;
-import com.bao01.model.Team;
+import org.example.data.GameData;
+import org.example.model.Item;
+import org.example.model.ItemCategory;
+import org.example.model.Player;
+import org.example.model.Pokemon;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,11 +25,11 @@ import java.util.List;
  * </ol>
  *
  * <p>战斗边界：本类不直接操作战斗内部状态，一律经 {@link BattleAdapter} 发起，
- * 结算由 UI 在对局结束后调用 {@link #settleFight(NodeType, Battle.Outcome)}。
+ * 结算由 UI / 对战模块在对局结束后调用 {@link #settleFight(NodeType, FightResult)}。
  */
 public final class FlowController {
 
-    private final Team player;
+    private final Player player;
     private final RandomSource rnd;
     private final BattleAdapter battle;
     private final ActionPoints ap;
@@ -64,7 +63,7 @@ public final class FlowController {
     // 构造 / 开局 / 恢复
     // ------------------------------------------------------------------
 
-    private FlowController(Team starter, RandomSource rnd, BattleAdapter battle) {
+    private FlowController(Player starter, RandomSource rnd, BattleAdapter battle) {
         this.player = starter;
         this.rnd = rnd;
         this.battle = battle;
@@ -75,7 +74,7 @@ public final class FlowController {
     }
 
     /** 开局：携带初始队伍进入第 1 段，重置 AP，生成第 1 段可选节点池。 */
-    public static FlowController startRun(Team starter, RandomSource rnd, BattleAdapter battle) {
+    public static FlowController startRun(Player starter, RandomSource rnd, BattleAdapter battle) {
         if (starter == null) {
             throw new IllegalArgumentException("初始队伍不能为 null");
         }
@@ -85,16 +84,19 @@ public final class FlowController {
     }
 
     /** 开局（保留 cfg 形参，与《接口文档》3.4 签名一致；数值均走静态 {@code FlowConfig}）。 */
-    public static FlowController startRun(Team starter, FlowConfig cfg, RandomSource rnd, BattleAdapter battle) {
+    public static FlowController startRun(Player starter, FlowConfig cfg, RandomSource rnd, BattleAdapter battle) {
         return startRun(starter, rnd, battle);
     }
 
     /** 从 Run 快照恢复（对应 §7 扩展点；过程态战斗不随快照保存）。 */
-    public static FlowController restored(Team team, RunSummary snapshot, BattleAdapter battle) {
+    public static FlowController restored(Player player, RunSummary snapshot, BattleAdapter battle) {
         if (snapshot == null) {
             throw new IllegalArgumentException("RunSummary 快照不能为 null");
         }
-        FlowController c = new FlowController(team, RandomSource.system(), battle);
+        if (player == null) {
+            throw new IllegalArgumentException("玩家队伍不能为 null");
+        }
+        FlowController c = new FlowController(player, RandomSource.system(), battle);
         c.ap.resetForSegment(snapshot.segmentNo());
         c.gold = snapshot.gold();
         c.story = snapshot.story();
@@ -179,7 +181,7 @@ public final class FlowController {
     /**
      * 进入可选节点（下标对应 {@link #options()}）：扣 AP → 执行该节点逻辑。
      * 战斗节点在此扣除 AP 并经 {@link BattleAdapter} 开局，胜负由 UI 对局结束后调
-     * {@link #settleFight(NodeType, Battle.Outcome)} 结算。
+     * {@link #settleFight(NodeType, FightResult)} 结算。
      */
     public List<String> enter(int optionIndex) {
         List<String> log = new ArrayList<>();
@@ -261,12 +263,13 @@ public final class FlowController {
         if (type == NodeType.LEGEND && !story.legendaryEncountered()) {
             story = story.withLegendaryEncountered();
         }
-        Team foe = buildFoeTeam(type);
-        Battle.Opponent kind = (type == NodeType.WILD || type == NodeType.LEGEND)
-                ? Battle.Opponent.WILD : Battle.Opponent.TRAINER;
+        List<Pokemon> foes = buildFoeTeam(type);
+        boolean canFlee = type == NodeType.WILD || type == NodeType.LEGEND;
+        Pokemon lead = foes.isEmpty() ? null : foes.get(0);
         List<String> log = new ArrayList<>();
-        log.add("与「" + foe.active().getName() + "」(Lv." + foe.active().getLevel() + ") 的对战开始！");
-        log.addAll(battle.startBattle(player, foe, kind));
+        log.add("与「" + (lead == null ? "?" : lead.getName()) + "」(Lv."
+                + (lead == null ? "?" : lead.getLevel()) + ") 的对战开始！");
+        log.addAll(battle.startBattle(player, foes, canFlee));
         return log;
     }
 
@@ -282,9 +285,7 @@ public final class FlowController {
             return log;
         }
         gold -= FlowConfig.hospitalCost();
-        for (Pokemon p : player.members()) {
-            p.healFull();
-        }
+        player.healParty();
         log.add("医院对全体成员进行了治疗，队伍全员恢复到满状态。");
         return log;
     }
@@ -306,35 +307,40 @@ public final class FlowController {
             log.add("金币不足：需要 " + offer.price() + "，当前 " + gold + "。");
             return log;
         }
-        com.bao01.model.Item item = Items.byName(offer.itemName());
+        Item item = GameData.instance().item(offer.itemId());
         if (item == null) {
-            log.add("（未注册道具：" + offer.itemName() + "）");
+            log.add("（未注册道具：" + offer.itemId() + "）");
             return log;
         }
         gold -= offer.price();
-        player.bag().give(item, 1);
-        log.add("购买了「" + offer.itemName() + "」×1，花费 " + offer.price()
+        player.getBag().add(item, 1);
+        log.add("购买了「" + item.getName() + "」×1，花费 " + offer.price()
                 + " 金币，剩余 " + gold + "。");
         return log;
     }
 
-    /** 生成当前商店商品（从恢复类道具池随机取 {@code FlowConfig#shopSize} 件）。 */
+    /** 生成当前商店商品（从数据源 HEAL 道具池随机取 {@code FlowConfig#shopSize} 件）。 */
     private List<ShopOffer> generateShopStock() {
+        List<Item> healItems = new ArrayList<>();
+        for (Item it : GameData.instance().allItems()) {
+            if (it.getCategory() == ItemCategory.HEAL) {
+                healItems.add(it);
+            }
+        }
+        // 未定价（售价 -1）的道具不出售。
+        healItems.removeIf(it -> FlowConfig.itemPrice(it.getId()) < 0);
+        if (healItems.isEmpty()) {
+            return List.of();
+        }
+        Collections.shuffle(healItems, new java.util.Random(rnd.nextInt(Integer.MAX_VALUE)));
         List<ShopOffer> stock = new ArrayList<>();
-        List<ItemRef> pool = new ArrayList<>(List.of(
-                new ItemRef(Items.POTION.getName(), "回复 50 HP"),
-                new ItemRef(Items.SUPER_POTION.getName(), "回复 120 HP"),
-                new ItemRef(Items.FULL_RESTORE.getName(), "直接回满")));
-        Collections.shuffle(pool, new java.util.Random(rnd.nextInt(Integer.MAX_VALUE)));
         int size = FlowConfig.shopSize(segmentNo());
-        for (int i = 0; i < Math.min(size, pool.size()); i++) {
-            ItemRef r = pool.get(i);
-            stock.add(new ShopOffer(r.name, FlowConfig.itemPrice(r.name), r.desc));
+        for (int i = 0; i < Math.min(size, healItems.size()); i++) {
+            Item it = healItems.get(i);
+            stock.add(new ShopOffer(it.getId(), FlowConfig.itemPrice(it.getId()),
+                    "回复 " + (int) it.getEffect() + " HP"));
         }
         return stock;
-    }
-
-    private record ItemRef(String name, String desc) {
     }
 
     // ------------------------------------------------------------------
@@ -342,7 +348,7 @@ public final class FlowController {
     // ------------------------------------------------------------------
 
     /** 构造某节点的敌方队伍（等级 = FlowConfig.enemyLevel(segmentNo) 附近，终局更强）。 */
-    public Team buildFoeTeam(NodeType type) {
+    public List<Pokemon> buildFoeTeam(NodeType type) {
         int base = FlowConfig.enemyLevel(segmentNo());
         int count;
         int boost;
@@ -358,16 +364,22 @@ public final class FlowController {
             case INVASION:     count = 4; boost = 7; break;
             default:           count = 1; boost = 0;
         }
-        List<String> species = new ArrayList<>(SamplePokemon.speciesNames());
+        List<String> species = new ArrayList<>();
+        for (org.example.model.Species sp : GameData.instance().allSpecies()) {
+            species.add(sp.getId());
+        }
         Collections.sort(species);
+        if (species.isEmpty()) {
+            return List.of();
+        }
         int level = base + boost;
-        List<Pokemon> mons = new ArrayList<>();
+        List<Pokemon> foes = new ArrayList<>();
         int start = rnd.nextInt(species.size());
         for (int i = 0; i < count; i++) {
-            String name = species.get((start + i) % species.size());
-            mons.add(SamplePokemon.create(name, level));
+            String id = species.get((start + i) % species.size());
+            GameData.instance().createPokemon(id, level).ifPresent(foes::add);
         }
-        return new Team(mons, new Bag());
+        return foes;
     }
 
     // ------------------------------------------------------------------
@@ -378,7 +390,7 @@ public final class FlowController {
      * 战斗结束后由 UI 调用：按节点类型执行奖惩、濒死处理、自回血、
      * 剧情线推进、必然节点触发与结局判定。
      */
-    public List<String> settleFight(NodeType fought, Battle.Outcome outcome) {
+    public List<String> settleFight(NodeType fought, FightResult outcome) {
         List<String> log = new ArrayList<>();
         if (pendingFight == null) {
             log.add("（当前没有待结算的战斗。）");
@@ -390,8 +402,8 @@ public final class FlowController {
             return log;
         }
         pendingFight = null;
-        boolean won = outcome == Battle.Outcome.PLAYER_WON;
-        boolean fled = outcome == Battle.Outcome.PLAYER_FLED;
+        boolean won = outcome == FightResult.PLAYER_WON;
+        boolean fled = outcome == FightResult.PLAYER_FLED;
 
         log.addAll(settleByType(fought, won, fled));
         if (ending != null) {
@@ -455,8 +467,11 @@ public final class FlowController {
                 gold = addClamp(gold, FlowConfig.rocketReward());
                 log.add("击败火箭队，获得 " + FlowConfig.rocketReward() + " 金币！");
                 if (rnd.chance(FlowConfig.rocketItemDropChance())) {
-                    player.bag().give(Items.SUPER_POTION, 1);
-                    log.add("火箭队掉落了「好伤药」×1。");
+                    Item drop = GameData.instance().item("i_super_potion");
+                    if (drop != null) {
+                        player.getBag().add(drop, 1);
+                        log.add("火箭队掉落了「好伤药」×1。");
+                    }
                 }
             } else if (t == NodeType.WILD) {
                 log.add("野生宝可梦被击败（可尝试捕获或离开）。");
@@ -582,14 +597,14 @@ public final class FlowController {
     private List<String> healOneFifth() {
         List<String> log = new ArrayList<>();
         int healed = 0;
-        for (Pokemon p : player.members()) {
+        for (Pokemon p : player.getParty()) {
             if (p.isFainted()) {
                 continue;
             }
-            int amount = Math.max(1, p.maxHp() / 5);
-            int before = p.currentHp();
+            int amount = Math.max(1, p.getMaxHp() / 5);
+            int before = p.getCurrentHp();
             p.heal(amount);
-            if (p.currentHp() > before) {
+            if (p.getCurrentHp() > before) {
                 healed++;
             }
         }

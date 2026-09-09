@@ -1,10 +1,10 @@
 package com.bao01.save;
 
-import com.bao01.model.Battle;
-import com.bao01.model.Item;
-import com.bao01.model.Pokemon;
-import com.bao01.model.Stat;
-import com.bao01.model.Team;
+import org.example.data.GameData;
+import org.example.model.Item;
+import org.example.model.ItemStack;
+import org.example.model.Player;
+import org.example.model.Pokemon;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,14 +13,18 @@ import java.util.Objects;
 /**
  * 存档数据模型（纯数据，不含 IO）。
  *
- * <p>所有类型都设计为不可变 record，方便序列化、校验与文档描述。
- * 对战内可变的量（当前 HP、能力等级、出战位、背包数量、天气等）
- * 都会被快照保存；等级/努力值/招式等由「物种注册表」重建。
+ * <p>运行在 {@code dev} 的 {@code org.example} 对象模型之上：世界存档 = 一名玩家的
+ * 队伍（每只精灵：物种 id / 等级 / 当前 HP）+ 背包（道具 id / 数量）。所有类型为
+ * 不可变 record，方便序列化与校验。等级、技能等由数据注册表
+ * （{@link org.example.data.GameData}）按物种重建。</p>
  */
 public final class SaveData {
 
     /** 存档格式版本号。 */
     public static final int FORMAT_VERSION = 1;
+
+    /** 恢复玩家时使用的默认训练家名。 */
+    public static final String DEFAULT_PLAYER_NAME = "训练家";
 
     private SaveData() {
     }
@@ -28,200 +32,144 @@ public final class SaveData {
     /**
      * 单只宝可梦快照。
      *
-     * @param species 物种名（由 {@code SamplePokemon} 注册表按名重建）
-     * @param level   等级
-     * @param hp      当前 HP（0 = 濒死）
-     * @param stages  六项能力等级，顺序固定为 {@code Stat.values()}
+     * @param speciesId 物种 id（由 {@code GameData} 注册表按 id 重建）
+     * @param level     等级
+     * @param currentHp 当前 HP（0 = 濒死）
      */
-    public record PokemonData(String species, int level, int hp, int[] stages) {
+    public record PartyEntry(String speciesId, int level, int currentHp) {
 
-        public PokemonData {
-            Objects.requireNonNull(species, "species");
+        public PartyEntry {
+            Objects.requireNonNull(speciesId, "speciesId");
+            if (speciesId.isBlank()) {
+                throw new IllegalArgumentException("物种 id 不能为空");
+            }
             if (level <= 0) {
                 throw new IllegalArgumentException("非法等级: " + level);
             }
-            if (hp < 0) {
-                throw new IllegalArgumentException("非法 HP: " + hp);
-            }
-            int n = Stat.values().length;
-            stages = stages == null ? new int[n] : stages.clone();
-            if (stages.length != n) {
-                throw new IllegalArgumentException("能力等级数量必须是 " + n);
+            if (currentHp < 0) {
+                throw new IllegalArgumentException("非法 HP: " + currentHp);
             }
         }
 
-        public int[] stages() {
-            return stages.clone();
+        /** 从运行时精灵采样。 */
+        public static PartyEntry capture(Pokemon p) {
+            return new PartyEntry(p.getSpecies().getId(), p.getLevel(),
+                    Math.max(0, p.getCurrentHp()));
         }
 
-        /** 从运行时宝可梦采样。 */
-        public static PokemonData capture(Pokemon p) {
-            int[] stages = new int[Stat.values().length];
-            for (Stat s : Stat.values()) {
-                stages[s.ordinal()] = p.stageOf(s);
-            }
-            return new PokemonData(p.getName(), p.getLevel(),
-                    Math.max(0, p.currentHp()), stages);
-        }
-
-        /** 按物种注册表重建一只宝可梦并还原 HP 与能力等级；未知物种返回 null。 */
+        /** 按物种注册表重建一只精灵并还原当前 HP；未知物种返回 null。 */
         public Pokemon restore() {
-            Pokemon p = com.bao01.config.SamplePokemon.create(species, level);
-            if (p == null) {
-                return null;
-            }
-            int cur = Math.min(hp, p.maxHp());
-            p.takeDamage(p.maxHp() - cur);
-            for (Stat s : Stat.values()) {
-                int stage = stages[s.ordinal()];
-                if (stage != 0) {
-                    p.changeStage(s, stage);
+            return GameData.instance().createPokemon(speciesId, level).map(p -> {
+                int cur = Math.min(currentHp, p.getMaxHp());
+                if (cur < p.getMaxHp()) {
+                    p.takeDamage(p.getMaxHp() - cur);
                 }
-            }
-            return p;
+                return p;
+            }).orElse(null);
         }
 
         /** 面向人类的状态摘要。 */
         public String describe() {
-            return species + " Lv." + level + " HP " + hp + "/?";
+            return speciesId + " Lv." + level + " HP " + currentHp + "/?";
         }
     }
 
-    /** 背包中某道具及其数量。 */
-    public record ItemData(String itemName, int count) {
+    /** 背包中某道具堆叠。 */
+    public record ItemEntry(String itemId, int count) {
 
-        public ItemData {
-            Objects.requireNonNull(itemName, "itemName");
+        public ItemEntry {
+            Objects.requireNonNull(itemId, "itemId");
+            if (itemId.isBlank()) {
+                throw new IllegalArgumentException("道具 id 不能为空");
+            }
             if (count <= 0) {
                 throw new IllegalArgumentException("非法道具数量: " + count);
             }
         }
 
-        public static ItemData capture(Item item, int count) {
-            return new ItemData(item.getName(), count);
+        public static ItemEntry capture(ItemStack stack) {
+            return new ItemEntry(stack.getItem().getId(), stack.getCount());
         }
 
-        /** 解析回配置中心实例（保持 Bag 以实例为键的语义）；未知道具返回 null。 */
+        /** 解析回 {@code GameData} 注册表实例；未知 id 返回 null。 */
         public Item restore() {
-            return com.bao01.config.Items.byName(itemName);
+            return GameData.instance().item(itemId);
         }
     }
 
     /**
-     * 一支队伍快照：成员（含出场顺序与当前 HP/等级）+ 出战位 + 背包。
+     * 玩家快照：队伍（含出场顺序与当前 HP/等级）+ 出战位 + 背包。
      */
-    public record TeamData(List<PokemonData> members, int activeIndex, List<ItemData> bag) {
+    public record PlayerData(List<PartyEntry> party, int activeIndex, List<ItemEntry> bag) {
 
-        public TeamData {
-            members = members == null ? List.of() : List.copyOf(members);
+        public PlayerData {
+            party = party == null ? List.of() : List.copyOf(party);
             bag = bag == null ? List.of() : List.copyOf(bag);
+            if (activeIndex < 0) {
+                throw new IllegalArgumentException("非法出战位: " + activeIndex);
+            }
         }
 
-        public static TeamData capture(Team team) {
-            List<PokemonData> ms = new ArrayList<>();
-            for (Pokemon p : team.members()) {
-                ms.add(PokemonData.capture(p));
+        public static PlayerData capture(Player player) {
+            List<PartyEntry> ms = new ArrayList<>();
+            for (Pokemon p : player.getParty()) {
+                ms.add(PartyEntry.capture(p));
             }
-            List<ItemData> bagItems = new ArrayList<>();
-            for (var e : team.bag().items().entrySet()) {
-                if (e.getValue() > 0) {
-                    bagItems.add(ItemData.capture(e.getKey(), e.getValue()));
+            List<ItemEntry> bagItems = new ArrayList<>();
+            for (ItemStack stack : player.getBag().getAll()) {
+                if (!stack.isEmpty()) {
+                    bagItems.add(ItemEntry.capture(stack));
                 }
             }
-            return new TeamData(ms, team.activeIndex(), bagItems);
+            return new PlayerData(ms, player.getActiveIndex(), bagItems);
         }
 
         /**
-         * 重建队伍。个别成员可能因未知物种而丢失；
-         * 出战位若指向濒死或越界则回退到第一只存活成员。
+         * 重建玩家。个别成员可能因未知物种而丢失；出战位若指向濒死或越界则回退到
+         * 第一只存活成员。
          */
-        public Team restore() {
+        public Player restore() {
+            return restore(DEFAULT_PLAYER_NAME);
+        }
+
+        public Player restore(String playerName) {
+            String name = playerName == null || playerName.isBlank()
+                    ? DEFAULT_PLAYER_NAME : playerName;
+            Player player = new Player(name);
             List<Pokemon> rebuilt = new ArrayList<>();
-            for (PokemonData pd : members) {
-                Pokemon p = pd == null ? null : pd.restore();
+            for (PartyEntry pe : party) {
+                Pokemon p = pe == null ? null : pe.restore();
                 if (p != null) {
                     rebuilt.add(p);
+                    player.addToParty(p);
                 }
             }
             if (rebuilt.isEmpty()) {
                 throw new SaveException("存档中没有可恢复的宝可梦");
             }
-            com.bao01.model.Bag bagObj = new com.bao01.model.Bag();
-            for (ItemData id : bag) {
-                if (id != null && id.count() > 0) {
-                    Item item = id.restore();
+            for (ItemEntry ie : bag) {
+                if (ie != null && ie.count() > 0) {
+                    Item item = ie.restore();
                     if (item != null) {
-                        bagObj.give(item, id.count());
+                        player.getBag().add(item, ie.count());
                     }
                 }
             }
-            Team team = new Team(rebuilt, bagObj);
-            if (activeIndex >= 0 && activeIndex < team.size()
-                    && team.isAlive(activeIndex)) {
-                try {
-                    team.setActiveIndex(activeIndex);
-                } catch (IllegalArgumentException ignored) {
-                    // 回退到默认首只
-                }
+            if (activeIndex >= 0 && activeIndex < rebuilt.size()
+                    && !rebuilt.get(activeIndex).isFainted()) {
+                player.setActive(activeIndex);
+            } else {
+                player.leadWithFirstHealthy();
             }
-            return team;
+            return player;
         }
     }
 
-    /**
-     * 一场进行中对局的完整快照（玩家队伍单独存放于 {@link World}）。
-     */
-    public record BattleData(String opponent, int roundNo, String weather, int weatherTurnsLeft,
-                             boolean playerPendingSendout, boolean playerKoSwitchPending,
-                             TeamData foeTeam, List<String> history) {
-
-        public BattleData {
-            opponent = Objects.requireNonNull(opponent, "opponent");
-            weather = Objects.requireNonNull(weather, "weather");
-            foeTeam = Objects.requireNonNull(foeTeam, "foeTeam");
-            history = history == null ? List.of() : List.copyOf(history);
-        }
-
-        public static BattleData capture(Battle b) {
-            return new BattleData(
-                    b.opponent().name(),
-                    b.roundNo(),
-                    b.weather().name(),
-                    b.weatherTurnsLeft(),
-                    b.isPlayerPendingSendout(),
-                    b.isPlayerKoSwitchPending(),
-                    TeamData.capture(b.foe()),
-                    b.history());
-        }
-
-        public Battle.Opponent opponentEnum() {
-            try {
-                return Battle.Opponent.valueOf(opponent);
-            } catch (IllegalArgumentException e) {
-                throw new SaveException("未知对战对象类型: " + opponent);
-            }
-        }
-
-        public com.bao01.model.Weather weatherEnum() {
-            try {
-                return com.bao01.model.Weather.valueOf(weather);
-            } catch (IllegalArgumentException e) {
-                throw new SaveException("未知天气: " + weather);
-            }
-        }
-    }
-
-    /**
-     * 顶层世界存档：玩家队伍（含背包），若对局尚未结束则附带战斗快照。
-     */
-    public record World(int version, TeamData playerTeam, BattleData battle) {
+    /** 顶层世界存档：一名玩家的队伍 + 背包快照。 */
+    public record World(int version, PlayerData player) {
 
         public World {
-            playerTeam = Objects.requireNonNull(playerTeam, "playerTeam");
-        }
-
-        public boolean hasBattle() {
-            return battle != null;
+            player = Objects.requireNonNull(player, "player");
         }
     }
 }
