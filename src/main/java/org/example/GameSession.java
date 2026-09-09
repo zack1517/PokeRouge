@@ -86,10 +86,6 @@ public class GameSession {
         player.setActive(index);
     }
 
-    public void healAll() {
-        player.healParty();
-    }
-
     public boolean hasHealthyPokemon() {
         return player.hasHealthyPokemon();
     }

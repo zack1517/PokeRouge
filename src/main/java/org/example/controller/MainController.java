@@ -86,11 +86,6 @@ public class MainController {
     public void showMainMenu() {
         MainView view = new MainView(player, new MainView.Actions() {
             @Override
-            public void onStartBattle() {
-                startRandomBattle();
-            }
-
-            @Override
             public void onStartRogueFloor() {
                 startRogueFloor();
             }
@@ -98,12 +93,6 @@ public class MainController {
             @Override
             public void onSetActive(int index) {
                 session.setActive(index);
-                showMainMenu();
-            }
-
-            @Override
-            public void onHealAll() {
-                session.healAll();
                 showMainMenu();
             }
 
@@ -117,34 +106,6 @@ public class MainController {
             }
         }, session.mapBackgroundPath(), session.getSegment());
         stage.setScene(view.createScene());
-    }
-
-    /** 进入一场新的随机遭遇战。 */
-    public void startRandomBattle() {
-        if (!session.hasHealthyPokemon()) {
-            infoAlert("没有能战斗的精灵", "队伍已全部倒下，先去治疗队伍吧。");
-            return;
-        }
-        // 尊重玩家在主页设好的先发精灵；仅当当前出战精灵已倒下（或被清空）时才重置为首只健康精灵
-        Pokemon active = session.getActive();
-        if (active == null || active.isFainted()) {
-            session.leadWithFirstHealthy();
-        }
-        Pokemon lead = session.getActive();
-        int level = WildEncounter.levelAround(lead.getLevel());
-        Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level);
-        if (wild.isEmpty()) {
-            infoAlert("数据异常", "没有可遭遇的野生精灵（数据缺失）。");
-            return;
-        }
-        try {
-            BattleService engine = newWildBattle(player, wild.get());
-            BattleController battle = new BattleController(engine, this::showMainMenu, session.getSegment());
-            stage.setScene(battle.createScene());
-        } catch (IllegalArgumentException ex) {
-            LogUtil.info("无法开始战斗: " + ex.getMessage());
-            infoAlert("无法开始战斗", ex.getMessage());
-        }
     }
 
     // ------------------------------------------------------------------
