@@ -13,6 +13,7 @@ import org.example.model.Pokemon;
 import org.example.util.LogUtil;
 import org.example.view.MainView;
 import org.example.view.StarterSelectionView;
+import org.example.view.StartView;
 import org.example.integration.PokemonBattleAdapter;
 
 import java.util.Optional;
@@ -33,7 +34,12 @@ public class MainController {
         this.stage = stage;
     }
 
-    /** 游戏第一屏：使用新 pokemon 系统选择初始宝可梦。 */
+    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；其余三项为预留入口）。 */
+    public void showStartScreen() {
+        stage.setScene(new StartView(this::showStarterSelection).createScene());
+    }
+
+    /** 初始宝可梦选择页：使用新 pokemon 系统选择初始宝可梦（由启动页「开始游戏」进入）。 */
     public void showStarterSelection() {
         stage.setScene(new StarterSelectionView(this::startWithStarter).createScene());
     }
