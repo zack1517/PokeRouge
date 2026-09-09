@@ -1,6 +1,7 @@
 package org.example.integration;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,9 +34,15 @@ public final class PokemonBattleAdapter {
     private PokemonBattleAdapter() {
     }
 
-    /** 战斗模块所需的数据端口：由数据模块实现，在此组装层注入给战斗引擎。 */
+    /**
+     * 战斗模块所需的数据端口：优先读取新宝可梦库（30 种族 / 36 技能，含异常状态与完整学招表），
+     * 查不到时回退到战斗模块内建数据（{@code s_*} / {@code m_*}）。
+     *
+     * <p>战斗引擎与成长模块共用该端口：到级学招（{@link GrowthService}）与进化查询
+     * 均拿到宝可梦库的完整数据，避免走战斗模块数据中心对宝可梦 CSV 的劣化解析。</p>
+     */
     public static BattleDataPort battleDataPort() {
-        return new GameDataBattleDataPort();
+        return new PokemonLibraryDataPort();
     }
 
     /**
@@ -81,7 +88,7 @@ public final class PokemonBattleAdapter {
     /** 使用新宝可梦库生成一只可交给 battle 模块的野生精灵。 */
     public static Optional<Pokemon> createWildPokemon(int aroundLevel) {
         PokemonService source = new PokemonServiceImpl();
-        List<org.example.pokemon.domain.Species> choices = source.getInitialPool();
+        List<org.example.pokemon.domain.Species> choices = wildCandidates(aroundLevel);
         if (choices.isEmpty()) {
             return Optional.empty();
         }
@@ -89,7 +96,31 @@ public final class PokemonBattleAdapter {
         return Optional.of(toBattlePokemon(source.createWildPokemon(species.getId(), aroundLevel)));
     }
 
-    private static Pokemon toBattlePokemon(org.example.pokemon.domain.Pokemon source) {
+    /**
+     * 按遭遇等级从宝可梦库全部种族中筛选候选。
+     *
+     * <p>种族值总和（BST）越低出现越早：≤350 的基础形态任意等级可遇；
+     * 350<BST≤500 的二段/中等形态需等级≥12；BST>500 的最终形态/强力宝可梦需等级≥20，
+     * 保证高强度宝可梦在游戏后期才出现。</p>
+     *
+     * @param aroundLevel 目标遭遇等级
+     * @return 符合条件的种族列表（数据缺失时为空列表）
+     */
+    private static List<org.example.pokemon.domain.Species> wildCandidates(int aroundLevel) {
+        List<org.example.pokemon.domain.Species> all =
+                org.example.pokemon.infrastructure.GameData.instance().getAllSpecies();
+        List<org.example.pokemon.domain.Species> candidates = new ArrayList<>();
+        for (org.example.pokemon.domain.Species species : all) {
+            int bst = species.getBaseStats().getTotal();
+            int minLevel = bst <= 350 ? 1 : (bst <= 500 ? 12 : 20);
+            if (aroundLevel >= minLevel) {
+                candidates.add(species);
+            }
+        }
+        return candidates;
+    }
+
+    static Pokemon toBattlePokemon(org.example.pokemon.domain.Pokemon source) {
         org.example.pokemon.domain.Species origin = source.getSpecies();
         List<Move> knownMoves = new ArrayList<>();
         for (LearnableMove learnable : origin.getLearnableMoves()) {
@@ -103,18 +134,30 @@ public final class PokemonBattleAdapter {
         return Pokemon.create(toBattleSpecies(origin), source.getLevel(), knownMoves);
     }
 
-    private static Species toBattleSpecies(org.example.pokemon.domain.Species source) {
+    static Species toBattleSpecies(org.example.pokemon.domain.Species source) {
         List<org.example.pokemon.domain.ElementType> types = source.getTypes();
         org.example.pokemon.domain.BaseStats base = source.getBaseStats();
-        Map<Integer, String> learnSchedule = source.getLearnSchedule().stream()
-                .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a));
-        return new Species(source.getId(), source.getName(), ElementType.valueOf(types.get(0).name()),
+        Map<Integer, String> learnSchedule = new LinkedHashMap<>();
+        List<Map.Entry<Integer, String>> extras = new ArrayList<>();
+        for (Map.Entry<Integer, String> entry : source.getLearnSchedule()) {
+            if (learnSchedule.putIfAbsent(entry.getKey(), entry.getValue()) != null) {
+                // 同等级多技能（如皮卡丘 1 级同时学会电击与叫声）：等级表只保留首个，
+                // 其余追加为额外可学条目，保证学招数据不丢失。
+                extras.add(entry);
+            }
+        }
+        Species battleSpecies = new Species(source.getId(), source.getName(),
+                ElementType.valueOf(types.get(0).name()),
                 types.size() > 1 ? ElementType.valueOf(types.get(1).name()) : null,
                 new Stats(base.getHp(), base.getAttack(), base.getDefense(), base.getSpAttack(), base.getSpDefense(), base.getSpeed()),
                 (int) source.getCaptureRate(), source.getMoveIds(), source.getEvolvesToId(), source.getEvolveLevel(), learnSchedule);
+        for (Map.Entry<Integer, String> extra : extras) {
+            battleSpecies.addLearnableMove(new org.example.model.LearnableMove(extra.getValue(), extra.getKey()));
+        }
+        return battleSpecies;
     }
 
-    private static Move toBattleMove(org.example.pokemon.domain.Move source) {
+    static Move toBattleMove(org.example.pokemon.domain.Move source) {
         return new Move(source.getId(), source.getName(), ElementType.valueOf(source.getType().name()),
                 MoveCategory.valueOf(source.getCategory().name()), source.getPower(), source.getAccuracy(),
                 source.getMaxPp(), source.getPriority(), MoveEffect.NONE,

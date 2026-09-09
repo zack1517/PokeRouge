@@ -15,6 +15,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
@@ -27,7 +29,10 @@ import org.example.model.Weather;
 import org.example.util.ImageBackgrounds;
 import org.example.util.UiScale;
 
+import java.io.InputStream;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.IntConsumer;
 import java.util.function.IntPredicate;
 
@@ -41,8 +46,8 @@ import java.util.function.IntPredicate;
  * 「战斗」→ 技能面板时：左块整组换成 [状态行+2×2 技能格]，右块换成技能信息卡（名称/属性/分类/威力/命中/PP，
  * 悬停技能格实时联动右块）。
  * 双方信息卡同款同尺寸（名称/属性/等级 + HP 条，EXP 行随「卡样式一致」要求移除，待确认后另寻展示位）；
- * 立绘暂用 2×2 排列占位文本色块（如「我 方 / 立 绘」）；战斗背景从 bg_battle1-3 随机取一（临时素材，
- * dev 流程桩无分段概念；道馆/Boss 专属图待流程接入后按节点切换）。</p>
+ * 立绘显示精灵图片（classpath /images/pokemon/，文件名与精灵中文名一致；内建精灵无图时回退「精灵名+立绘」占位文本）；
+ * 战斗背景从 bg_battle1-3 随机取一（临时素材，dev 流程桩无分段概念；道馆/Boss 专属图待流程接入后按节点切换）。</p>
  *
  * <p>全局等比缩放由 {@link org.example.util.UiScale} 统一施加（本类布局按 640×426.67 设计，3:2）。</p>
  */
@@ -71,6 +76,16 @@ public class BattleView {
             "/images/background/bg_battle1.jpeg",
             "/images/background/bg_battle2.jpeg",
             "/images/background/bg_battle3.jpeg"};
+
+    // ---- 双方立绘（精灵图片；无图时回退占位文本）----
+    private final ImageView playerSprite = new ImageView();
+    private final ImageView enemySprite = new ImageView();
+    private final Label playerSpriteFallback = new Label();
+    private final Label enemySpriteFallback = new Label();
+    /** 立绘图片目录（classpath；文件名与精灵中文名一致，如「皮卡丘.png」）。 */
+    private static final String POKEMON_IMAGE_DIR = "/images/pokemon/";
+    /** 立绘图片缓存：精灵名 → 图片；value 为 null 表示已确认无图（内建精灵），避免重复加载。 */
+    private static final Map<String, Image> SPRITE_CACHE = new HashMap<>();
 
     // ---- 敌方信息（左上卡片） ----
     private final Label wildName = new Label("--");
@@ -165,7 +180,7 @@ public class BattleView {
         top.setAlignment(Pos.TOP_LEFT); // 子块贴顶排列，右上角信息随之上移贴近角部
         top.getChildren().addAll(
                 buildEnemyCard(),
-                spriteBox("敌 方\n立 绘", "rgba(196, 66, 66, 0.30)"),
+                spritePane(enemySprite, enemySpriteFallback, "rgba(196, 66, 66, 0.30)"),
                 spacer(),
                 buildHud());
         return top;
@@ -179,7 +194,7 @@ public class BattleView {
     /** 中部区域：中央留空展示背景；右下角 [己方立绘 + 己方信息卡]（立绘在信息卡左侧，与敌区镜像）。 */
     private Parent buildCenter() {
         VBox card = buildStatCard(playerName, playerType, playerLv, playerHpBar, playerHpText, playerStatus);
-        StackPane sprite = spriteBox("我 方\n立 绘", "rgba(66, 110, 196, 0.30)");
+        StackPane sprite = spritePane(playerSprite, playerSpriteFallback, "rgba(66, 110, 196, 0.30)");
         HBox group = new HBox(8, sprite, card);
         group.setAlignment(Pos.CENTER_LEFT);
         // 关键：center 是 StackPane，默认会把整组拉高到与中部区域同高、拉宽到同宽，导致信息卡过高且立绘落到页面最左侧；
@@ -284,16 +299,68 @@ public class BattleView {
         target.setVisible(visible);
     }
 
-    /** 立绘占位色块（美术资源接入后替换）：半透明底色 + 白字占位，文本按 2×2 排列（如「我 方/立 绘」）。 */
-    private StackPane spriteBox(String text, String bgColor) {
-        Label mark = new Label(text);
-        mark.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
-        mark.setStyle(YH + "-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: rgba(255,255,255,0.95);");
-        StackPane box = new StackPane(mark);
+    /**
+     * 立绘区：半透明底色底座 + 白字占位（无图时可见）+ 精灵图片（有图时覆盖占位）。
+     * 图片等比缩放适配 92×80 底座，保留底色区分敌我方位（敌方红底 / 己方蓝底）。
+     */
+    private StackPane spritePane(ImageView imageView, Label fallback, String bgColor) {
+        fallback.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        fallback.setStyle(YH + "-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: rgba(255,255,255,0.95);");
+        imageView.setPreserveRatio(true);
+        imageView.setSmooth(true);
+        imageView.setFitWidth(80);
+        imageView.setFitHeight(70);
+        StackPane box = new StackPane(fallback, imageView);
         box.setPrefSize(92, 80);
         box.setStyle("-fx-background-color: " + bgColor + "; -fx-background-radius: 10;"
                 + "-fx-border-width: 2; -fx-border-radius: 10; -fx-border-color: rgba(255,255,255,0.9);");
         return box;
+    }
+
+    /**
+     * 按精灵名加载立绘图片（classpath {@value #POKEMON_IMAGE_DIR}）；
+     * 加载失败返回 {@code null}（调用方回退占位文本）。结果带缓存。
+     */
+    private static Image loadSprite(String pokemonName) {
+        if (pokemonName == null || pokemonName.isBlank()) {
+            return null;
+        }
+        if (SPRITE_CACHE.containsKey(pokemonName)) {
+            return SPRITE_CACHE.get(pokemonName);
+        }
+        String path = POKEMON_IMAGE_DIR + pokemonName + ".png";
+        try (InputStream in = BattleView.class.getResourceAsStream(path)) {
+            if (in == null) {
+                SPRITE_CACHE.put(pokemonName, null);
+                return null;
+            }
+            Image image = new Image(in);
+            SPRITE_CACHE.put(pokemonName, image);
+            return image;
+        } catch (Exception e) {
+            SPRITE_CACHE.put(pokemonName, null);
+            return null;
+        }
+    }
+
+    /** 把某只精灵的立绘刷到指定图片区：有图则显示图片；无图则隐藏图片、回退显示精灵名占位。 */
+    private static void applySprite(ImageView imageView, Label fallback, Pokemon p) {
+        String name = p == null ? null : p.getName();
+        Image image = loadSprite(name);
+        if (image != null) {
+            imageView.setImage(image);
+            imageView.setManaged(true);
+            imageView.setVisible(true);
+            fallback.setVisible(false);
+            fallback.setManaged(false);
+        } else {
+            imageView.setImage(null);
+            imageView.setVisible(false);
+            imageView.setManaged(false);
+            fallback.setText(name == null || name.isBlank() ? "立 绘" : name + "\n立 绘");
+            fallback.setVisible(true);
+            fallback.setManaged(true);
+        }
     }
 
     /** 右上角纯文本块：当前地图阶段（上）+ 玩家金币（下，金色）。无背景框、小字号，直接叠于背景图上。 */
@@ -339,19 +406,21 @@ public class BattleView {
     // 更新
     // ------------------------------------------------------------------
 
-    /** 刷新双方状态卡片（含异常状态徽章）。 */
+    /** 刷新双方状态卡片（含异常状态徽章）与双方立绘。 */
     public void refreshPokemon(Pokemon player, Pokemon wild) {
         playerName.setText(player.getName());
         playerType.setText(typeOf(player));
         playerLv.setText("Lv." + player.getLevel());
         refreshHp(playerHpBar, playerHpText, player);
         applyStatusBadge(playerStatus, player);
+        applySprite(playerSprite, playerSpriteFallback, player);
 
         wildName.setText(wild.getName());
         wildType.setText(typeOf(wild));
         wildLv.setText("Lv." + wild.getLevel());
         refreshHp(wildHpBar, wildHpText, wild);
         applyStatusBadge(wildStatus, wild);
+        applySprite(enemySprite, enemySpriteFallback, wild);
     }
 
     /** 刷新天气/场地状态行（无天气/场地时清空；位于底栏日志上方）。 */
