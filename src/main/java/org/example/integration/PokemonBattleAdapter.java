@@ -1,6 +1,7 @@
 package org.example.integration;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,7 @@ import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.StatusCondition;
 import org.example.model.Stats;
+import org.example.model.Trainer;
 import org.example.pokemon.domain.LearnableMove;
 import org.example.pokemon.service.PokemonService;
 import org.example.pokemon.service.PokemonServiceImpl;
@@ -63,6 +65,29 @@ public final class PokemonBattleAdapter {
         return player;
     }
 
+    /**
+     * 将自定义战斗中选定的宝可梦队伍交给战斗系统（最多 6 只，第 0 只为首发）。
+     *
+     * <p>小队对战规则：成员满级满状态入场，故转换后统一 {@link Pokemon#fullRestore()}
+     * 补满 HP 与技能 PP；携带道具与常规开局一致。</p>
+     *
+     * @param name  玩家名
+     * @param squad 按出战顺序排列的队伍（超过 6 只时只取前 6 只）
+     */
+    public static Player createBattlePlayer(String name, List<org.example.pokemon.domain.Pokemon> squad) {
+        Player player = new Player(name);
+        for (org.example.pokemon.domain.Pokemon member : squad) {
+            if (player.isPartyFull()) {
+                break;
+            }
+            Pokemon battlePokemon = toBattlePokemon(member);
+            battlePokemon.fullRestore(); // 满血 + 满 PP（小队对战规则）
+            player.addPokemon(battlePokemon);
+        }
+        grantStartingItems(player);
+        return player;
+    }
+
     /** 发放初始携带道具：回复、捕捉，以及各类异常状态解除道具。 */
     private static void grantStartingItems(Player player) {
         org.example.data.GameData data = org.example.data.GameData.instance();
@@ -94,6 +119,30 @@ public final class PokemonBattleAdapter {
         }
         org.example.pokemon.domain.Species species = choices.get(ThreadLocalRandom.current().nextInt(choices.size()));
         return Optional.of(toBattlePokemon(source.createWildPokemon(species.getId(), aroundLevel)));
+    }
+
+    /**
+     * 生成自定义战斗的对手训练家：从宝可梦库全部种族中随机不重复抽取 1~6 只指定等级的精灵，
+     * 组成整队轮战（暂无完整 AI 训练家逻辑，仅按队伍顺序自动轮战）。
+     *
+     * @param name  对手名
+     * @param count 队伍数量（1~6，超出按 6 截断）
+     * @param level 精灵等级（小队对战统一满级 100）
+     * @return 已加满成员的敌方训练家（均满状态入场）
+     */
+    public static Trainer createSquadTrainer(String name, int count, int level) {
+        Trainer trainer = new Trainer(name);
+        List<org.example.pokemon.domain.Species> pool =
+                new ArrayList<>(org.example.pokemon.infrastructure.GameData.instance().getAllSpecies());
+        Collections.shuffle(pool);
+        PokemonService source = new PokemonServiceImpl();
+        int picks = Math.min(Math.max(1, count), Math.min(Trainer.MAX_PARTY, pool.size()));
+        for (int i = 0; i < picks; i++) {
+            Pokemon battlePokemon = toBattlePokemon(source.createPokemon(pool.get(i).getId(), level));
+            battlePokemon.fullRestore(); // 满血 + 满 PP
+            trainer.addPokemon(battlePokemon);
+        }
+        return trainer;
     }
 
     /**

@@ -3,6 +3,7 @@ package org.example.controller;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.ChoiceDialog;
 import javafx.stage.Stage;
 import org.example.GameSession;
 import org.example.battle.BattleDataPort;
@@ -16,6 +17,8 @@ import org.example.model.RunData;
 import org.example.model.Trainer;
 import org.example.util.LogUtil;
 import org.example.util.MusicPlayer;
+import org.example.view.CustomBattleSetupView;
+import org.example.view.CustomBattleView;
 import org.example.view.MainView;
 import org.example.view.RogueFloorView;
 import org.example.view.StarterSelectionView;
@@ -23,6 +26,7 @@ import org.example.view.StartView;
 import org.example.integration.PokemonBattleAdapter;
 import org.example.integration.WildEncounter;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -62,10 +66,68 @@ public class MainController {
                 PokemonBattleAdapter.battleGrowthPort(dataPort));
     }
 
-    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；其余三项为预留入口）。 */
+    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「自定义战斗」进入模式选择页；其余各项为预留入口）。 */
     public void showStartScreen() {
-        MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环；文件缺失静默降级）
-        stage.setScene(new StartView(this::showStarterSelection).createScene());
+        MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环、同曲不打断；文件缺失静默降级）
+        stage.setScene(new StartView(this::showStarterSelection, this::showCustomBattle).createScene());
+    }
+
+    /** 自定义战斗模式选择页：由启动页「自定义战斗」进入；四种模式均已接入真实战斗。 */
+    public void showCustomBattle() {
+        stage.setScene(new CustomBattleView(this::showStartScreen, this::showCustomBattleSetup).createScene());
+    }
+
+    /**
+     * 自定义战斗·队伍配置入口：按模式决定双方出战数量
+     * （1 vs 1 → 1 只；2 vs 2 → 2 只；小队对战 → 1~6 只任意；自定义数量 → 先选数量）。
+     */
+    private void showCustomBattleSetup(CustomBattleView.Mode mode) {
+        switch (mode) {
+            case ONE_V_ONE -> showCustomBattleSetup("1 vs 1", 1);
+            case TWO_V_TWO -> showCustomBattleSetup("2 vs 2", 2);
+            case SQUAD -> showCustomBattleSetup("小队对战", 0);
+            case CUSTOM_COUNT -> askCustomBattleCount();
+        }
+    }
+
+    /** 显示队伍配置页：requiredCount > 0 须恰好选满，为 0 按小队规则 1~6 只任意；「返回」回模式选择页。 */
+    private void showCustomBattleSetup(String title, int requiredCount) {
+        stage.setScene(new CustomBattleSetupView(title, requiredCount, this::showCustomBattle, this::startCustomBattle)
+                .createScene());
+    }
+
+    /** 「自定义数量」：先选择双方出战数量（1~6），再进入队伍配置页；取消则留在模式选择页。 */
+    private void askCustomBattleCount() {
+        ChoiceDialog<Integer> dialog = new ChoiceDialog<>(3, 1, 2, 3, 4, 5, 6);
+        dialog.setTitle("自定义数量战斗");
+        dialog.setHeaderText(null);
+        dialog.setContentText("选择双方出战数量（1~6 只）：");
+        dialog.showAndWait().ifPresent(count -> showCustomBattleSetup("自定义数量（" + count + "）", count));
+    }
+
+    /**
+     * 自定义战斗开战：选定队伍交给战斗系统（首只首发，战斗中可经「精灵」菜单换人），
+     * 对手为随机生成的同数量同级整队（暂无完整 AI 训练家逻辑）；战斗结束回模式选择页。
+     *
+     * <p>独立模式：使用独立对战玩家，不影响主流程的 {@link #player} 与 {@link #session}。</p>
+     */
+    private void startCustomBattle(List<org.example.pokemon.domain.Pokemon> squad) {
+        if (squad == null || squad.isEmpty()) {
+            showCustomBattle();
+            return;
+        }
+        Player squadPlayer = PokemonBattleAdapter.createBattlePlayer("自定义训练家", squad);
+        Trainer foe = PokemonBattleAdapter.createSquadTrainer("自定义对手", squad.size(), squad.get(0).getLevel());
+        try {
+            BattleService engine = newTrainerBattle(squadPlayer, foe);
+            MusicPlayer.stop(); // 对局界面暂无 BGM（与肉鸽战斗保持一致）
+            int segment = session != null ? session.getSegment() : 1; // 独立模式：未走主线时用默认段号
+            stage.setScene(new BattleController(engine, this::showCustomBattle, segment).createScene());
+        } catch (IllegalArgumentException ex) {
+            LogUtil.info("无法开始战斗: " + ex.getMessage());
+            infoAlert("无法开始战斗", ex.getMessage());
+            showCustomBattle();
+        }
     }
 
     /** 初始宝可梦选择页：使用新 pokemon 系统选择初始宝可梦（由启动页「开始游戏」进入）。 */
