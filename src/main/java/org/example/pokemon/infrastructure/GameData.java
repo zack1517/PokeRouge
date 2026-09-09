@@ -122,9 +122,12 @@ public class GameData {
                     continue;
                 }
                 String[] f = line.split(",", -1);
+                String inflicts = f.length > 8 ? f[8].trim() : "";
+                int inflictionChance = parseChance(f.length > 9 ? f[9] : "");
                 Move move = new Move(f[0], f[1], ElementType.valueOf(f[2]), MoveCategory.valueOf(f[3]),
                         Integer.parseInt(f[4]), Integer.parseInt(f[5]),
-                        Integer.parseInt(f[6]), Integer.parseInt(f[7]));
+                        Integer.parseInt(f[6]), Integer.parseInt(f[7]),
+                        inflicts, inflictionChance);
                 moveMap.put(move.getId(), move);
             }
             LogUtil.info("加载技能数据完成，共 " + moveMap.size() + " 个技能");
@@ -359,5 +362,16 @@ public class GameData {
             throw new IllegalStateException("初始宝可梦池加载不完整，缺少种族数据");
         }
         return List.of(bulbasaur, charmander, squirtle);
+    }
+
+    /**
+     * 解析异常状态触发概率，非法或空值按 0 处理。
+     */
+    private static int parseChance(String raw) {
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 }

@@ -8,10 +8,12 @@ import org.example.model.ItemStack;
 import org.example.model.Move;
 import org.example.model.MoveSlot;
 import org.example.model.Pokemon;
+import org.example.model.StatusCondition;
 import org.example.view.BattleView;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 战斗控制器：桥接 {@link BattleView} 与 {@link BattleService}。
@@ -19,6 +21,10 @@ import java.util.List;
  * <p>流程：刷新精灵面板与日志 → 展示主菜单（技能/背包/精灵/逃跑）→ 引擎结算 → 依据状态
  * 继续或展示结局。战斗中精灵倒下会被引擎自动切换，玩家也可在行动回合主动切换，每次渲染都
  * 重新读取当前出战精灵。</p>
+ *
+ * <p>敌方面板统一取 {@link BattleService#foeActive()}：野生遭遇为野生精灵，训练师轮战为训练师
+ * 当前出战精灵（{@link BattleService#getWild()} 为 {@code null}），因此训练师换宠后界面会自动
+ * 跟随刷新。</p>
  */
 public class BattleController implements BattleView.Actions {
 
@@ -27,8 +33,9 @@ public class BattleController implements BattleView.Actions {
     private final int segment; // 当前地图段号（流程系统接入前由会话持有，仅用于右上角段文案）
     private final BattleView view = new BattleView(this);
 
-    /** @param engine 已就绪的战斗服务实例（玩家与野生精灵均已非倒下，通常来自
-     *                {@link org.example.battle.BattleServices#newBattle}）
+    /** @param engine 已就绪的战斗服务实例（玩家与敌方当前出战精灵均已非倒下，通常来自
+     *                {@link org.example.battle.BattleServices#newBattle} 或
+     *                {@link org.example.battle.BattleServices#newTrainerBattle}）
      *  @param onExit 战斗结束（含逃跑/捕捉/胜负）后返回主菜单的回调
      *  @param segment 当前地图段号（与主菜单/会话一致，用于战斗页右上角段展示） */
     public BattleController(BattleService engine, Runnable onExit, int segment) {
@@ -38,7 +45,7 @@ public class BattleController implements BattleView.Actions {
     }
 
     public Scene createScene() {
-        view.setHud("第 " + segment + " 段 · 野外遭遇", 500); // 金币为桩值（流程系统接入后替换，TODO(dev)）
+        view.setHud("第 " + segment + " 段 · " + encounterLabel(), 500); // 金币为桩值（流程系统接入后替换，TODO(dev)）
         Scene scene = view.createScene();
         render(); // 首屏：填充双方面板/日志并展示行动按钮
         return scene;
@@ -57,10 +64,43 @@ public class BattleController implements BattleView.Actions {
     @Override
     public void onItemSelected(int stackIndex) {
         List<ItemStack> stacks = engine.getBag().availableStacks();
-        if (stackIndex >= 0 && stackIndex < stacks.size()) {
-            engine.useItem(stacks.get(stackIndex).getItem());
+        if (stackIndex < 0 || stackIndex >= stacks.size()) {
+            render();
+            return;
         }
-        render();
+        Item item = stacks.get(stackIndex).getItem();
+        if (item.getCategory() == ItemCategory.POKE_BALL) {
+            engine.useItem(item); // 精灵球始终投向敌方野生精灵，与队伍目标无关
+            render();
+            return;
+        }
+        showTargetMenu(item);
+    }
+
+    /** 选择道具作用的目标精灵（回复/解除道具）：点中合法目标即使用并结算本回合。 */
+    private void showTargetMenu(Item item) {
+        List<Pokemon> party = engine.getPlayer().getParty();
+        int activeIndex = party.indexOf(engine.playerActive());
+        view.showTargetMenu(party, activeIndex,
+                idx -> canTarget(item, party.get(idx)),
+                idx -> {
+                    engine.useItem(item, idx);
+                    render();
+                },
+                this::showBagMenu,
+                "选择使用【" + item.getName() + "】的目标");
+    }
+
+    /** 某只精灵能否作为该道具的目标：回复道具要求未倒下且未满血；解除道具要求有可解除的异常状态。 */
+    private static boolean canTarget(Item item, Pokemon p) {
+        if (item.getCategory() == ItemCategory.HEAL) {
+            return !p.isFainted() && p.getCurrentHp() < p.getMaxHp();
+        }
+        if (item.getCategory() == ItemCategory.CURE) {
+            StatusCondition status = p.getStatus();
+            return status != StatusCondition.NONE && item.canCure(status);
+        }
+        return false;
     }
 
     @Override
@@ -85,7 +125,7 @@ public class BattleController implements BattleView.Actions {
     // ------------------------------------------------------------------
 
     private void render() {
-        view.refreshPokemon(engine.playerActive(), engine.getWild());
+        view.refreshPokemon(engine.playerActive(), engine.foeActive());
         view.refreshFieldStatus(engine.getWeather(), engine.getTerrain());
         view.showLog(engine.getLog());
         if (!engine.isOngoing()) {
@@ -118,13 +158,13 @@ public class BattleController implements BattleView.Actions {
     }
 
     private void showPartyMenu() {
-        List<org.example.model.Pokemon> party = engine.getPlayer().getParty();
+        List<Pokemon> party = engine.getPlayer().getParty();
         int activeIndex = party.indexOf(engine.playerActive());
         view.showPartyMenu(party, activeIndex, this::onSwitchSelected, this::render);
     }
 
     private void showMoveMenu() {
-        view.refreshPokemon(engine.playerActive(), engine.getWild());
+        view.refreshPokemon(engine.playerActive(), engine.foeActive());
         view.showMoveMenu(engine.playerActive().getMoveSlots(), this::render);
     }
 
@@ -140,25 +180,26 @@ public class BattleController implements BattleView.Actions {
         List<BattleView.ItemButton> buttons = new ArrayList<>();
         for (ItemStack stack : stacks) {
             Item item = stack.getItem();
-            String desc = describe(item);
-            String text = item.getName() + " ×" + stack.getCount() + (desc.isEmpty() ? "" : "（" + desc + "）");
-            boolean disabled = isItemDisabled(item);
-            buttons.add(new BattleView.ItemButton(text, disabled));
+            String text = item.getName() + " ×" + stack.getCount();
+            buttons.add(new BattleView.ItemButton(text, isItemDisabled(item), describe(item)));
         }
         view.showBagMenu(buttons, this::onItemSelected, this::render);
     }
 
-    /** 道具当前是否不可用：回复道具在满血时禁用。 */
+    /** 道具当前是否不可用：回复/解除道具在队伍中没有任何合法目标时禁用；精灵球恒可用（能否捕捉由引擎判定）。 */
     private boolean isItemDisabled(Item item) {
-        if (item.getCategory() == ItemCategory.HEAL) {
-            return engine.playerActive().getCurrentHp() >= engine.playerActive().getMaxHp();
+        if (item.getCategory() == ItemCategory.POKE_BALL) {
+            return false;
         }
-        return false;
+        return engine.getPlayer().getParty().stream().noneMatch(p -> canTarget(item, p));
     }
 
     private String describe(Item item) {
         if (item.getCategory() == ItemCategory.HEAL) {
             return "回复 " + (int) item.getEffect() + " HP";
+        }
+        if (item.getCategory() == ItemCategory.CURE) {
+            return "解除" + curesText(item);
         }
         if (item.getCategory() == ItemCategory.POKE_BALL) {
             return item.isAlwaysCatch() ? "必定捕捉" : "捕捉率 ×" + item.getEffect();
@@ -166,13 +207,40 @@ public class BattleController implements BattleView.Actions {
         return "";
     }
 
+    /** 解除道具的适用范围文案：万灵药显示「全部异常状态」，其余逐一列出具体状态名。 */
+    private static String curesText(Item item) {
+        if (item.curesAll()) {
+            return "全部异常状态";
+        }
+        List<StatusCondition> conditions = item.curedStatuses();
+        if (conditions.isEmpty()) {
+            return "异常状态";
+        }
+        return conditions.stream()
+                .map(StatusCondition::getDisplayName)
+                .collect(Collectors.joining("/"))
+                + "状态";
+    }
+
     private String resultText() {
         return switch (engine.getStatus()) {
-            case PLAYER_WIN -> "战斗胜利！你获得了经验！";
+            case PLAYER_WIN -> isTrainerBattle()
+                    ? "战斗胜利！" + engine.getTrainer().getName() + " 的精灵已全部倒下！"
+                    : "战斗胜利！你获得了经验！";
             case PLAYER_LOSE -> "你已没有能战斗的精灵……";
             case FLED -> "成功逃离了战斗！";
             case CAUGHT -> "成功捕捉！它加入了你的队伍！";
             case ONGOING -> "";
         };
+    }
+
+    /** 是否训练师轮战（敌方持有一整支队伍）。 */
+    private boolean isTrainerBattle() {
+        return engine.getTrainer() != null;
+    }
+
+    /** 右上角遭遇说明：训练师轮战显示训练师名，野生遭遇显示「野外遭遇」。 */
+    private String encounterLabel() {
+        return isTrainerBattle() ? "训练师 " + engine.getTrainer().getName() : "野外遭遇";
     }
 }

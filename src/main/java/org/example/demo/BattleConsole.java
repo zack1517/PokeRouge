@@ -3,6 +3,7 @@ package org.example.demo;
 import org.example.battle.BattleService;
 import org.example.battle.BattleServices;
 import org.example.data.GameData;
+import org.example.integration.WildEncounter;
 import org.example.model.Bag;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
@@ -28,6 +29,9 @@ import java.util.Scanner;
 public class BattleConsole {
 
     static final GameData g = GameData.instance();
+    /** 注入给战斗模块的数据端口：战斗模块只消费，数据由本演示（组装层）提供。 */
+    static final org.example.data.GameDataBattleDataPort BATTLE_DATA =
+            new org.example.data.GameDataBattleDataPort(g);
     static final Scanner in = new Scanner(System.in, StandardCharsets.UTF_8);
     static Player player;
     static int wins = 0, losses = 0, caught = 0, fled = 0;
@@ -91,10 +95,10 @@ public class BattleConsole {
             player.healParty();
         }
         int top = player.getParty().stream().mapToInt(Pokemon::getLevel).max().orElse(5);
-        Pokemon wild = BattleServices.randomWild(BattleServices.wildLevelAround(top))
+        Pokemon wild = WildEncounter.randomWild(WildEncounter.levelAround(top), BATTLE_DATA)
                 .orElseThrow(() -> new IllegalStateException("野生池为空"));
         player.leadWithFirstHealthy();
-        BattleService b = BattleServices.newBattle(player, wild);
+        BattleService b = BattleServices.newBattle(player, wild, BATTLE_DATA);
 
         System.out.println("\n野生的 " + wild.getSpecies().getName() + " Lv" + wild.getLevel() + " 出现了！");
         System.out.println("你派出了 " + player.getActive().getName() + "！");
@@ -223,7 +227,34 @@ public class BattleConsole {
         if (idx < 0 || idx >= stacks.size()) {
             return false;
         }
-        printLogs(b.useItem(stacks.get(idx).getItem()));
+        Item chosen = stacks.get(idx).getItem();
+        if (chosen.getCategory() == ItemCategory.POKE_BALL) {
+            // 精灵球始终投向敌方野生精灵（与队伍目标无关）
+            printLogs(b.useItem(chosen));
+            return true;
+        }
+        // 回复/解除道具：再选作用目标（可为队伍任意精灵，含替补）
+        List<Pokemon> party = b.getPlayer().getParty();
+        Pokemon cur = b.playerActive();
+        System.out.println("── 目标 ──────────────────────────────");
+        for (int i = 0; i < party.size(); i++) {
+            Pokemon p = party.get(i);
+            String tag = p == cur ? "(出战)" : (p.isFainted() ? "(倒下)" : "");
+            System.out.printf("  [%d] %-8s Lv%d  HP %d/%d  %s%n",
+                    i + 1, p.getName(), p.getLevel(), p.getCurrentHp(), p.getMaxHp(), tag);
+        }
+        System.out.print("  输入目标编号，[c] 返回 > ");
+        String pick = read().trim().toLowerCase();
+        if (pick.equals("c")) {
+            return false;
+        }
+        int target;
+        try {
+            target = Integer.parseInt(pick) - 1;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        printLogs(b.useItem(chosen, target));
         return true;
     }
 

@@ -3,7 +3,8 @@ package org.example.model;
 /**
  * 技能。
  * <p>一个精灵最多携带 4 个技能。技能具有元素属性、类别（物/特）、威力、命中率、PP（使用次数）
- * 与先制度。</p>
+ * 与先制度；变化类技能可附带天气/场地效果（{@link MoveEffect}）或按概率施加异常状态
+ * （{@link StatusCondition}，见 {@link #getInflicts()}）。</p>
  */
 public class Move {
 
@@ -21,6 +22,10 @@ public class Move {
     private final int priority;
     /** 技能附带效果（天气/场地等）；无特殊效果为 {@link MoveEffect#NONE}。 */
     private final MoveEffect effect;
+    /** 命中后可能施加的异常状态；无则为 {@link StatusCondition#NONE}。 */
+    private final StatusCondition inflicts;
+    /** 施加异常状态的触发概率（0~100，百分比）；{@link #inflicts} 为 NONE 时无意义。 */
+    private final int inflictionChance;
 
     public Move(String id, String name, ElementType type, MoveCategory category, int power, int accuracy, int maxPp) {
         this(id, name, type, category, power, accuracy, maxPp, 0, MoveEffect.NONE);
@@ -34,6 +39,18 @@ public class Move {
     /** 完整构造：命中率 0~100，-1 表示必中；priority 为先制度（越大越先出手）。 */
     public Move(String id, String name, ElementType type, MoveCategory category, int power, int accuracy,
                 int maxPp, int priority, MoveEffect effect) {
+        this(id, name, type, category, power, accuracy, maxPp, priority, effect, StatusCondition.NONE, 0);
+    }
+
+    /**
+     * 完整构造（含异常状态）：命中后按 {@code inflictionChance} 的概率对目标施加 {@code inflicts}。
+     *
+     * @param inflicts        命中后可能施加的异常状态（无则 {@link StatusCondition#NONE}）
+     * @param inflictionChance 触发概率百分比 0~100（100 表示必定触发）
+     */
+    public Move(String id, String name, ElementType type, MoveCategory category, int power, int accuracy,
+                int maxPp, int priority, MoveEffect effect,
+                StatusCondition inflicts, int inflictionChance) {
         this.id = id;
         this.name = name;
         this.type = type;
@@ -43,6 +60,8 @@ public class Move {
         this.maxPp = maxPp;
         this.priority = priority;
         this.effect = effect == null ? MoveEffect.NONE : effect;
+        this.inflicts = inflicts == null ? StatusCondition.NONE : inflicts;
+        this.inflictionChance = Math.max(0, Math.min(100, inflictionChance));
     }
 
     public String getId() {
@@ -81,6 +100,21 @@ public class Move {
     /** 技能附带效果（无则为 {@link MoveEffect#NONE}）。 */
     public MoveEffect getEffect() {
         return effect;
+    }
+
+    /** 命中后可能施加的异常状态；无则为 {@link StatusCondition#NONE}。 */
+    public StatusCondition getInflicts() {
+        return inflicts;
+    }
+
+    /** 是否附带异常状态。 */
+    public boolean hasInfliction() {
+        return inflicts != StatusCondition.NONE;
+    }
+
+    /** 异常状态的触发概率百分比（0~100）。 */
+    public int getInflictionChance() {
+        return inflictionChance;
     }
 
     /** 是否为变化类技能（{@link MoveCategory#STATUS}）。 */

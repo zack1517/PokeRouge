@@ -16,6 +16,7 @@ import org.example.view.MainView;
 import org.example.view.StarterSelectionView;
 import org.example.view.StartView;
 import org.example.integration.PokemonBattleAdapter;
+import org.example.integration.WildEncounter;
 
 import java.util.Optional;
 
@@ -99,14 +100,15 @@ public class MainController {
             session.leadWithFirstHealthy();
         }
         Pokemon lead = session.getActive();
-        int level = BattleServices.wildLevelAround(lead.getLevel());
+        int level = WildEncounter.levelAround(lead.getLevel());
         Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level);
         if (wild.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的野生精灵（数据缺失）。");
             return;
         }
         try {
-            BattleService engine = BattleServices.newBattle(player, wild.get());
+            BattleService engine = BattleServices.newBattle(player, wild.get(),
+                    PokemonBattleAdapter.battleDataPort());
             BattleController battle = new BattleController(engine, this::showMainMenu, session.getSegment());
             stage.setScene(battle.createScene());
         } catch (IllegalArgumentException ex) {
