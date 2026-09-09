@@ -4,11 +4,11 @@ import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.stage.Stage;
+import org.example.GameBootstrap;
+import org.example.GameSession;
 import org.example.battle.BattleService;
 import org.example.battle.BattleServices;
 import org.example.config.AppConfig;
-import org.example.data.GameData;
-import org.example.model.Bag;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.util.LogUtil;
@@ -25,25 +25,13 @@ import java.util.Optional;
 public class MainController {
 
     private final Stage stage;
+    private final GameSession session;
     private final Player player;
 
     public MainController(Stage stage) {
         this.stage = stage;
-        this.player = createStarterPlayer();
-    }
-
-    /** 组装玩家开局状态：初始精灵与背包补给。 */
-    private Player createStarterPlayer() {
-        Player p = new Player(AppConfig.PLAYER_NAME);
-        GameData data = GameData.instance();
-        data.createPokemon("s_fire_cat", 5).ifPresent(p::addToParty);
-        data.createPokemon("s_leaf_chick", 5).ifPresent(p::addToParty);
-        Bag bag = p.getBag();
-        bag.add(data.item("i_potion"), 5);
-        bag.add(data.item("i_super_potion"), 2);
-        bag.add(data.item("i_poke_ball"), 6);
-        bag.add(data.item("i_great_ball"), 3);
-        return p;
+        this.session = new GameSession(GameBootstrap.createStarterPlayer());
+        this.player = this.session.getPlayer();
     }
 
     /** 显示主菜单（重新构建，反映最新的队伍/背包）。 */
@@ -56,13 +44,13 @@ public class MainController {
 
             @Override
             public void onSetActive(int index) {
-                player.setActive(index);
+                session.setActive(index);
                 showMainMenu();
             }
 
             @Override
             public void onHealAll() {
-                player.healParty();
+                session.healAll();
                 showMainMenu();
             }
 
@@ -80,16 +68,16 @@ public class MainController {
 
     /** 进入一场新的随机遭遇战。 */
     public void startRandomBattle() {
-        if (!player.hasHealthyPokemon()) {
+        if (!session.hasHealthyPokemon()) {
             infoAlert("没有能战斗的精灵", "队伍已全部倒下，先去治疗队伍吧。");
             return;
         }
         // 尊重玩家在主页设好的先发精灵；仅当当前出战精灵已倒下（或被清空）时才重置为首只健康精灵
-        Pokemon active = player.getActive();
+        Pokemon active = session.getActive();
         if (active == null || active.isFainted()) {
-            player.leadWithFirstHealthy();
+            session.leadWithFirstHealthy();
         }
-        Pokemon lead = player.getActive();
+        Pokemon lead = session.getActive();
         int level = BattleServices.wildLevelAround(lead.getLevel());
         Optional<Pokemon> wild = BattleServices.randomWild(level);
         if (wild.isEmpty()) {

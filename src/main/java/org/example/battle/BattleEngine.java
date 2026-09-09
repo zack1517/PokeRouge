@@ -453,9 +453,9 @@ public class BattleEngine implements BattleService {
             append("咔哒…… 球停止了晃动！");
             append("成功捕捉了野生的 " + wild.getName() + "！");
             status = Status.CAUGHT;
-            // 被捕捉的精灵加入玩家队伍，后续可再次派出
+            // 被捕捉的精灵加入玩家队伍，后续可再次派出；统一走受保护的 addPokemon 入口以维护队伍容量。
             if (!player.getParty().contains(wild)) {
-                player.addToParty(wild);
+                player.addPokemon(wild);
             }
             return true;
         }

@@ -112,6 +112,17 @@ public final class GameData {
         return List.copyOf(wildPool);
     }
 
+    /** 初始可选队伍：游戏启动时让玩家从这几个入口精灵中组队。 */
+    public List<String> starterPool() {
+        List<String> starterIds = new ArrayList<>();
+        for (String id : List.of("s_fire_cat", "s_water_tad", "s_leaf_chick", "s_spark_rat")) {
+            if (speciesMap.containsKey(id) && !starterIds.contains(id)) {
+                starterIds.add(id);
+            }
+        }
+        return List.copyOf(starterIds);
+    }
+
     /**
      * 按物种 id 创建一只满血个体（等级任意）。技能按成长解锁：先给「出生即会」的技能，
      * 再按等级升序补入该等级已经习得的技能（最多 4 招），因此低等级个体技能较少。

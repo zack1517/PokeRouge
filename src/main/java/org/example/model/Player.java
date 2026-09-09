@@ -48,7 +48,7 @@ public class Player {
     }
 
     public void addToParty(Pokemon pokemon) {
-        party.add(Objects.requireNonNull(pokemon));
+        addPokemon(Objects.requireNonNull(pokemon));
     }
 
     /** 契约补充：队伍是否已满（6 只）。 */
