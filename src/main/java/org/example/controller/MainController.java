@@ -13,6 +13,7 @@ import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.util.LogUtil;
 import org.example.view.MainView;
+import org.example.view.PokemonLabView;
 
 import java.util.Optional;
 
@@ -52,6 +53,11 @@ public class MainController {
             public void onHealAll() {
                 session.healAll();
                 showMainMenu();
+            }
+
+            @Override
+            public void onOpenPokemonLab() {
+                stage.setScene(new PokemonLabView(MainController.this::showMainMenu).createScene());
             }
 
             @Override
