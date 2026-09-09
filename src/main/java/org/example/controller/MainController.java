@@ -11,6 +11,7 @@ import org.example.config.AppConfig;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.util.LogUtil;
+import org.example.util.MusicPlayer;
 import org.example.view.MainView;
 import org.example.view.StarterSelectionView;
 import org.example.view.StartView;
@@ -36,11 +37,15 @@ public class MainController {
 
     /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；其余三项为预留入口）。 */
     public void showStartScreen() {
+        MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环；文件缺失静默降级）
         stage.setScene(new StartView(this::showStarterSelection).createScene());
     }
 
     /** 初始宝可梦选择页：使用新 pokemon 系统选择初始宝可梦（由启动页「开始游戏」进入）。 */
     public void showStarterSelection() {
+        // 离开主界面即停 BGM：其它界面暂未配置音乐；
+        // 后续各界面各有 BGM 时，改为在对应界面入口调 MusicPlayer.playBgm（自动停旧播新）
+        MusicPlayer.stop();
         stage.setScene(new StarterSelectionView(this::startWithStarter).createScene());
     }
 

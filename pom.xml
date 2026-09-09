@@ -27,6 +27,12 @@
             <artifactId>javafx-fxml</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+        <!-- 背景音乐（MediaPlayer） -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-media</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
         <!-- JUnit 5 测试框架 -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
