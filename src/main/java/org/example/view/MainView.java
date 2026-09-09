@@ -21,7 +21,7 @@ import java.util.List;
 
 /**
  * 主菜单视图（当前阶段的地图驻留页占位，见 GameSession 类 javadoc）：铺当前段的 bg_map 随机背景，
- * 展示训练家队伍与背包，并给予「开始遭遇」「治疗」「退出」等入口。
+ * 展示训练家队伍与背包，并给予「遭遇野生精灵」「进入层内事件」「治疗」「退出」等入口。
  * <p>背景由控制器按“段”决定后传入（同段多张图固定，换段才变），本类不做任何背景状态；
  * 每次进入主菜单都由控制器重新构建（队伍可能在对战中变化），因此本类不做状态刷新。</p>
  */
@@ -30,6 +30,9 @@ public class MainView {
     /** 主菜单按钮点击回调。 */
     public interface Actions {
         void onStartBattle();
+
+        /** 进入肉鸽层内事件页（楼层选项/点数/战斗入口）。 */
+        void onStartRogueFloor();
 
         /** 将 index 对应的精灵设为下一场战斗先发。 */
         void onSetActive(int index);
@@ -168,6 +171,10 @@ public class MainView {
         battle.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 15px; -fx-padding: 10 18;");
         battle.setOnAction(e -> actions.onStartBattle());
 
+        Button rogue = new Button("进入层内事件");
+        rogue.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
+        rogue.setOnAction(e -> actions.onStartRogueFloor());
+
         Button heal = new Button("治疗队伍");
         heal.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
         heal.setOnAction(e -> actions.onHealAll());
@@ -176,7 +183,7 @@ public class MainView {
         exit.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
         exit.setOnAction(e -> actions.onExit());
 
-        HBox bar = new HBox(12, battle, heal, exit);
+        HBox bar = new HBox(12, battle, rogue, heal, exit);
         bar.setAlignment(Pos.CENTER);
         bar.setPadding(new Insets(10, 0, 0, 0));
         return bar;

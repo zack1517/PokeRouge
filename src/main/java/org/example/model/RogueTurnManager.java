@@ -56,35 +56,47 @@ public class RogueTurnManager {
     }
 
     public void selectOption(Option chosen) {
-        if (chosen == null) {
+        if (!consumeOption(chosen)) {
             return;
+        }
+        resolveOptionEffect(chosen);
+        if (runData.getCurrentPoints() <= 0) {
+            triggerBossFight();
+        }
+    }
+
+    /**
+     * 只做点数校验/扣除与选项替换（不做事件效果结算、不自动触发 BOSS）：
+     * 供 UI 接管战斗型事件（WILD/ENEMY 走真实战斗）时使用。
+     *
+     * @return 扣点成功返回 {@code true}；隐藏事件、非法选项或点数不足返回 {@code false}
+     */
+    public boolean consumeOption(Option chosen) {
+        if (chosen == null) {
+            return false;
         }
         if ("隐藏事件".equals(chosen.getName())) {
             System.out.println("此处已被掩盖，无法再次选择。");
-            return;
+            return false;
         }
         if (runData.getAvailableOptions() == null || !runData.getAvailableOptions().contains(chosen)) {
             if (runData.getBossOption() != null && chosen == runData.getBossOption()) {
                 // 允许直接强制选择 Boss，通常由 BOSS 判定触发
             } else {
                 System.out.println("当前楼层中不存在该选项，无法执行。");
-                return;
+                return false;
             }
         }
 
         int nextPoints = runData.getCurrentPoints() - chosen.getCost();
         if (nextPoints < 0) {
             System.out.println("点数不足，无法选择：" + chosen.getName());
-            return;
+            return false;
         }
 
         runData.setCurrentPoints(nextPoints);
-        processEvent(chosen);
         replaceMysterySlot(chosen);
-
-        if (runData.getCurrentPoints() <= 0) {
-            triggerBossFight();
-        }
+        return true;
     }
 
     private void replaceMysterySlot(Option chosen) {
@@ -107,7 +119,8 @@ public class RogueTurnManager {
         return new Option(title, replacementType, 0, detail);
     }
 
-    private void processEvent(Option option) {
+    /** 执行选项的事件效果结算（WILD/ENEMY 为战斗模拟；HOSPITAL/RANDOM 为直接效果）。 */
+    public void resolveOptionEffect(Option option) {
         if (option == null) {
             return;
         }
