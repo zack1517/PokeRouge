@@ -59,6 +59,9 @@ import java.util.Random;
  */
 public class BattleEngine implements BattleService {
 
+    /** 目标陷入睡眠 / 麻痹时的捕捉率加成系数（其余状态无加成）。 */
+    private static final double CAPTURE_STATUS_BONUS = 2.0;
+
     private final Player player;
     /** 野生战斗中的敌方野生精灵；训练师轮战（{@code trainer} 非空）时为 {@code null}。 */
     private final Pokemon wild;
@@ -741,9 +744,10 @@ public class BattleEngine implements BattleService {
         } else {
             int maxHp = wild.getMaxHp();
             int curHp = wild.getCurrentHp();
-            // 血量越低、捕获率越高、球倍率越大则越容易
+            // 血量越低、捕获率越高、球倍率越大、目标陷入睡眠/麻痹则越容易
             double hpFactor = Math.max(0.0, (3.0 * maxHp - 2.0 * curHp) / (3.0 * maxHp));
-            double a = hpFactor * wild.getSpecies().getCatchRate() * ball.getEffect();
+            double a = hpFactor * wild.getSpecies().getCatchRate() * ball.getEffect()
+                    * captureStatusBonus(wild.getStatus());
             double chance = Math.min(0.98, a / 255.0);
             caught = random.nextDouble() < chance;
         }
@@ -759,6 +763,15 @@ public class BattleEngine implements BattleService {
         }
         append("野生的 " + wild.getName() + " 挣脱了出来！");
         return false;
+    }
+
+    /**
+     * 捕捉时的异常状态加成：目标陷入睡眠或麻痹时更容易被收入球中
+     * （×{@value #CAPTURE_STATUS_BONUS}），其余状态与无状态均为 ×1。
+     */
+    private static double captureStatusBonus(StatusCondition status) {
+        return status == StatusCondition.SLEEP || status == StatusCondition.PARALYSIS
+                ? CAPTURE_STATUS_BONUS : 1.0;
     }
 
     /** 回合结束结算：胜负判定、敌方出战倒下后的自动替换/续战、玩家精灵倒下后的自动换宠。 */
