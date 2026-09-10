@@ -64,10 +64,14 @@ public final class FlowController {
     // ------------------------------------------------------------------
 
     private FlowController(Player starter, RandomSource rnd, BattleAdapter battle) {
+        this(starter, rnd, battle, ActionPoints.opening());
+    }
+
+    private FlowController(Player starter, RandomSource rnd, BattleAdapter battle, ActionPoints ap) {
         this.player = starter;
         this.rnd = rnd;
         this.battle = battle;
-        this.ap = ActionPoints.opening();
+        this.ap = ap;
         this.story = StoryFlags.initial();
         this.ledger = CaptureLedger.empty();
         this.gold = FlowConfig.goldStart();
@@ -100,44 +104,48 @@ public final class FlowController {
 
     /** 从 Run 快照恢复（对应 §7 扩展点；过程态战斗不随快照保存）。 */
     public static FlowController restored(Player player, RunSummary snapshot, BattleAdapter battle) {
-        if (snapshot == null) {
-            throw new IllegalArgumentException("RunSummary 快照不能为 null");
-        }
-        if (player == null) {
-            throw new IllegalArgumentException("玩家队伍不能为 null");
-        }
-        FlowController c = new FlowController(player, RandomSource.system(), battle);
-        c.ap.resetForSegment(snapshot.segmentNo());
-        c.gold = snapshot.gold();
-        c.story = snapshot.story();
-        c.ledger = snapshot.ledger();
-        c.options.clear();
-        c.options.addAll(snapshot.options());
-        c.inRoute = snapshot.nextMilestone() != NodeType.ELITE_FOUR
-                && snapshot.nextMilestone() != NodeType.CHAMPION
-                && snapshot.nextMilestone() != NodeType.INVASION;
-        return c;
+        return restored(player, snapshot, RandomSource.system(), battle);
     }
 
     /** 从 Run 快照恢复（固定随机种子版：续玩部分同样可复现）。 */
     public static FlowController restored(Player player, RunSummary snapshot, long seed, BattleAdapter battle) {
+        return restored(player, snapshot, RandomSource.seeded(seed), battle);
+    }
+
+    /**
+     * 从 Run 快照恢复的公共实现：AP 按快照的 {@code apLeft}（而非重置为该段上限）落定，
+     * 其余字段逐项还原，使读档后的 Run 与存档时完全一致。
+     */
+    private static FlowController restored(Player player, RunSummary snapshot,
+                                           RandomSource rnd, BattleAdapter battle) {
         if (snapshot == null) {
             throw new IllegalArgumentException("RunSummary 快照不能为 null");
         }
         if (player == null) {
             throw new IllegalArgumentException("玩家队伍不能为 null");
         }
-        FlowController c = new FlowController(player, RandomSource.seeded(seed), battle);
-        c.ap.resetForSegment(snapshot.segmentNo());
-        c.gold = snapshot.gold();
-        c.story = snapshot.story();
-        c.ledger = snapshot.ledger();
-        c.options.clear();
-        c.options.addAll(snapshot.options());
-        c.inRoute = snapshot.nextMilestone() != NodeType.ELITE_FOUR
-                && snapshot.nextMilestone() != NodeType.CHAMPION
-                && snapshot.nextMilestone() != NodeType.INVASION;
+        ActionPoints ap = ActionPoints.restore(snapshot.segmentNo(), snapshot.apLeft());
+        FlowController c = new FlowController(player, rnd, battle, ap);
+        c.applySnapshot(snapshot);
         return c;
+    }
+
+    /** 把快照字段写回本实例（AP 由构造函数落定，见 {@link ActionPoints#restore(int, int)}）。 */
+    private void applySnapshot(RunSummary s) {
+        this.gold = s.gold();
+        this.story = s.story();
+        this.ledger = s.ledger();
+        this.options.clear();
+        this.options.addAll(s.options());
+        this.inRoute = s.inRoute();
+        this.gymRetried = s.gymRetried();
+        this.eliteCleared = s.eliteCleared();
+        this.eliteRetried = s.eliteRetried();
+        this.championCleared = s.championCleared();
+        this.invasionCleared = s.invasionCleared();
+        this.ending = s.ending();
+        this.shopStock = s.shopStock();
+        this.pendingFight = null;
     }
 
     // ------------------------------------------------------------------
@@ -146,7 +154,8 @@ public final class FlowController {
 
     public RunSummary summary() {
         return new RunSummary(segmentNo(), apLeft(), ap.apCap(), gold, story, ledger,
-                options(), nextMilestone());
+                options(), nextMilestone(), inRoute, gymRetried, eliteCleared, eliteRetried,
+                championCleared, invasionCleared, ending, shopStock);
     }
 
     public int gold() {
@@ -679,10 +688,18 @@ public final class FlowController {
         return Math.max(0, value + delta);
     }
 
-    /** Run 快照 → 文本（建议随 World 一并落盘，见 §7）。 */
+    /**
+     * Run 快照 → 单行可读摘要（调试 / 日志用）。
+     *
+     * <p>落盘不走本方法：World 存档的 Run 段由
+     * {@code com.bao01.save.SaveManager} 按 {@link #summary()} 的字段逐项编码（见 §7）。
+     */
     public String toText() {
-        return "RUN|seg=" + segmentNo() + "|ap=" + apLeft() + "/" + ap.apCap()
-                + "|gold=" + gold + "|next=" + nextMilestone()
-                + "|ending=" + (ending == null ? "PLAYING" : ending);
+        RunSummary s = summary();
+        return "RUN|seg=" + s.segmentNo() + "|ap=" + s.apLeft() + "/" + s.apCap()
+                + "|gold=" + s.gold() + "|phase=" + (s.inRoute() ? "ROUTE" : "FINAL")
+                + "|next=" + NodeType.textOf(s.nextMilestone())
+                + "|ending=" + Ending.textOf(s.ending())
+                + "|options=" + s.options().size() + "|caught=" + s.ledger().totalCatches();
     }
 }

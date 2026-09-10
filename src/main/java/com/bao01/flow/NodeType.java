@@ -47,4 +47,29 @@ public enum NodeType {
     public Cat cat() {
         return cat;
     }
+
+    /** 存档文本标记：当前没有必然节点（{@code null}）。 */
+    public static final String NONE = "NONE";
+
+    /** 存档文本标记：{@code null} → {@value #NONE}，否则为枚举名。 */
+    public static String textOf(NodeType type) {
+        return type == null ? NONE : type.name();
+    }
+
+    /**
+     * 解析存档文本标记。
+     *
+     * @return {@value #NONE} / {@code null} / 空串 → {@code null}（无必然节点）
+     * @throws IllegalArgumentException 文本不是已知节点种类（存档损坏）
+     */
+    public static NodeType parse(String text) {
+        if (text == null || text.isBlank() || NONE.equalsIgnoreCase(text.trim())) {
+            return null;
+        }
+        try {
+            return valueOf(text.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("未知节点种类: " + text);
+        }
+    }
 }

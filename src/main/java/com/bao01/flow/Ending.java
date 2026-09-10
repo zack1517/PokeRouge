@@ -10,5 +10,30 @@ public enum Ending {
     NORMAL_CLEAR,
 
     /** 真结局：开线且未提前击败首领 → 冠军后过首领侵略战并获胜。 */
-    TRUE_CLEAR
+    TRUE_CLEAR;
+
+    /** 存档文本标记：Run 仍在进行中（{@code ending == null}）。 */
+    public static final String PLAYING = "PLAYING";
+
+    /** 存档文本标记：{@code null} → {@value #PLAYING}，否则为枚举名。 */
+    public static String textOf(Ending ending) {
+        return ending == null ? PLAYING : ending.name();
+    }
+
+    /**
+     * 解析存档文本标记。
+     *
+     * @return {@value #PLAYING} / {@code null} / 空串 → {@code null}（进行中）；否则为对应结局
+     * @throws IllegalArgumentException 文本不是已知结局名（存档损坏）
+     */
+    public static Ending parse(String text) {
+        if (text == null || text.isBlank() || PLAYING.equalsIgnoreCase(text.trim())) {
+            return null;
+        }
+        try {
+            return valueOf(text.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("未知结局标记: " + text);
+        }
+    }
 }

@@ -1,5 +1,6 @@
 package com.bao01.save;
 
+import com.bao01.flow.RunSummary;
 import org.example.data.GameData;
 import org.example.model.Item;
 import org.example.model.ItemStack;
@@ -14,14 +15,20 @@ import java.util.Objects;
  * 存档数据模型（纯数据，不含 IO）。
  *
  * <p>运行在 {@code dev} 的 {@code org.example} 对象模型之上：世界存档 = 一名玩家的
- * 队伍（每只精灵：物种 id / 等级 / 当前 HP）+ 背包（道具 id / 数量）。所有类型为
+ * 队伍（每只精灵：物种 id / 等级 / 当前 HP）+ 背包（道具 id / 数量）+ 可选的
+ * {@link RunSummary}（流程推进状态，见《游戏流程接口设计》§7）。所有类型为
  * 不可变 record，方便序列化与校验。等级、技能等由数据注册表
  * （{@link org.example.data.GameData}）按物种重建。</p>
  */
 public final class SaveData {
 
-    /** 存档格式版本号。 */
-    public static final int FORMAT_VERSION = 1;
+    /**
+     * 存档格式版本号。
+     *
+     * <p>历史：1 = 仅玩家（队伍 + 背包）；2 = 追加训练家名与 Run（流程推进状态）段。
+     * 低版本存档仍可读取（缺失的段按缺省值处理）。
+     */
+    public static final int FORMAT_VERSION = 2;
 
     /** 恢复玩家时使用的默认训练家名。 */
     public static final String DEFAULT_PLAYER_NAME = "训练家";
@@ -98,9 +105,12 @@ public final class SaveData {
     }
 
     /**
-     * 玩家快照：队伍（含出场顺序与当前 HP/等级）+ 出战位 + 背包。
+     * 玩家快照：训练家名 + 队伍（含出场顺序与当前 HP/等级）+ 出战位 + 背包。
+     *
+     * @param name 训练家名；{@code null} 表示存档未记录（恢复时取
+     *             {@link #DEFAULT_PLAYER_NAME}）
      */
-    public record PlayerData(List<PartyEntry> party, int activeIndex, List<ItemEntry> bag) {
+    public record PlayerData(List<PartyEntry> party, int activeIndex, List<ItemEntry> bag, String name) {
 
         public PlayerData {
             party = party == null ? List.of() : List.copyOf(party);
@@ -108,6 +118,14 @@ public final class SaveData {
             if (activeIndex < 0) {
                 throw new IllegalArgumentException("非法出战位: " + activeIndex);
             }
+            if (name != null && name.isBlank()) {
+                name = null;
+            }
+        }
+
+        /** 不带训练家名的快照（v1 存档 / 只关心队伍与背包时使用）。 */
+        public PlayerData(List<PartyEntry> party, int activeIndex, List<ItemEntry> bag) {
+            this(party, activeIndex, bag, null);
         }
 
         public static PlayerData capture(Player player) {
@@ -121,21 +139,22 @@ public final class SaveData {
                     bagItems.add(ItemEntry.capture(stack));
                 }
             }
-            return new PlayerData(ms, player.getActiveIndex(), bagItems);
+            return new PlayerData(ms, player.getActiveIndex(), bagItems, player.getName());
         }
 
         /**
          * 重建玩家。个别成员可能因未知物种而丢失；出战位若指向濒死或越界则回退到
-         * 第一只存活成员。
+         * 第一只存活成员。训练家名取快照中记录的名字（缺省
+         * {@link SaveData#DEFAULT_PLAYER_NAME}）。
          */
         public Player restore() {
-            return restore(DEFAULT_PLAYER_NAME);
+            return restore(name);
         }
 
         public Player restore(String playerName) {
-            String name = playerName == null || playerName.isBlank()
-                    ? DEFAULT_PLAYER_NAME : playerName;
-            Player player = new Player(name);
+            String fallback = name == null || name.isBlank() ? DEFAULT_PLAYER_NAME : name;
+            String used = playerName == null || playerName.isBlank() ? fallback : playerName;
+            Player player = new Player(used);
             List<Pokemon> rebuilt = new ArrayList<>();
             for (PartyEntry pe : party) {
                 Pokemon p = pe == null ? null : pe.restore();
@@ -165,11 +184,26 @@ public final class SaveData {
         }
     }
 
-    /** 顶层世界存档：一名玩家的队伍 + 背包快照。 */
-    public record World(int version, PlayerData player) {
+    /**
+     * 顶层世界存档：训练家（队伍 + 背包）快照 + 可选的一段 Run 推进状态。
+     *
+     * @param run Run 快照（{@link com.bao01.flow.FlowController#summary()}）；
+     *            {@code null} 表示存档不含流程状态（v1 存档 / 只看队伍背包的场景）
+     */
+    public record World(int version, PlayerData player, RunSummary run) {
 
         public World {
             player = Objects.requireNonNull(player, "player");
+        }
+
+        /** 不含 Run 状态的世界存档（v1 兼容）。 */
+        public World(int version, PlayerData player) {
+            this(version, player, null);
+        }
+
+        /** 是否记录了 Run 推进状态。 */
+        public boolean hasRun() {
+            return run != null;
         }
     }
 }

@@ -88,6 +88,18 @@ public final class ActionPoints {
         return resetForSegment(segmentNo + 1);
     }
 
+    /**
+     * 从存档恢复：指定段号 + 剩余 AP。
+     *
+     * <p>段上限仍由 {@link FlowConfig#segmentApCap(int)} 推导（不落盘，避免配置改动后
+     * 与数值表脱节）；{@code apLeft} 被截断到 [0, 上限]，手改存档也不会越界。
+     */
+    public static ActionPoints restore(int segmentNo, int apLeft) {
+        ActionPoints ap = new ActionPoints(segmentNo);
+        ap.apLeft = Math.max(FlowConfig.AP_FLOOR, Math.min(apLeft, ap.apCap));
+        return ap;
+    }
+
     /** 重置到指定段：AP 重置为该段上限。 */
     public List<String> resetForSegment(int newSegmentNo) {
         this.segmentNo = Math.max(FIRST_SEGMENT, newSegmentNo);
