@@ -7,6 +7,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -28,6 +29,7 @@ import org.example.util.UiScale;
 
 import java.util.List;
 import java.util.function.IntConsumer;
+import java.util.function.IntPredicate;
 
 /**
  * 战斗场景布局（纯界面，无业务逻辑）。
@@ -119,6 +121,10 @@ public class BattleView {
     private final Label moveInfoStats = new Label(); // 威力 / 命中
     private final Label moveInfoPp = new Label(); // PP（不足时红字提示）
     private final Label moveInfoEffect = new Label(); // 效果说明（无效果时隐藏该行）
+
+    // ---- 道具信息卡（背包面板右块） ----
+    private final Label itemInfoName = new Label("—");
+    private final Label itemInfoDesc = new Label(); // 效果说明（无说明时显示占位提示）
 
     // ---- 精灵面板：右块精灵信息卡（随面板显示，悬停/默认联动刷新文本）----
     private final Label partyInfoName = new Label("—");
@@ -584,42 +590,85 @@ public class BattleView {
         return b;
     }
 
-    /** 背包中的一个可点击道具条目。 */
-    public record ItemButton(String text, boolean disabled) {
+    /** 背包中的一个可点击道具条目：{@code text} 为格内主文本，{@code detail} 为右卡说明文本。 */
+    public record ItemButton(String text, boolean disabled, String detail) {
+
+        /** 简化构造：无说明文本。 */
+        public ItemButton(String text, boolean disabled) {
+            this(text, disabled, "");
+        }
     }
 
-    /** 显示背包面板（当前为占位阶段：左右分栏骨架 + 各显示“空”文本 ——
-     * 背包系统交互接入后在此填充“左选项/右信息”。返回按钮保留在左块状态行防导航死锁）。
-     * items/onPick 暂被忽略（保留签名兼容控制器）。 */
+    /**
+     * 显示背包面板：左块 [状态行 + 道具格（3 列，条目多于一屏时纵向滚动）]，右块道具信息卡（悬停联动）。
+     * 点击可用道具即交回控制器（由控制器决定是直接对敌使用还是先选目标精灵）；
+     * 无可用目标的道具格为灰格（可悬停查看说明，点击无动作）。
+     */
     public void showBagMenu(List<ItemButton> items, IntConsumer onPick, Runnable onBack) {
-        // 左块：外框 + [状态行 + 弹性空区 + 居中“空”文本]（框样式与日志态一致）
-        leftPanel.setStyle(LEFT_LOG_FRAME_CSS);
         Button back = compactButton("返回");
         back.setOnAction(e -> onBack.run());
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);
         HBox statusRow = new HBox(8, fieldStatus, gap, back);
         statusRow.setAlignment(Pos.CENTER_LEFT);
-        Label emptyText = new Label("空");
-        emptyText.setStyle(YH + "-fx-font-size: 13px; -fx-text-fill: #9a9a9a;");
-        Region pad = new Region();
-        VBox.setVgrow(pad, Priority.ALWAYS);
-        Region pad2 = new Region();
-        VBox.setVgrow(pad2, Priority.ALWAYS);
-        leftPanel.getChildren().setAll(statusRow, pad, emptyText, pad2);
-        // 右块：同宽空卡 + 居中“空”文本（与精灵面板同一分栏位置；空卡带细灰边框保持“框”的观感，
-        // 因为卡内无信息内容时纯白卡在浅底上会显得像没有框架）
+
+        // 3 列道具格（115px/格，与精灵格同宽）：不撑高底栏，超出部分滚动
+        GridPane grid = new GridPane();
+        grid.setHgap(13);
+        grid.setVgap(8);
+        grid.setAlignment(Pos.TOP_CENTER);
+        for (int i = 0; i < items.size(); i++) {
+            ItemButton entry = items.get(i);
+            int index = i;
+            Button b = itemCell(entry.text(), entry.disabled());
+            b.setOnMouseEntered(e -> updateItemInfo(entry));
+            if (!entry.disabled()) {
+                b.setOnAction(e -> onPick.accept(index));
+            }
+            grid.add(b, i % 3, i / 3);
+        }
+        ScrollPane scroll = new ScrollPane(grid);
+        scroll.setFitToWidth(true);
+        scroll.setPrefWidth(371);
+        scroll.setPrefHeight(96);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+
+        leftPanel.setStyle(""); // 背包面板态：左块是状态行+道具格，不套日志框（showLog 恢复）
+        leftPanel.getChildren().setAll(statusRow, scroll);
         actionBox.getChildren().clear();
-        VBox emptyCard = battleCard();
-        emptyCard.setStyle("-fx-background-color: rgba(250, 250, 250, 0.94); -fx-background-radius: 10;"
-                + "-fx-padding: 6 12; -fx-border-color: #c9c9c9; -fx-border-width: 1; -fx-border-radius: 10;");
-        emptyCard.setPrefWidth(PARTY_INFO_CARD_WIDTH);
-        emptyCard.setAlignment(Pos.CENTER);
-        VBox.setVgrow(emptyCard, Priority.ALWAYS);
-        Label cardEmpty = new Label("空");
-        cardEmpty.setStyle(YH + "-fx-font-size: 13px; -fx-text-fill: #9a9a9a;");
-        emptyCard.getChildren().add(cardEmpty);
-        actionBox.getChildren().add(emptyCard);
+        actionBox.getChildren().add(buildItemInfoCard());
+        updateItemInfo(items.isEmpty() ? null : items.get(0)); // 打开面板默认展示第一个道具
+    }
+
+    /** 道具格（一行：名称 ×数量）；grey=当前无可用目标（可悬停查看说明，点击无动作）。 */
+    private Button itemCell(String text, boolean grey) {
+        Button b = new Button(text);
+        b.setFocusTraversable(false);
+        b.setStyle(YH + "-fx-font-size: 12px; -fx-pref-width: 115px; -fx-pref-height: 32px;"
+                + "-fx-background-color: " + (grey ? "#e9e9e9" : "#ffffff") + "; -fx-background-radius: 6;"
+                + "-fx-border-color: " + (grey ? "#c8c8c8" : "#c9c9c9") + "; -fx-border-radius: 6;"
+                + "-fx-text-fill: " + (grey ? "#8a8a8a" : "#222222") + "; -fx-padding: 2 4;");
+        return b;
+    }
+
+    /** 道具信息卡（右块，宽度与精灵信息卡一致）：道具名 + 效果说明。 */
+    private VBox buildItemInfoCard() {
+        VBox card = battleCard();
+        card.setPrefWidth(PARTY_INFO_CARD_WIDTH);
+        card.setAlignment(Pos.TOP_LEFT);
+        itemInfoName.setStyle(YH + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #1c1c1c;");
+        itemInfoDesc.setWrapText(true);
+        itemInfoDesc.setMaxWidth(210);
+        itemInfoDesc.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #333;");
+        card.getChildren().addAll(itemInfoName, itemInfoDesc);
+        return card;
+    }
+
+    /** 联动刷新：把某道具的说明刷到右卡（null 清为占位）。 */
+    private void updateItemInfo(ItemButton entry) {
+        itemInfoName.setText(entry == null ? "—" : entry.text());
+        itemInfoDesc.setText(entry == null || entry.detail().isEmpty() ? "选择道具查看说明" : entry.detail());
     }
 
     /**
@@ -631,6 +680,39 @@ public class BattleView {
      * 三列网格 3×115+2×13=371 恰等于左块宽度（与技能格 2 列宽格互补）。
      */
     public void showPartyMenu(List<Pokemon> party, int activeIndex, IntConsumer onPick, Runnable onBack) {
+        renderPartyGrid(party, activeIndex,
+                idx -> !party.get(idx).isFainted() && idx != activeIndex, // 可点：健康且非当前出战
+                idx -> party.get(idx).isFainted(),                        // 灰格：倒下
+                onPick, onBack, null);
+    }
+
+    /**
+     * 目标选择面板（背包用药后）：与精灵面板同构的 3×2 六格，格子可否点击由 {@code selectable} 决定
+     * （如伤药只能选未满血且未倒下的精灵），不可选格以灰格呈现（仍可悬停查看详情）。
+     * 点中合法目标即回调其队伍下标（由控制器转交 {@code useItem(item, partyIndex)}）。
+     *
+     * @param party       玩家队伍
+     * @param activeIndex 当前出战精灵下标（仅用于 ★ 标记）
+     * @param selectable  某下标是否可选作目标
+     * @param onPick      选中目标时的回调（参数为队伍下标）
+     * @param onBack      返回背包
+     * @param hint        左块顶部提示文案（如「选择使用【伤药】的目标」），null 时不显示
+     */
+    public void showTargetMenu(List<Pokemon> party, int activeIndex, IntPredicate selectable,
+                               IntConsumer onPick, Runnable onBack, String hint) {
+        renderPartyGrid(party, activeIndex, selectable, idx -> !selectable.test(idx), onPick, onBack, hint);
+    }
+
+    /**
+     * 队伍六格面板通用渲染（精灵面板 / 道具目标面板共用）：
+     * 左块 [状态行 +（可选）提示行 + 3×2 固定六格]，右块精灵信息卡（悬停联动）。
+     *
+     * @param selectable 某下标是否可点击选中
+     * @param grey       某下标是否灰格呈现（不可点但可查看详情）
+     */
+    private void renderPartyGrid(List<Pokemon> party, int activeIndex,
+                                 IntPredicate selectable, IntPredicate grey,
+                                 IntConsumer onPick, Runnable onBack, String hint) {
         leftPanel.setStyle("");
         Button back = compactButton("返回");
         back.setOnAction(e -> onBack.run());
@@ -638,6 +720,12 @@ public class BattleView {
         HBox.setHgrow(gap, Priority.ALWAYS);
         HBox statusRow = new HBox(8, fieldStatus, gap, back);
         statusRow.setAlignment(Pos.CENTER_LEFT);
+        VBox head = new VBox(2, statusRow);
+        if (hint != null && !hint.isEmpty()) {
+            Label hintLabel = new Label(hint);
+            hintLabel.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #2f5d9e;");
+            head.getChildren().add(hintLabel);
+        }
 
         // 3×2 固定六格（行优先）；列距 13 使三列网格恰填满左块（115×3+13×2=371）
         GridPane grid = new GridPane();
@@ -660,16 +748,16 @@ public class BattleView {
                 sub = sub + "  " + badge;
             }
             Button b = partyCell((active ? "★ " : "") + p.getName(), "Lv." + p.getLevel() + "  " + sub,
-                    fainted, false);
-            // 悬停联动：详情卡切换（倒下/出战也可查看）；点击仅健康且非出战的精灵可换人
+                    grey.test(index), false);
+            // 悬停联动：详情卡切换（倒下/出战也可查看）；点击仅合法目标可选中
             b.setOnMouseEntered(e -> updatePartyInfo(p));
-            if (!fainted && !active) {
+            if (selectable.test(index)) {
                 b.setOnAction(e -> onPick.accept(index));
             }
             grid.add(b, index % 3, index / 3);
         }
 
-        leftPanel.getChildren().setAll(statusRow, grid);
+        leftPanel.getChildren().setAll(head, grid);
         actionBox.getChildren().clear();
         actionBox.getChildren().add(buildPartyInfoCard());
         updatePartyInfo(party.isEmpty() ? null : party.get(0)); // 打开面板默认展示第一只

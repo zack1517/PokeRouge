@@ -317,43 +317,22 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 玩家使用道具：回复道具回复当前精灵 HP；解除道具治愈当前精灵异常状态；精灵球尝试捕捉野生精灵。
-     * 道具使用不计先后手（视为先行动作），使用后若战斗未结束则敌方行动一次。
-     * 训练师轮战中投掷精灵球会被拒绝（球不消耗）。
+     * 玩家使用道具于指定队伍精灵：回复道具回复目标 HP、解除道具治愈目标异常状态；
+     * 精灵球尝试捕捉野生精灵（与目标无关）。道具使用不计先后手（视为先行动作），
+     * 使用后若战斗未结束则敌方行动一次。训练师轮战中投掷精灵球会被拒绝（球不消耗）。
      *
+     * @param item       要使用的道具；为 {@code null} 或背包数量不足时本回合不行动
+     * @param partyIndex 目标精灵在玩家队伍中的下标；越界时本回合不行动
      * @return 本回合产生的新日志
      */
     @Override
-    public List<String> useItem(Item item) {
+    public List<String> useItem(Item item, int partyIndex) {
         int mark = log.size();
         requireOngoing();
         if (item == null || player.getBag().countOf(item) <= 0) {
             return slice(mark);
         }
-        if (item.getCategory() == ItemCategory.HEAL) {
-            Pokemon active = playerActive();
-            int healed = active.heal((int) item.getEffect());
-            if (healed <= 0) {
-                append(active.getName() + " 的 HP 是满的，【" + item.getName() + "】没有使用。");
-                return slice(mark);
-            }
-            player.getBag().consume(item);
-            append("使用了【" + item.getName() + "】，" + active.getName() + " 回复了 " + healed + " HP");
-            if (isOngoing() && !foeActive().isFainted() && !playerActive().isFainted()) {
-                foeTurn();
-            }
-        } else if (item.getCategory() == ItemCategory.CURE) {
-            Pokemon active = playerActive();
-            if (!cureWithItem(active, item)) {
-                append(active.getName() + " 没有可解除的异常状态，【" + item.getName() + "】没有使用。");
-                return slice(mark);
-            }
-            player.getBag().consume(item);
-            append("使用了【" + item.getName() + "】");
-            if (isOngoing() && !foeActive().isFainted() && !playerActive().isFainted()) {
-                foeTurn();
-            }
-        } else if (item.getCategory() == ItemCategory.POKE_BALL) {
+        if (item.getCategory() == ItemCategory.POKE_BALL) {
             // 训练师轮战不可捕捉（即使 alwaysCatch 的球也不行）；野生遭遇才能捕捉
             if (trainer != null) {
                 append("训练师的精灵无法被捕捉！");
@@ -364,11 +343,48 @@ public class BattleEngine implements BattleService {
             if (!tryCapture(item) && isOngoing() && !wild.isFainted() && !playerActive().isFainted()) {
                 foeTurn();
             }
+            finishRound();
+            return slice(mark);
+        }
+        Pokemon target = partyAt(partyIndex);
+        if (target == null) {
+            append("没有可以使用的目标。");
+            return slice(mark);
+        }
+        if (item.getCategory() == ItemCategory.HEAL) {
+            if (target.isFainted()) {
+                append(target.getName() + " 已经倒下了，【" + item.getName() + "】无法使用。");
+                return slice(mark);
+            }
+            int healed = target.heal((int) item.getEffect());
+            if (healed <= 0) {
+                append(target.getName() + " 的 HP 是满的，【" + item.getName() + "】没有使用。");
+                return slice(mark);
+            }
+            player.getBag().consume(item);
+            append("使用了【" + item.getName() + "】，" + target.getName() + " 回复了 " + healed + " HP");
+        } else if (item.getCategory() == ItemCategory.CURE) {
+            if (!cureWithItem(target, item)) {
+                append(target.getName() + " 没有可解除的异常状态，【" + item.getName() + "】没有使用。");
+                return slice(mark);
+            }
+            player.getBag().consume(item);
+            append("使用了【" + item.getName() + "】");
         } else {
             append("该道具暂时无法使用");
+            return slice(mark);
+        }
+        if (isOngoing() && !foeActive().isFainted() && !playerActive().isFainted()) {
+            foeTurn();
         }
         finishRound();
         return slice(mark);
+    }
+
+    /** 取玩家队伍中指定下标的精灵；下标越界返回 {@code null}。 */
+    private Pokemon partyAt(int partyIndex) {
+        List<Pokemon> party = player.getParty();
+        return partyIndex >= 0 && partyIndex < party.size() ? party.get(partyIndex) : null;
     }
 
     /**

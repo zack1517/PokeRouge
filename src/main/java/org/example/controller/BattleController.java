@@ -64,10 +64,43 @@ public class BattleController implements BattleView.Actions {
     @Override
     public void onItemSelected(int stackIndex) {
         List<ItemStack> stacks = engine.getBag().availableStacks();
-        if (stackIndex >= 0 && stackIndex < stacks.size()) {
-            engine.useItem(stacks.get(stackIndex).getItem());
+        if (stackIndex < 0 || stackIndex >= stacks.size()) {
+            render();
+            return;
         }
-        render();
+        Item item = stacks.get(stackIndex).getItem();
+        if (item.getCategory() == ItemCategory.POKE_BALL) {
+            engine.useItem(item); // 精灵球始终投向敌方野生精灵，与队伍目标无关
+            render();
+            return;
+        }
+        showTargetMenu(item);
+    }
+
+    /** 选择道具作用的目标精灵（回复/解除道具）：点中合法目标即使用并结算本回合。 */
+    private void showTargetMenu(Item item) {
+        List<Pokemon> party = engine.getPlayer().getParty();
+        int activeIndex = party.indexOf(engine.playerActive());
+        view.showTargetMenu(party, activeIndex,
+                idx -> canTarget(item, party.get(idx)),
+                idx -> {
+                    engine.useItem(item, idx);
+                    render();
+                },
+                this::showBagMenu,
+                "选择使用【" + item.getName() + "】的目标");
+    }
+
+    /** 某只精灵能否作为该道具的目标：回复道具要求未倒下且未满血；解除道具要求有可解除的异常状态。 */
+    private static boolean canTarget(Item item, Pokemon p) {
+        if (item.getCategory() == ItemCategory.HEAL) {
+            return !p.isFainted() && p.getCurrentHp() < p.getMaxHp();
+        }
+        if (item.getCategory() == ItemCategory.CURE) {
+            StatusCondition status = p.getStatus();
+            return status != StatusCondition.NONE && item.canCure(status);
+        }
+        return false;
     }
 
     @Override
@@ -125,7 +158,7 @@ public class BattleController implements BattleView.Actions {
     }
 
     private void showPartyMenu() {
-        List<org.example.model.Pokemon> party = engine.getPlayer().getParty();
+        List<Pokemon> party = engine.getPlayer().getParty();
         int activeIndex = party.indexOf(engine.playerActive());
         view.showPartyMenu(party, activeIndex, this::onSwitchSelected, this::render);
     }
@@ -147,25 +180,18 @@ public class BattleController implements BattleView.Actions {
         List<BattleView.ItemButton> buttons = new ArrayList<>();
         for (ItemStack stack : stacks) {
             Item item = stack.getItem();
-            String desc = describe(item);
-            String text = item.getName() + " ×" + stack.getCount() + (desc.isEmpty() ? "" : "（" + desc + "）");
-            boolean disabled = isItemDisabled(item);
-            buttons.add(new BattleView.ItemButton(text, disabled));
+            String text = item.getName() + " ×" + stack.getCount();
+            buttons.add(new BattleView.ItemButton(text, isItemDisabled(item), describe(item)));
         }
         view.showBagMenu(buttons, this::onItemSelected, this::render);
     }
 
-    /** 道具当前是否不可用：回复道具在满血时禁用；解除道具在当前精灵没有对应异常时禁用。 */
+    /** 道具当前是否不可用：回复/解除道具在队伍中没有任何合法目标时禁用；精灵球恒可用（能否捕捉由引擎判定）。 */
     private boolean isItemDisabled(Item item) {
-        Pokemon active = engine.playerActive();
-        if (item.getCategory() == ItemCategory.HEAL) {
-            return active.getCurrentHp() >= active.getMaxHp();
+        if (item.getCategory() == ItemCategory.POKE_BALL) {
+            return false;
         }
-        if (item.getCategory() == ItemCategory.CURE) {
-            StatusCondition status = active.getStatus();
-            return status == StatusCondition.NONE || !item.canCure(status);
-        }
-        return false;
+        return engine.getPlayer().getParty().stream().noneMatch(p -> canTarget(item, p));
     }
 
     private String describe(Item item) {

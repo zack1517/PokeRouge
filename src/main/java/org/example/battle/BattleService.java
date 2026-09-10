@@ -85,16 +85,32 @@ public interface BattleService {
     List<String> useMove(MoveSlot slot);
 
     /**
-     * 玩家使用道具：回复道具回复当前精灵 HP；精灵球尝试捕捉野生精灵。道具不计先后手
-     * （视为先行动作），使用后若战斗未结束则敌方行动一次。
+     * 玩家使用道具于**指定队伍精灵**：回复道具回复目标 HP、解除道具治愈目标异常状态；
+     * 精灵球始终投向敌方野生精灵（与目标无关）。道具不计先后手（视为先行动作），
+     * 使用后若战斗未结束则敌方行动一次。
+     *
+     * <p><b>目标约束</b>：{@code partyIndex} 为玩家队伍下标，越界时本回合不行动；
+     * 回复道具对**已倒下**的精灵无效（无法以此复活，原版行为），解除道具对已倒下精灵仍有效。</p>
      *
      * <p><b>训练师轮战不可捕捉</b>：对训练师使用精灵球时球不消耗，仅追加一条提示日志。</p>
+     *
+     * @param item       要使用的道具；为 {@code null} 或背包中数量不足时本回合不行动
+     * @param partyIndex 目标精灵在玩家队伍中的下标
+     * @return 本回合产生的新日志
+     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）时
+     */
+    List<String> useItem(Item item, int partyIndex);
+
+    /**
+     * 玩家对**当前出战精灵**使用道具（等价于 {@code useItem(item, 出战精灵下标)}）。
      *
      * @param item 要使用的道具；为 {@code null} 或背包中数量不足时本回合不行动
      * @return 本回合产生的新日志
      * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）时
      */
-    List<String> useItem(Item item);
+    default List<String> useItem(Item item) {
+        return useItem(item, getPlayer().getParty().indexOf(playerActive()));
+    }
 
     /**
      * 玩家尝试逃跑：速度越快成功率越高。失败则野生精灵行动一次。

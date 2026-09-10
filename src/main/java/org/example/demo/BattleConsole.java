@@ -227,7 +227,34 @@ public class BattleConsole {
         if (idx < 0 || idx >= stacks.size()) {
             return false;
         }
-        printLogs(b.useItem(stacks.get(idx).getItem()));
+        Item chosen = stacks.get(idx).getItem();
+        if (chosen.getCategory() == ItemCategory.POKE_BALL) {
+            // 精灵球始终投向敌方野生精灵（与队伍目标无关）
+            printLogs(b.useItem(chosen));
+            return true;
+        }
+        // 回复/解除道具：再选作用目标（可为队伍任意精灵，含替补）
+        List<Pokemon> party = b.getPlayer().getParty();
+        Pokemon cur = b.playerActive();
+        System.out.println("── 目标 ──────────────────────────────");
+        for (int i = 0; i < party.size(); i++) {
+            Pokemon p = party.get(i);
+            String tag = p == cur ? "(出战)" : (p.isFainted() ? "(倒下)" : "");
+            System.out.printf("  [%d] %-8s Lv%d  HP %d/%d  %s%n",
+                    i + 1, p.getName(), p.getLevel(), p.getCurrentHp(), p.getMaxHp(), tag);
+        }
+        System.out.print("  输入目标编号，[c] 返回 > ");
+        String pick = read().trim().toLowerCase();
+        if (pick.equals("c")) {
+            return false;
+        }
+        int target;
+        try {
+            target = Integer.parseInt(pick) - 1;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        printLogs(b.useItem(chosen, target));
         return true;
     }
 

@@ -554,6 +554,115 @@ class BattleEngineStatusTest {
     }
 
     // ------------------------------------------------------------------
+    // 道具目标选择
+    // ------------------------------------------------------------------
+
+    @Test
+    void 回复道具可作用于队伍中非出战精灵() {
+        Pokemon active = sturdyPlayer("a");
+        Pokemon bench = sturdyPlayer("b");
+        bench.takeDamage(50);
+        Player owner = playerWith(active, bench);
+        Item potion = GameData.instance().item("i_potion");
+        owner.getBag().add(potion, 1);
+        BattleService engine = battle(owner, passiveFoe("f"));
+        int before = bench.getCurrentHp();
+
+        engine.useItem(potion, 1);
+
+        assertEquals(before + 20, bench.getCurrentHp(), "回复的应是指定目标");
+        assertEquals(active.getMaxHp(), active.getCurrentHp(), "出战精灵不应受影响");
+        assertEquals(0, owner.getBag().countOf(potion), "使用成功后应消耗道具");
+        assertTrue(joinLog(engine).contains(bench.getName() + " 回复了"));
+    }
+
+    @Test
+    void 单参重载等价于对当前出战精灵使用() {
+        Pokemon active = sturdyPlayer("a");
+        active.takeDamage(50);
+        Pokemon bench = sturdyPlayer("b");
+        bench.takeDamage(50);
+        Player owner = playerWith(active, bench);
+        Item potion = GameData.instance().item("i_potion");
+        owner.getBag().add(potion, 1);
+        BattleService engine = battle(owner, passiveFoe("f"));
+        int activeBefore = active.getCurrentHp();
+        int benchBefore = bench.getCurrentHp();
+
+        engine.useItem(potion);
+
+        assertEquals(activeBefore + 20, active.getCurrentHp(), "应回复当前出战精灵");
+        assertEquals(benchBefore, bench.getCurrentHp(), "非出战精灵不应被回复");
+        assertEquals(0, owner.getBag().countOf(potion), "应由出战精灵消耗道具");
+    }
+
+    @Test
+    void 回复道具不能作用于已倒下精灵() {
+        Pokemon active = sturdyPlayer("a");
+        Pokemon fainted = sturdyPlayer("b");
+        fainted.takeDamage(fainted.getMaxHp());
+        assertTrue(fainted.isFainted());
+        Player owner = playerWith(active, fainted);
+        Item potion = GameData.instance().item("i_potion");
+        owner.getBag().add(potion, 1);
+        BattleService engine = battle(owner, passiveFoe("f"));
+
+        engine.useItem(potion, 1);
+
+        assertTrue(fainted.isFainted(), "倒下精灵不应被伤药复活");
+        assertEquals(1, owner.getBag().countOf(potion), "不生效时不应消耗道具");
+        assertTrue(joinLog(engine).contains("已经倒下了"));
+    }
+
+    @Test
+    void 解除道具可作用于已倒下精灵() {
+        Pokemon active = sturdyPlayer("a");
+        Pokemon fainted = sturdyPlayer("b");
+        fainted.setStatus(StatusCondition.POISON);
+        fainted.takeDamage(fainted.getMaxHp());
+        Player owner = playerWith(active, fainted);
+        Item antidote = GameData.instance().item("i_antidote");
+        owner.getBag().add(antidote, 1);
+        BattleService engine = battle(owner, passiveFoe("f"));
+
+        engine.useItem(antidote, 1);
+
+        assertEquals(StatusCondition.NONE, fainted.getStatus(), "倒下精灵的异常仍可解除");
+        assertEquals(0, owner.getBag().countOf(antidote));
+    }
+
+    @Test
+    void 道具目标下标越界时本回合不行动且不消耗() {
+        Pokemon active = sturdyPlayer("a");
+        active.takeDamage(50);
+        Player owner = playerWith(active);
+        Item potion = GameData.instance().item("i_potion");
+        owner.getBag().add(potion, 2);
+        BattleService engine = battle(owner, passiveFoe("f"));
+
+        engine.useItem(potion, 5);
+        engine.useItem(potion, -1);
+
+        assertEquals(2, owner.getBag().countOf(potion), "越界目标不应消耗道具");
+        assertTrue(joinLog(engine).contains("没有可以使用的目标"));
+    }
+
+    @Test
+    void 道具作用于非出战精灵时敌方仍行动一次() {
+        Pokemon active = sturdyPlayer("a");
+        Pokemon bench = sturdyPlayer("b");
+        bench.takeDamage(50);
+        Player owner = playerWith(active, bench);
+        Item potion = GameData.instance().item("i_potion");
+        owner.getBag().add(potion, 1);
+        BattleService engine = battle(owner, passiveFoe("f"));
+
+        engine.useItem(potion, 1);
+
+        assertTrue(joinLog(engine).contains("变硬"), "使用道具后敌方应行动一次");
+    }
+
+    // ------------------------------------------------------------------
     // 规则表与道具契约
     // ------------------------------------------------------------------
 
