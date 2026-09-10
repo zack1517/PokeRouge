@@ -14,16 +14,16 @@ import org.example.util.LogUtil;
 import org.example.util.UiScale;
 
 /**
- * 游戏启动页（第一屏）：整页铺 bg_main 主画面背景，中央半透明卡片承载四个入口按钮。
+ * 游戏启动页（第一屏）：整页铺 bg_main 主画面背景，中央半透明卡片承载五个入口按钮。
  * <p>「开始游戏」进入初始宝可梦选择流程（由 {@code MainController} 接线）；
- * 「继续游戏」「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
+ * 「宝可梦图鉴」「自定义战斗」「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
  */
 public final class StartView {
 
     /** 启动页背景（与 {@link StarterSelectionView} 同款主画面）。 */
     private static final String MAIN_BACKGROUND = "/images/background/bg_main.jpeg";
 
-    /** 四个入口按钮统一宽度（设计分辨率 px，随 UiScale 等比缩放）。 */
+    /** 入口按钮统一宽度（设计分辨率 px，随 UiScale 等比缩放）。 */
     private static final double BUTTON_WIDTH = 180;
 
     private final Runnable onStartGame;
@@ -45,8 +45,13 @@ public final class StartView {
         Button startGame = menuButton("开始游戏");
         startGame.setOnAction(e -> onStartGame.run());
 
-        Button continueGame = menuButton("继续游戏");
-        continueGame.setOnAction(e -> LogUtil.info("[StartView] 继续游戏：加载存档功能待实现（预留入口）"));
+        // 原「继续游戏」（存档入口）随团队「不做存档」决定撤下，改为「宝可梦图鉴」；
+        // 「宝可梦图鉴」与「自定义战斗」为新增预留入口，暂不实现功能。
+        Button pokedex = menuButton("宝可梦图鉴");
+        pokedex.setOnAction(e -> LogUtil.info("[StartView] 宝可梦图鉴：图鉴展示功能待实现（预留入口）"));
+
+        Button customBattle = menuButton("自定义战斗");
+        customBattle.setOnAction(e -> LogUtil.info("[StartView] 自定义战斗：自定义对战功能待实现（预留入口）"));
 
         Button achievements = menuButton("成就系统");
         achievements.setOnAction(e -> LogUtil.info("[StartView] 成就系统：成就展示与管理功能待实现（预留入口）"));
@@ -54,8 +59,8 @@ public final class StartView {
         Button settings = menuButton("设置选项");
         settings.setOnAction(e -> LogUtil.info("[StartView] 设置选项：音效、画面等配置功能待实现（预留入口）"));
 
-        // 半透明白卡承载标题与四个入口（与 StarterSelectionView 的卡片同款：0.65 白底 + 浅灰描边）
-        VBox card = new VBox(10, title, startGame, continueGame, achievements, settings);
+        // 半透明白卡承载标题与五个入口（与 StarterSelectionView 的卡片同款：0.65 白底 + 浅灰描边）
+        VBox card = new VBox(10, title, startGame, pokedex, customBattle, achievements, settings);
         card.setMaxWidth(260);
         // 关键：BorderPane 会把 center 子节点拉满可用高度，不设上限时卡片背景将撑满整窗高；
         // maxHeight 用内容首选高封顶后，卡片按内容收拢并垂直居中。

@@ -1,0 +1,15 @@
+fix(app): 适配 dev 重构后的战斗接口，并把存档自测接入 JUnit
+
+同步 origin/dev（新增肉鸽系统、战斗模块重构、UI 改版、音乐、JUnit 测试框架），
+并修掉由此产生的集成问题。
+
+- RougeApp: BattleController 构造签名新增 segment 参数，传入 flow.segmentNo()
+  （该参数仅用于战斗页右上角段号展示）
+- SaveDemo: 抽出 public static runSuite()，main 与 JUnit 共用同一套断言
+- 新增 src/test/java/com/bao01/save/SaveSystemTest.java，mvn test 即可覆盖存档系统
+- docs/存档接口设计.md §6.3 补充 mvn test 入口
+
+验证：
+- mvn clean test → BUILD SUCCESS，97 个测试全过（含 dev 原有 95 个）
+- java -cp target/classes com.bao01.save.SaveDemo → 73/73 通过
+- mvn javafx:run → 验收窗口正常开启，无异常

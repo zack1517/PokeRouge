@@ -13,6 +13,10 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <javafx.version>17.0.20</javafx.version>
+        <!-- 应用入口：点 Run（IDEA 的 javafx:run）或 mvn javafx:run 启动的类。
+             默认指向游戏主界面（org.example.Launcher）。
+             如需启动「存档系统 + 游戏流程」验收窗口：mvn javafx:run -Djavafx.mainClass=com.bao01.app.RougeLauncher -->
+        <javafx.mainClass>org.example.Launcher</javafx.mainClass>
     </properties>
 
     <dependencies>
@@ -57,7 +61,7 @@
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>org.example.Launcher</mainClass>
+                    <mainClass>${javafx.mainClass}</mainClass>
                 </configuration>
             </plugin>
             <plugin>

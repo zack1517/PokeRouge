@@ -431,12 +431,18 @@ public final class GameData {
         if (c.length < 16) {
             return;
         }
+        // 只解析战斗模块种族格式：c[11] 为野生标志（0/1）。
+        // 宝可梦库 species.csv 中该列为进化目标 id（如 charmeleon），跳过以避免产生劣化条目。
+        String wildFlag = c[11].trim();
+        if (!"0".equals(wildFlag) && !"1".equals(wildFlag)) {
+            return;
+        }
         ElementType t1 = ElementType.parse(c[2]);
         ElementType t2 = c[3].trim().isEmpty() ? null : ElementType.parse(c[3]);
         Stats base = new Stats(parseInt(c[4]), parseInt(c[5]), parseInt(c[6]),
                 parseInt(c[7]), parseInt(c[8]), parseInt(c[9]));
         int catchRate = parseInt(c[10]);
-        boolean wild = "1".equals(c[11].trim());
+        boolean wild = "1".equals(wildFlag);
         String evolvesTo = c[12].trim().isEmpty() ? null : c[12].trim();
         int evolveLevel = parseInt(c[13]);
         List<String> moves = new ArrayList<>();
