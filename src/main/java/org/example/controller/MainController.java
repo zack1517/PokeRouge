@@ -44,6 +44,24 @@ public class MainController {
         this.stage = stage;
     }
 
+    /**
+     * 组装层统一入口：创建野生战引擎并注入数据端口与成长端口。
+     *
+     * <p>成长端口由外部成长模块实现（经验 / 升级 / 学招 / 进化判定），战斗模块自身不承担成长规则。</p>
+     */
+    private static BattleService newWildBattle(Player player, Pokemon wild) {
+        BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
+        return BattleServices.newBattle(player, wild, dataPort,
+                PokemonBattleAdapter.battleGrowthPort(dataPort));
+    }
+
+    /** 组装层统一入口：创建训练师轮战引擎并注入数据端口与成长端口。 */
+    private static BattleService newTrainerBattle(Player player, Trainer trainer) {
+        BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
+        return BattleServices.newTrainerBattle(player, trainer, dataPort,
+                PokemonBattleAdapter.battleGrowthPort(dataPort));
+    }
+
     /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；其余三项为预留入口）。 */
     public void showStartScreen() {
         MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环；文件缺失静默降级）
@@ -120,9 +138,7 @@ public class MainController {
             return;
         }
         try {
-            BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
-            BattleService engine = BattleServices.newBattle(player, wild.get(), dataPort,
-                    PokemonBattleAdapter.battleGrowthPort(dataPort));
+            BattleService engine = newWildBattle(player, wild.get());
             BattleController battle = new BattleController(engine, this::showMainMenu, session.getSegment());
             stage.setScene(battle.createScene());
         } catch (IllegalArgumentException ex) {
@@ -234,8 +250,7 @@ public class MainController {
             return;
         }
         try {
-            BattleService engine = BattleServices.newBattle(player, wild.get(),
-                    PokemonBattleAdapter.battleDataPort());
+            BattleService engine = newWildBattle(player, wild.get());
             stage.setScene(new BattleController(engine, rogueBattleFinished(engine), session.getSegment())
                     .createScene());
         } catch (IllegalArgumentException ex) {
@@ -262,8 +277,7 @@ public class MainController {
             return;
         }
         try {
-            BattleService engine = BattleServices.newTrainerBattle(player, trainer,
-                    PokemonBattleAdapter.battleDataPort());
+            BattleService engine = newTrainerBattle(player, trainer);
             stage.setScene(new BattleController(engine, rogueBattleFinished(engine), session.getSegment())
                     .createScene());
         } catch (IllegalArgumentException ex) {
@@ -287,8 +301,7 @@ public class MainController {
             return;
         }
         try {
-            BattleService engine = BattleServices.newBattle(player, boss.get(),
-                    PokemonBattleAdapter.battleDataPort());
+            BattleService engine = newWildBattle(player, boss.get());
             stage.setScene(new BattleController(engine, () -> {
                 BattleService.Status status = engine.getStatus();
                 if (status == BattleService.Status.PLAYER_WIN || status == BattleService.Status.CAUGHT) {
