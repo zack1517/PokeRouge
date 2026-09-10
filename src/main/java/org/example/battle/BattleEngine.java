@@ -1,6 +1,5 @@
 package org.example.battle;
 
-import org.example.data.GameData;
 import org.example.model.ElementType;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
@@ -51,6 +50,9 @@ import java.util.Random;
  * 速度减半（影响先后手与逃跑），灼伤使物理攻击减半；中毒/灼伤/剧毒在回合末扣血（剧毒逐回合递增），
  * 混乱在回合末递减。换宠清除混乱（挥发性异常），主要异常保留至治愈。</p>
  *
+ * <p><b>数据来源</b>：引擎只消费外部数据，通过 {@link BattleDataPort} 查询技能与种族
+ * （升级学招 / 进化）；未注入端口时相关功能降级为无操作，引擎本身不内建任何数据。</p>
+ *
  * <p>战斗行为契约见 {@link BattleService}，实例统一由 {@link BattleServices} 工厂创建，
  * 调用方不应直接持有本实现类。</p>
  */
@@ -62,6 +64,8 @@ public class BattleEngine implements BattleService {
     /** 训练师轮战中的敌方训练师；野生战斗时为 {@code null}。 */
     private final Trainer trainer;
     private final Random random;
+    /** 外部注入的只读数据端口：升级学招 / 进化等所需技能与种族数据的唯一来源。 */
+    private final BattleDataPort dataPort;
     /** 全程日志（按行累积）。 */
     private final List<String> log = new ArrayList<>();
     /** 获胜升级后「技能满、待玩家抉择是否/如何学习」的请求队列。 */
@@ -78,27 +82,66 @@ public class BattleEngine implements BattleService {
     private int terrainTurnsLeft = 0;
 
     public BattleEngine(Player player, Pokemon wild) {
-        this(player, wild, null, new Random());
+        this(player, wild, null, new Random(), BattleDataPorts.none());
     }
 
     public BattleEngine(Player player, Pokemon wild, Random random) {
-        this(player, wild, null, random);
+        this(player, wild, null, random, BattleDataPorts.none());
+    }
+
+    /**
+     * 创建一场野生战斗，并注入外部数据端口（升级学招 / 进化用）。
+     *
+     * @param dataPort 只读数据端口，不可为 {@code null}
+     */
+    public BattleEngine(Player player, Pokemon wild, BattleDataPort dataPort) {
+        this(player, wild, null, new Random(), dataPort);
+    }
+
+    /**
+     * 创建一场野生战斗，并注入随机源与外部数据端口。
+     *
+     * @param random   随机源
+     * @param dataPort 只读数据端口，不可为 {@code null}
+     */
+    public BattleEngine(Player player, Pokemon wild, Random random, BattleDataPort dataPort) {
+        this(player, wild, null, random, dataPort);
     }
 
     /** 创建一场训练师轮战（玩家 × 训练师）：不可逃跑、不可捕捉，一方精灵全部倒下才结束。 */
     public BattleEngine(Player player, Trainer trainer) {
-        this(player, null, trainer, new Random());
+        this(player, null, trainer, new Random(), BattleDataPorts.none());
     }
 
     public BattleEngine(Player player, Trainer trainer, Random random) {
-        this(player, null, trainer, random);
+        this(player, null, trainer, random, BattleDataPorts.none());
     }
 
-    private BattleEngine(Player player, Pokemon wild, Trainer trainer, Random random) {
+    /**
+     * 创建一场训练师轮战，并注入外部数据端口（升级学招 / 进化用）。
+     *
+     * @param dataPort 只读数据端口，不可为 {@code null}
+     */
+    public BattleEngine(Player player, Trainer trainer, BattleDataPort dataPort) {
+        this(player, null, trainer, new Random(), dataPort);
+    }
+
+    /**
+     * 创建一场训练师轮战，并注入随机源与外部数据端口。
+     *
+     * @param random   随机源
+     * @param dataPort 只读数据端口，不可为 {@code null}
+     */
+    public BattleEngine(Player player, Trainer trainer, Random random, BattleDataPort dataPort) {
+        this(player, null, trainer, random, dataPort);
+    }
+
+    private BattleEngine(Player player, Pokemon wild, Trainer trainer, Random random, BattleDataPort dataPort) {
         this.player = Objects.requireNonNull(player);
         this.wild = wild;
         this.trainer = trainer;
         this.random = Objects.requireNonNull(random);
+        this.dataPort = Objects.requireNonNull(dataPort);
         if (trainer != null && wild != null) {
             throw new IllegalArgumentException("野生精灵与训练师不能同时存在");
         }
@@ -879,7 +922,7 @@ public class BattleEngine implements BattleService {
         if (moveId == null) {
             return;
         }
-        Move move = GameData.instance().move(moveId);
+        Move move = dataPort.findMove(moveId);
         if (move == null || p.hasMove(move)) {
             return;
         }
@@ -897,7 +940,7 @@ public class BattleEngine implements BattleService {
         if (!p.canEvolve()) {
             return;
         }
-        Species target = GameData.instance().species(p.getSpecies().getEvolvesToId());
+        Species target = dataPort.findSpecies(p.getSpecies().getEvolvesToId());
         if (target == null) {
             return;
         }

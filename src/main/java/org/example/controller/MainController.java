@@ -95,7 +95,8 @@ public class MainController {
             return;
         }
         try {
-            BattleService engine = BattleServices.newBattle(player, wild.get());
+            BattleService engine = BattleServices.newBattle(player, wild.get(),
+                    PokemonBattleAdapter.battleDataPort());
             BattleController battle = new BattleController(engine, this::showMainMenu, session.getSegment());
             stage.setScene(battle.createScene());
         } catch (IllegalArgumentException ex) {

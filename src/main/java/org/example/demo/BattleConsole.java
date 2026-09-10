@@ -28,6 +28,9 @@ import java.util.Scanner;
 public class BattleConsole {
 
     static final GameData g = GameData.instance();
+    /** 注入给战斗模块的数据端口：战斗模块只消费，数据由本演示（组装层）提供。 */
+    static final org.example.data.GameDataBattleDataPort BATTLE_DATA =
+            new org.example.data.GameDataBattleDataPort(g);
     static final Scanner in = new Scanner(System.in, StandardCharsets.UTF_8);
     static Player player;
     static int wins = 0, losses = 0, caught = 0, fled = 0;
@@ -91,10 +94,10 @@ public class BattleConsole {
             player.healParty();
         }
         int top = player.getParty().stream().mapToInt(Pokemon::getLevel).max().orElse(5);
-        Pokemon wild = BattleServices.randomWild(BattleServices.wildLevelAround(top))
+        Pokemon wild = BattleServices.randomWild(BattleServices.wildLevelAround(top), BATTLE_DATA)
                 .orElseThrow(() -> new IllegalStateException("野生池为空"));
         player.leadWithFirstHealthy();
-        BattleService b = BattleServices.newBattle(player, wild);
+        BattleService b = BattleServices.newBattle(player, wild, BATTLE_DATA);
 
         System.out.println("\n野生的 " + wild.getSpecies().getName() + " Lv" + wild.getLevel() + " 出现了！");
         System.out.println("你派出了 " + player.getActive().getName() + "！");

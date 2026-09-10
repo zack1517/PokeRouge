@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
+import org.example.battle.BattleDataPort;
+import org.example.data.GameDataBattleDataPort;
 import org.example.model.ElementType;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
@@ -27,6 +29,11 @@ import org.example.pokemon.service.PokemonServiceImpl;
 public final class PokemonBattleAdapter {
 
     private PokemonBattleAdapter() {
+    }
+
+    /** 战斗模块所需的数据端口：由数据模块实现，在此组装层注入给战斗引擎。 */
+    public static BattleDataPort battleDataPort() {
+        return new GameDataBattleDataPort();
     }
 
     /** 将玩家在新宝可梦库中选择的初始精灵交给战斗系统。 */
