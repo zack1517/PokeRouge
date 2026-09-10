@@ -1,5 +1,11 @@
 package org.example.battle;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.Random;
+
 import org.example.model.ElementType;
 import org.example.model.HeldItem;
 import org.example.model.HeldItemEffect;
@@ -16,12 +22,6 @@ import org.example.model.Terrain;
 import org.example.model.Trainer;
 import org.example.model.TypeChart;
 import org.example.model.Weather;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Random;
 
 /**
  * 回合制对战引擎：{@link BattleService} 的默认实现。
@@ -841,12 +841,17 @@ public class BattleEngine implements BattleService {
             append("咔哒…… 球停止了晃动！");
             append("成功捕捉了野生的 " + wild.getName() + "！");
             status = Status.CAUGHT;
+            // 先给参战精灵结算捕捉奖励（1.5 倍击倒经验），再把新成员加入队伍：
+            // 避免被捕捉的精灵自己给自己发经验
+            BattleGrowthPort.Settlement settlement = growthPort.settleCapture(survivors(), wild);
+            for (String line : settlement.log()) {
+                append(line);
+            }
+            pendingLearns.addAll(settlement.pendingLearns());
             // 被捕捉的精灵加入玩家队伍，后续可再次派出；统一走受保护的 addPokemon 入口以维护队伍容量。
             if (!player.getParty().contains(wild)) {
                 player.addPokemon(wild);
             }
-            // 申报捕捉事件：捕捉次数驱动的局外成长（个体值加成）由成长模块自行判定
-            growthPort.onCaptured(wild.getSpecies().getId());
             return true;
         }
         append("野生的 " + wild.getName() + " 挣脱了出来！");
@@ -1054,13 +1059,19 @@ public class BattleEngine implements BattleService {
      * 已经拿到的经验）。本引擎不自行计算经验、不判定升级 / 学招 / 进化：成长模块返回的日志文本行
      * 原样追加，返回的「技能栏已满」挂起学招项进入待抉择队列。未注入成长端口时本方法无副作用。</p>
      *
+     * <p>训练师战按训练师配置的经验倍率申报（如训练家对战 / 火箭队事件 1.2 倍），
+     * 野生遭遇为 1 倍。</p>
+     *
      * @param defeated 刚被击败的对手（野生精灵或训练师队伍中倒下的一只）
      */
     private void settleGrowth(Pokemon defeated) {
         if (defeated == null) {
             return;
         }
-        BattleGrowthPort.Settlement settlement = growthPort.settle(survivors(), List.of(defeated));
+        int numerator = trainer == null ? 1 : trainer.getExpNumerator();
+        int denominator = trainer == null ? 1 : trainer.getExpDenominator();
+        BattleGrowthPort.Settlement settlement =
+                growthPort.settle(survivors(), List.of(defeated), numerator, denominator);
         for (String line : settlement.log()) {
             append(line);
         }
