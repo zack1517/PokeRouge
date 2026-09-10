@@ -3,6 +3,7 @@ package org.example.demo;
 import org.example.battle.BattleService;
 import org.example.battle.BattleServices;
 import org.example.data.GameData;
+import org.example.integration.WildEncounter;
 import org.example.model.Bag;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
@@ -94,7 +95,7 @@ public class BattleConsole {
             player.healParty();
         }
         int top = player.getParty().stream().mapToInt(Pokemon::getLevel).max().orElse(5);
-        Pokemon wild = BattleServices.randomWild(BattleServices.wildLevelAround(top), BATTLE_DATA)
+        Pokemon wild = WildEncounter.randomWild(WildEncounter.levelAround(top), BATTLE_DATA)
                 .orElseThrow(() -> new IllegalStateException("野生池为空"));
         player.leadWithFirstHealthy();
         BattleService b = BattleServices.newBattle(player, wild, BATTLE_DATA);

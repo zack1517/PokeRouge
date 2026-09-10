@@ -14,6 +14,7 @@ import org.example.util.LogUtil;
 import org.example.view.MainView;
 import org.example.view.StarterSelectionView;
 import org.example.integration.PokemonBattleAdapter;
+import org.example.integration.WildEncounter;
 
 import java.util.Optional;
 
@@ -88,7 +89,7 @@ public class MainController {
             session.leadWithFirstHealthy();
         }
         Pokemon lead = session.getActive();
-        int level = BattleServices.wildLevelAround(lead.getLevel());
+        int level = WildEncounter.levelAround(lead.getLevel());
         Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level);
         if (wild.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的野生精灵（数据缺失）。");

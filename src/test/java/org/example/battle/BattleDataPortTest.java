@@ -191,32 +191,6 @@ class BattleDataPortTest {
     }
 
     // ------------------------------------------------------------------
-    // 随机遭遇：野生池来自端口
-    // ------------------------------------------------------------------
-
-    @Test
-    void 随机遭遇经由注入端口取野生池() {
-        RecordingPort port = new RecordingPort();
-        port.pool.add("w_a");
-        port.species.put("w_a", species("w_a", 40, 10, 40, 10, List.of("m_slam"), null, 0, Map.of()));
-        port.moves.put("m_slam", SLAM);
-
-        Optional<Pokemon> wild = BattleServices.randomWild(5, port);
-
-        assertTrue(wild.isPresent(), "应生成野生精灵");
-        assertEquals("w_a", wild.get().getSpecies().getId());
-        assertEquals(5, wild.get().getLevel());
-        assertTrue(port.calls.contains("pool"), "野生池应经端口查询");
-        assertTrue(port.calls.contains("create:w_a@5"), "个体应经端口生成");
-    }
-
-    @Test
-    void 空端口下随机遭遇返回空() {
-        assertTrue(BattleServices.randomWild(5, BattleDataPorts.none()).isEmpty());
-        assertTrue(BattleServices.randomWild(5).isEmpty(), "旧签名等价于未注入端口");
-    }
-
-    // ------------------------------------------------------------------
     // 端口默认个体生成
     // ------------------------------------------------------------------
 
