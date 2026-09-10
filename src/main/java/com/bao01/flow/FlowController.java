@@ -88,6 +88,16 @@ public final class FlowController {
         return startRun(starter, rnd, battle);
     }
 
+    /**
+     * 开局（固定随机种子版）：随机源取 {@link RandomSource#seeded(long)}。
+     *
+     * <p>同一 seed + 同一套决策必然复现同一条 Run（节点池、AP 消耗、商店、敌人选择全部一致），
+     * 用于 bug 复现、回放与冒烟测试。
+     */
+    public static FlowController startRun(Player starter, long seed, BattleAdapter battle) {
+        return startRun(starter, RandomSource.seeded(seed), battle);
+    }
+
     /** 从 Run 快照恢复（对应 §7 扩展点；过程态战斗不随快照保存）。 */
     public static FlowController restored(Player player, RunSummary snapshot, BattleAdapter battle) {
         if (snapshot == null) {
@@ -97,6 +107,27 @@ public final class FlowController {
             throw new IllegalArgumentException("玩家队伍不能为 null");
         }
         FlowController c = new FlowController(player, RandomSource.system(), battle);
+        c.ap.resetForSegment(snapshot.segmentNo());
+        c.gold = snapshot.gold();
+        c.story = snapshot.story();
+        c.ledger = snapshot.ledger();
+        c.options.clear();
+        c.options.addAll(snapshot.options());
+        c.inRoute = snapshot.nextMilestone() != NodeType.ELITE_FOUR
+                && snapshot.nextMilestone() != NodeType.CHAMPION
+                && snapshot.nextMilestone() != NodeType.INVASION;
+        return c;
+    }
+
+    /** 从 Run 快照恢复（固定随机种子版：续玩部分同样可复现）。 */
+    public static FlowController restored(Player player, RunSummary snapshot, long seed, BattleAdapter battle) {
+        if (snapshot == null) {
+            throw new IllegalArgumentException("RunSummary 快照不能为 null");
+        }
+        if (player == null) {
+            throw new IllegalArgumentException("玩家队伍不能为 null");
+        }
+        FlowController c = new FlowController(player, RandomSource.seeded(seed), battle);
         c.ap.resetForSegment(snapshot.segmentNo());
         c.gold = snapshot.gold();
         c.story = snapshot.story();
