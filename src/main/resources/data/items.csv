@@ -6,9 +6,9 @@
 id,name,category,effect,alwaysCatch,curesSpec
 i_potion,伤药,HEAL,20,0,
 i_super_potion,好伤药,HEAL,50,0,
-i_poke_ball,精灵球,BALL,1.5,0,
-i_great_ball,超级球,BALL,2.5,0,
-i_ultra_ball,高级球,BALL,4,0,
+i_poke_ball,精灵球,BALL,3,0,
+i_great_ball,超级球,BALL,5,0,
+i_ultra_ball,高级球,BALL,8,0,
 i_master_ball,大师球,BALL,255,1,
 i_antidote,解毒药,CURE,0,0,POISON|BADLY_POISON
 i_paralyze_heal,麻痹药,CURE,0,0,PARALYSIS
