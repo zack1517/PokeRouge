@@ -30,6 +30,12 @@ public final class AppConfig {
      */
     public static final double WINDOW_SCALE = 1.5;
 
+    /**
+     * 主界面（启动页）背景音乐（classpath 路径；Windows 上支持 mp3/wav）。
+     * <p>文件缺失或加载失败时静默降级并打日志，不阻断游戏；放入资源文件后重启即生效。</p>
+     */
+    public static final String BGM_START = "/audio/bgm_start.mp3";
+
     /** 退出确认弹窗文案。 */
     public static final String EXIT_CONFIRM_TITLE = "退出程序";
     public static final String EXIT_CONFIRM_HEADER = null;

@@ -18,10 +18,10 @@ public class App extends Application {
         stage.setTitle(AppConfig.APP_TITLE);
         stage.setResizable(AppConfig.RESIZABLE);
 
-        // 2. 主控制器负责会话与场景切换
+        // 2. 主控制器负责会话与场景切换（第一屏为启动页，点「开始游戏」后进入选择初始宝可梦）
         MainController controller = new MainController(stage);
         controller.bindStageEvents();
-        controller.showStarterSelection();
+        controller.showStartScreen();
 
         // 3. 显示窗口
         stage.show();
