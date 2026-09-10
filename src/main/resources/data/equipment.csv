@@ -1,0 +1,16 @@
+# 装备统一格式：id,name,effectType,param,description
+# effectType 取 DAMAGE_TYPE(对应属性招式威力提升,param 为 属性|倍率 如 FIRE|1.2)
+#   / SUPER_EFFECTIVE(效果拔群时伤害提升,param 为倍率)
+#   / END_TURN_HEAL(回合末按最大HP比例回血,param 为比例 如 0.0625)
+#   / LIFE_STEAL(造成伤害吸血,param 为比例 如 0.125)
+#   / FIRST_STRIKE(概率无视速度先手,param 为概率百分比 如 20)
+#   / EVOLITE(未最终进化时双防提升,param 为倍率)
+id,name,effectType,param,description
+e_charcoal,木炭,DAMAGE_TYPE,FIRE|1.2,火属性招式威力提升 20%
+e_mystic_water,神秘水滴,DAMAGE_TYPE,WATER|1.2,水属性招式威力提升 20%
+e_magnet,磁铁,DAMAGE_TYPE,ELECTRIC|1.2,电属性招式威力提升 20%
+e_expert_belt,达人带,SUPER_EFFECTIVE,1.2,效果拔群时伤害提升 20%
+e_leftovers,剩饭,END_TURN_HEAL,0.0625,每回合末回复最大 HP 的 1/16
+e_shell_bell,贝壳之铃,LIFE_STEAL,0.125,攻击造成伤害的 1/8 回复自身 HP
+e_quick_claw,先制之爪,FIRST_STRIKE,20,20% 概率无视速度先手出招
+e_eviolite,进化辉石,EVOLITE,1.5,未最终进化时防御与特防提升 50%

@@ -9,6 +9,8 @@ import org.example.battle.BattleDataPort;
 import org.example.battle.BattleService;
 import org.example.battle.BattleServices;
 import org.example.config.AppConfig;
+import org.example.data.GameData;
+import org.example.model.HeldItem;
 import org.example.model.Option;
 import org.example.model.Player;
 import org.example.model.Pokemon;
@@ -23,6 +25,7 @@ import org.example.view.StartView;
 import org.example.integration.PokemonBattleAdapter;
 import org.example.integration.WildEncounter;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -115,6 +118,11 @@ public class MainController {
                     showMainMenu();
                 }
             }
+
+            @Override
+            public void onRefresh() {
+                showMainMenu();
+            }
         }, session.mapBackgroundPath(), session.getSegment());
         stage.setScene(view.createScene());
     }
@@ -192,7 +200,27 @@ public class MainController {
                 session.resolveRogueOptionEffect(option);
                 afterRogueStep();
             }
+            case REWARD -> {
+                resolveRogueEquipmentReward();
+                afterRogueStep();
+            }
         }
+    }
+
+    /** REWARD 事件：随机装备入库（已拥有则落空提示）。 */
+    private void resolveRogueEquipmentReward() {
+        List<HeldItem> pool = GameData.instance().allEquipment();
+        if (pool.isEmpty()) {
+            infoAlert("装备补给", "装备数据缺失，本次补给落空。");
+            return;
+        }
+        HeldItem reward = pool.get((int) (Math.random() * pool.size()));
+        if (!player.addEquipment(reward)) {
+            infoAlert("装备补给", "你已经拥有【" + reward.getName() + "】了，补给落空。");
+            return;
+        }
+        infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription()
+                + "\n可在主菜单点击精灵名，在弹窗中穿戴。");
     }
 
     /** 一次楼层事件（含战斗）结束后的统一推进：已结束→主菜单；点数耗尽→BOSS；否则重绘。 */

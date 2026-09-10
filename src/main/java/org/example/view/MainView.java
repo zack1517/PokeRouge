@@ -2,6 +2,7 @@ package org.example.view;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -40,6 +41,9 @@ public class MainView {
         void onHealAll();
 
         void onExit();
+
+        /** 图鉴弹窗内装备穿脱后重建主菜单（反映装备变化）。 */
+        void onRefresh();
     }
 
     private static final String YH = "-fx-font-family: 'Microsoft YaHei'; ";
@@ -153,7 +157,11 @@ public class MainView {
                 leadMark, p.getName(), p.getLevel(), typeText(p), hpText, expText));
         info.setWrapText(true);
         info.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-text-fill: #000;"
-                + (p.isFainted() ? " -fx-text-fill: #aa2222;" : ""));
+                + (p.isFainted() ? " -fx-text-fill: #aa2222;" : "")
+                + " -fx-underline: true;");
+        // 点击精灵名打开图鉴弹窗（可穿戴装备）
+        info.setCursor(Cursor.HAND);
+        info.setOnMouseClicked(e -> new PokemonDetailDialog(p, player, actions::onRefresh).show());
 
         Button lead = new Button("设为先发");
         lead.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 12px;");

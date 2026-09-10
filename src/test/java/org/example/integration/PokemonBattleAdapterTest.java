@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.example.model.ElementType;
 import org.example.model.Move;
@@ -75,7 +74,7 @@ class PokemonBattleAdapterTest {
         assertEquals(Math.min(Pokemon.MAX_MOVES, (int) eligible), battlePokemon.getMoves().size());
     }
 
-    /** 野生精灵应来自初始池、等级在目标值 ±2 内、技能转换有效。 */
+    /** 野生精灵等级在目标值 ±2 内、符合低等级遭遇的 BST 分层（≤350）、技能转换有效。 */
     @Test
     void testCreateWildPokemon_levelWithinOffsetAndMovesValid() {
         Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(5);
@@ -84,11 +83,13 @@ class PokemonBattleAdapterTest {
         Pokemon wildPokemon = wild.get();
         assertTrue(wildPokemon.getLevel() >= 3 && wildPokemon.getLevel() <= 7,
                 "野生等级应在 5±2 范围内，实际为 " + wildPokemon.getLevel());
-        Set<String> poolIds = service.getInitialPool().stream()
-                .map(Species::getId)
-                .collect(Collectors.toSet());
-        assertTrue(poolIds.contains(wildPokemon.getSpecies().getId()),
-                "野生精灵应来自初始池，实际为 " + wildPokemon.getSpecies().getId());
+        // 遭遇实现按全库 BST 分层：低等级只可能遇到 BST ≤ 350 的基础形态（初始池断言与实现不符，已修正）
+        org.example.pokemon.domain.Species source =
+                GameData.instance().getSpecies(wildPokemon.getSpecies().getId())
+                        .orElseThrow(() -> new AssertionError("野生精灵在新系统数据中不存在"));
+        assertTrue(source.getBaseStats().getTotal() <= 350,
+                "5 级遭遇应来自 BST ≤ 350 的分层，实际为 " + source.getName()
+                        + "（BST " + source.getBaseStats().getTotal() + "）");
         assertMovesAreValid(wildPokemon);
     }
 

@@ -27,12 +27,10 @@ import org.example.model.StatusCondition;
 import org.example.model.Terrain;
 import org.example.model.Weather;
 import org.example.util.ImageBackgrounds;
+import org.example.util.SpriteLoader;
 import org.example.util.UiScale;
 
-import java.io.InputStream;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.IntConsumer;
 import java.util.function.IntPredicate;
 
@@ -82,10 +80,6 @@ public class BattleView {
     private final ImageView enemySprite = new ImageView();
     private final Label playerSpriteFallback = new Label();
     private final Label enemySpriteFallback = new Label();
-    /** 立绘图片目录（classpath；文件名与精灵中文名一致，如「皮卡丘.png」）。 */
-    private static final String POKEMON_IMAGE_DIR = "/images/pokemon/";
-    /** 立绘图片缓存：精灵名 → 图片；value 为 null 表示已确认无图（内建精灵），避免重复加载。 */
-    private static final Map<String, Image> SPRITE_CACHE = new HashMap<>();
 
     // ---- 敌方信息（左上卡片） ----
     private final Label wildName = new Label("--");
@@ -322,25 +316,7 @@ public class BattleView {
      * 加载失败返回 {@code null}（调用方回退占位文本）。结果带缓存。
      */
     private static Image loadSprite(String pokemonName) {
-        if (pokemonName == null || pokemonName.isBlank()) {
-            return null;
-        }
-        if (SPRITE_CACHE.containsKey(pokemonName)) {
-            return SPRITE_CACHE.get(pokemonName);
-        }
-        String path = POKEMON_IMAGE_DIR + pokemonName + ".png";
-        try (InputStream in = BattleView.class.getResourceAsStream(path)) {
-            if (in == null) {
-                SPRITE_CACHE.put(pokemonName, null);
-                return null;
-            }
-            Image image = new Image(in);
-            SPRITE_CACHE.put(pokemonName, image);
-            return image;
-        } catch (Exception e) {
-            SPRITE_CACHE.put(pokemonName, null);
-            return null;
-        }
+        return SpriteLoader.load(pokemonName);
     }
 
     /** 把某只精灵的立绘刷到指定图片区：有图则显示图片；无图则隐藏图片、回退显示精灵名占位。 */
