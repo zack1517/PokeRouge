@@ -19,6 +19,10 @@ import java.util.List;
  * <p>流程：刷新精灵面板与日志 → 展示主菜单（技能/背包/精灵/逃跑）→ 引擎结算 → 依据状态
  * 继续或展示结局。战斗中精灵倒下会被引擎自动切换，玩家也可在行动回合主动切换，每次渲染都
  * 重新读取当前出战精灵。</p>
+ *
+ * <p>敌方面板统一取 {@link BattleService#foeActive()}：野生遭遇为野生精灵，训练师轮战为训练师
+ * 当前出战精灵（{@link BattleService#getWild()} 为 {@code null}），因此训练师换宠后界面会自动
+ * 跟随刷新。</p>
  */
 public class BattleController implements BattleView.Actions {
 
@@ -27,8 +31,9 @@ public class BattleController implements BattleView.Actions {
     private final int segment; // 当前地图段号（流程系统接入前由会话持有，仅用于右上角段文案）
     private final BattleView view = new BattleView(this);
 
-    /** @param engine 已就绪的战斗服务实例（玩家与野生精灵均已非倒下，通常来自
-     *                {@link org.example.battle.BattleServices#newBattle}）
+    /** @param engine 已就绪的战斗服务实例（玩家与敌方当前出战精灵均已非倒下，通常来自
+     *                {@link org.example.battle.BattleServices#newBattle} 或
+     *                {@link org.example.battle.BattleServices#newTrainerBattle}）
      *  @param onExit 战斗结束（含逃跑/捕捉/胜负）后返回主菜单的回调
      *  @param segment 当前地图段号（与主菜单/会话一致，用于战斗页右上角段展示） */
     public BattleController(BattleService engine, Runnable onExit, int segment) {
@@ -38,7 +43,7 @@ public class BattleController implements BattleView.Actions {
     }
 
     public Scene createScene() {
-        view.setHud("第 " + segment + " 段 · 野外遭遇", 500); // 金币为桩值（流程系统接入后替换，TODO(dev)）
+        view.setHud("第 " + segment + " 段 · " + encounterLabel(), 500); // 金币为桩值（流程系统接入后替换，TODO(dev)）
         Scene scene = view.createScene();
         render(); // 首屏：填充双方面板/日志并展示行动按钮
         return scene;
@@ -85,7 +90,7 @@ public class BattleController implements BattleView.Actions {
     // ------------------------------------------------------------------
 
     private void render() {
-        view.refreshPokemon(engine.playerActive(), engine.getWild());
+        view.refreshPokemon(engine.playerActive(), engine.foeActive());
         view.refreshFieldStatus(engine.getWeather(), engine.getTerrain());
         view.showLog(engine.getLog());
         if (!engine.isOngoing()) {
@@ -124,7 +129,7 @@ public class BattleController implements BattleView.Actions {
     }
 
     private void showMoveMenu() {
-        view.refreshPokemon(engine.playerActive(), engine.getWild());
+        view.refreshPokemon(engine.playerActive(), engine.foeActive());
         view.showMoveMenu(engine.playerActive().getMoveSlots(), this::render);
     }
 
@@ -168,11 +173,23 @@ public class BattleController implements BattleView.Actions {
 
     private String resultText() {
         return switch (engine.getStatus()) {
-            case PLAYER_WIN -> "战斗胜利！你获得了经验！";
+            case PLAYER_WIN -> isTrainerBattle()
+                    ? "战斗胜利！" + engine.getTrainer().getName() + " 的精灵已全部倒下！"
+                    : "战斗胜利！你获得了经验！";
             case PLAYER_LOSE -> "你已没有能战斗的精灵……";
             case FLED -> "成功逃离了战斗！";
             case CAUGHT -> "成功捕捉！它加入了你的队伍！";
             case ONGOING -> "";
         };
+    }
+
+    /** 是否训练师轮战（敌方持有一整支队伍）。 */
+    private boolean isTrainerBattle() {
+        return engine.getTrainer() != null;
+    }
+
+    /** 右上角遭遇说明：训练师轮战显示训练师名，野生遭遇显示「野外遭遇」。 */
+    private String encounterLabel() {
+        return isTrainerBattle() ? "训练师 " + engine.getTrainer().getName() : "野外遭遇";
     }
 }
