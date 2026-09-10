@@ -16,8 +16,8 @@ import org.example.util.UiScale;
 
 /**
  * 游戏启动页（第一屏）：整页铺 bg_main 主画面背景，中央半透明卡片承载六个入口按钮。
- * <p>「开始游戏」进入初始宝可梦选择流程、「继续游戏」进入存档位选择页、「自定义战斗」进入模式选择页
- * （均由 {@code MainController} 接线）；「宝可梦图鉴」「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
+ * <p>「开始游戏」进入初始宝可梦选择流程、「继续游戏」进入存档位选择页、「宝可梦图鉴」进入图鉴页、
+ * 「自定义战斗」进入模式选择页（均由 {@code MainController} 接线）；「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
  */
 public final class StartView {
 
@@ -33,18 +33,23 @@ public final class StartView {
     private final boolean canContinue;
 
     private final Runnable onCustomBattle;
+    /** 「宝可梦图鉴」回调。 */
+    private final Runnable onPokedex;
 
     /**
      * @param onStartGame    「开始游戏」回调
      * @param onContinueGame 「继续游戏」回调
      * @param canContinue    是否存在可继续的存档
      * @param onCustomBattle 「自定义战斗」回调
+     * @param onPokedex      「宝可梦图鉴」回调
      */
-    public StartView(Runnable onStartGame, Runnable onContinueGame, boolean canContinue, Runnable onCustomBattle) {
+    public StartView(Runnable onStartGame, Runnable onContinueGame, boolean canContinue,
+                     Runnable onCustomBattle, Runnable onPokedex) {
         this.onStartGame = onStartGame;
         this.onContinueGame = onContinueGame;
         this.canContinue = canContinue;
         this.onCustomBattle = onCustomBattle;
+        this.onPokedex = onPokedex;
     }
 
     public Scene createScene() {
@@ -72,9 +77,13 @@ public final class StartView {
             continueGame.setTooltip(new Tooltip("还没有任何存档，先开始游戏吧"));
         }
 
-        // 「宝可梦图鉴」为预留入口（原「不做存档」时期顶替继续游戏的位置）
+        // 「宝可梦图鉴」进入图鉴页（PokedexView：宝可梦库 + 局外成长进度驱动）
         Button pokedex = menuButton("宝可梦图鉴");
-        pokedex.setOnAction(e -> LogUtil.info("[StartView] 宝可梦图鉴：图鉴展示功能待实现（预留入口）"));
+        pokedex.setOnAction(e -> {
+            if (onPokedex != null) {
+                onPokedex.run();
+            }
+        });
 
         // 「自定义战斗」进入模式选择页（CustomBattleView；四种模式均已接入真实战斗）
         Button customBattle = menuButton("自定义战斗");

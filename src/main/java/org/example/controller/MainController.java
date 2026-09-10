@@ -31,6 +31,7 @@ import org.example.util.MusicPlayer;
 import org.example.view.CustomBattleSetupView;
 import org.example.view.CustomBattleView;
 import org.example.view.MainView;
+import org.example.view.PokedexView;
 import org.example.view.PokemonDetailView;
 import org.example.view.RogueFloorView;
 import org.example.view.SaveSlotView;
@@ -42,6 +43,8 @@ import org.example.integration.WildEncounter;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 主控制器：负责窗口生命周期、训练家会话，以及 启动页 ⇄ 主菜单 ⇄ 战斗/肉鸽楼层 的场景切换。
@@ -101,11 +104,26 @@ public class MainController {
         return session != null ? session.getGrowthProgress() : GrowthProgress.instance();
     }
 
-    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「自定义战斗」进入模式选择页）。 */
+    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「宝可梦图鉴」进入图鉴页；「自定义战斗」进入模式选择页）。 */
     public void showStartScreen() {
         MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环；文件缺失静默降级）
         stage.setScene(new StartView(this::showStarterSelection, this::showContinueSelection,
-                saveManager.store().hasAnySave(), this::showCustomBattle).createScene());
+                saveManager.store().hasAnySave(), this::showCustomBattle, this::showPokedex).createScene());
+    }
+
+    /**
+     * 宝可梦图鉴页：由启动页「宝可梦图鉴」进入。
+     *
+     * <p>数据 = 宝可梦库（种族 / 技能）+ 局外成长进度（捕捉 / 对战记录，供「图鉴记录」标签）。
+     * 当前图鉴不启用解锁机制、直接全部展示（见 {@code PokedexData} 解锁开关）；队伍持有的种族
+     * 仍照常传入，以便恢复解锁口径时无需改动本类。「返回」回到启动页。</p>
+     */
+    public void showPokedex() {
+        Set<String> ownedSpeciesIds = session == null ? Set.of()
+                : session.getPlayer().getParty().stream()
+                        .map(pokemon -> pokemon.getSpecies().getId())
+                        .collect(Collectors.toSet());
+        stage.setScene(new PokedexView(growthProgress(), ownedSpeciesIds, this::showStartScreen).createScene());
     }
 
     /** 自定义战斗模式选择页：由启动页「自定义战斗」进入；四种模式均已接入真实战斗。 */
