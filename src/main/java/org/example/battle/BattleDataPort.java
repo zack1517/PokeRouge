@@ -11,13 +11,13 @@ import java.util.Optional;
 /**
  * 战斗模块的<b>只读数据端口</b>。
  *
- * <p>战斗模块只消费数据、不拥有数据：本接口描述引擎运行时需要查询的最小数据集
+ * <p>战斗模块只消费数据、不拥有数据：本接口描述战斗相关的<b>外部数据入口</b>
  * （技能、种族、野生池、按种族生成个体），由外部数据模块实现，在组装层注入到
- * {@link BattleServices} / {@link BattleEngine}。引擎内部不含任何内建数据，
- * 也不直接依赖具体的数据源实现。</p>
+ * {@link BattleServices} / {@link BattleEngine}、{@link org.example.integration.WildEncounter}
+ * 与外部成长模块。引擎内部不含任何内建数据，也不直接依赖具体的数据源实现。</p>
  *
  * <p>未注入时使用 {@link BattleDataPorts#none()}：所有查询都返回「查不到」，
- * 战斗规则照常运行，仅「升级学招 / 进化 / 随机野生遭遇」降级为无操作。</p>
+ * 战斗规则照常运行，仅「随机野生遭遇」与成长模块的「到级学招 / 进化」降级为无操作。</p>
  */
 public interface BattleDataPort {
 

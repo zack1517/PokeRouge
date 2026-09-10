@@ -14,7 +14,11 @@ import java.util.Random;
  *
  * <p><b>数据来源</b>：本类不持有任何数据，需要通过 {@link BattleDataPort} 参数由外部
  * 数据模块注入（由组装层实现并传入）；未注入时使用
- * {@link BattleDataPorts#none()}，升级学招/进化降级为无操作。</p>
+ * {@link BattleDataPorts#none()}，伤害计算之外的查询降级为无操作。</p>
+ *
+ * <p><b>成长判定</b>：经验增加 / 升级 / 学招 / 进化不属于战斗模块职责，需要额外注入
+ * {@link BattleGrowthPort}（由外部成长模块实现，见 {@code org.example.growth.GrowthService}）；
+ * 未注入时使用 {@link BattleGrowthPort#none()}，成长相关结算降级为无操作。</p>
  *
  * <p><b>职责边界</b>：本类只做「创建对战」。野生遭遇生成（等级浮动、随机挑种族）属于
  * 流程/组装层职责，见 {@code org.example.integration.WildEncounter}。</p>
@@ -85,7 +89,7 @@ public final class BattleServices {
     }
 
     /**
-     * 创建一场野生对战，并注入外部数据端口（升级学招 / 进化用）。
+     * 创建一场野生对战，并注入外部数据端口。
      *
      * @param player   玩家（当前出战精灵必须存活，否则抛异常）
      * @param wild     野生精灵（必须非倒下）
@@ -110,7 +114,7 @@ public final class BattleServices {
     }
 
     /**
-     * 创建一场训练师轮战，并注入外部数据端口（升级学招 / 进化用）。
+     * 创建一场训练师轮战，并注入外部数据端口。
      *
      * @param player   玩家（当前出战精灵必须存活，否则抛异常）
      * @param trainer  敌方训练师（队伍中须有健康精灵，否则抛异常）
@@ -133,6 +137,68 @@ public final class BattleServices {
     public static BattleService newTrainerBattle(Player player, Trainer trainer, Random random,
                                                  BattleDataPort dataPort) {
         return new BattleEngine(player, trainer, random, dataPort);
+    }
+
+    // ------------------------------------------------------------------
+    // 注入成长模块（经验 / 升级 / 学招 / 进化判定）
+    // ------------------------------------------------------------------
+
+    /**
+     * 创建一场野生对战，并注入外部数据端口与成长模块。
+     *
+     * @param player     玩家（当前出战精灵必须存活，否则抛异常）
+     * @param wild       野生精灵（必须非倒下）
+     * @param dataPort   只读数据端口，不可为 {@code null}
+     * @param growthPort 成长申报端口（经验 / 升级 / 学招 / 进化判定），不可为 {@code null}
+     * @return 一个已就绪的 {@link BattleService} 实例
+     */
+    public static BattleService newBattle(Player player, Pokemon wild, BattleDataPort dataPort,
+                                          BattleGrowthPort growthPort) {
+        return new BattleEngine(player, wild, new Random(), dataPort, growthPort);
+    }
+
+    /**
+     * 创建一场可指定随机源的野生对战，并注入外部数据端口与成长模块。
+     *
+     * @param player     玩家（当前出战精灵必须存活，否则抛异常）
+     * @param wild       野生精灵（必须非倒下）
+     * @param random     随机源
+     * @param dataPort   只读数据端口，不可为 {@code null}
+     * @param growthPort 成长申报端口（经验 / 升级 / 学招 / 进化判定），不可为 {@code null}
+     * @return 一个已就绪的 {@link BattleService} 实例
+     */
+    public static BattleService newBattle(Player player, Pokemon wild, Random random,
+                                          BattleDataPort dataPort, BattleGrowthPort growthPort) {
+        return new BattleEngine(player, wild, random, dataPort, growthPort);
+    }
+
+    /**
+     * 创建一场训练师轮战，并注入外部数据端口与成长模块。
+     *
+     * @param player     玩家（当前出战精灵必须存活，否则抛异常）
+     * @param trainer    敌方训练师（队伍中须有健康精灵，否则抛异常）
+     * @param dataPort   只读数据端口，不可为 {@code null}
+     * @param growthPort 成长申报端口（经验 / 升级 / 学招 / 进化判定），不可为 {@code null}
+     * @return 一个已就绪的 {@link BattleService} 实例
+     */
+    public static BattleService newTrainerBattle(Player player, Trainer trainer, BattleDataPort dataPort,
+                                                 BattleGrowthPort growthPort) {
+        return new BattleEngine(player, trainer, new Random(), dataPort, growthPort);
+    }
+
+    /**
+     * 创建一场可指定随机源的训练师轮战，并注入外部数据端口与成长模块。
+     *
+     * @param player     玩家（当前出战精灵必须存活，否则抛异常）
+     * @param trainer    敌方训练师（队伍中须有健康精灵，否则抛异常）
+     * @param random     随机源
+     * @param dataPort   只读数据端口，不可为 {@code null}
+     * @param growthPort 成长申报端口（经验 / 升级 / 学招 / 进化判定），不可为 {@code null}
+     * @return 一个已就绪的 {@link BattleService} 实例
+     */
+    public static BattleService newTrainerBattle(Player player, Trainer trainer, Random random,
+                                                 BattleDataPort dataPort, BattleGrowthPort growthPort) {
+        return new BattleEngine(player, trainer, random, dataPort, growthPort);
     }
 
 }

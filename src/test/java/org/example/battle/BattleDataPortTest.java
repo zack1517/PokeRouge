@@ -1,5 +1,6 @@
 package org.example.battle;
 
+import org.example.growth.GrowthService;
 import org.example.model.ElementType;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
@@ -25,8 +26,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 战斗数据端口测试：验证战斗模块<b>只消费</b>外部数据。
  *
- * <p>引擎运行期需要的技能 / 种族 / 野生池全部经由 {@link BattleDataPort} 查询，
- * 未注入端口时相关功能降级为无操作，不依赖任何内建数据。</p>
+ * <p>成长（经验 / 升级 / 学招 / 进化）由外部成长模块判定，经由
+ * {@link org.example.growth.GrowthService} 使用同一份 {@link BattleDataPort} 查询技能与种族；
+ * 未注入成长端口时战斗结算不做任何成长。</p>
  */
 class BattleDataPortTest {
 
@@ -122,7 +124,7 @@ class BattleDataPortTest {
     // ------------------------------------------------------------------
 
     @Test
-    void 升级学招经由注入端口查询技能() {
+    void 升级学招经由成长模块查询技能() {
         Species mine = species("mine_sp", 200, 200, 40, 200,
                 List.of("m_slam"), null, 0, Map.of(2, "m_new"));
         Species foe = species("foe_sp", 40, 10, 40, 10, List.of("m_slam"), null, 0, Map.of());
@@ -131,16 +133,17 @@ class BattleDataPortTest {
         RecordingPort port = new RecordingPort();
         port.moves.put("m_new", NEW_MOVE);
 
-        BattleService battle = BattleServices.newBattle(player, pokemon(foe, 5, SLAM), new Random(7), port);
+        BattleService battle = BattleServices.newBattle(player, pokemon(foe, 5, SLAM), new Random(7),
+                port, new GrowthService(port));
         battle.useMove(player.getActive().getMoveSlots().get(0));
 
         assertEquals(BattleService.Status.PLAYER_WIN, battle.getStatus());
-        assertTrue(port.calls.contains("move:m_new"), "引擎应通过端口查询到级技能");
+        assertTrue(port.calls.contains("move:m_new"), "成长模块应通过端口查询到级技能");
         assertTrue(knows(player.getActive(), "m_new"), "应学会端口返回的技能");
     }
 
     @Test
-    void 未注入端口时升级学招降级为无操作() {
+    void 未注入成长端口时不做任何成长结算() {
         Species mine = species("mine_sp", 200, 200, 40, 200,
                 List.of("m_slam"), null, 0, Map.of(2, "m_new"));
         Species foe = species("foe_sp", 40, 10, 40, 10, List.of("m_slam"), null, 0, Map.of());
@@ -150,7 +153,8 @@ class BattleDataPortTest {
         battle.useMove(player.getActive().getMoveSlots().get(0));
 
         assertEquals(BattleService.Status.PLAYER_WIN, battle.getStatus());
-        assertFalse(knows(player.getActive(), "m_new"), "无端口时不学会任何技能");
+        assertEquals(1, player.getActive().getLevel(), "无成长端口时不结算经验与升级");
+        assertFalse(knows(player.getActive(), "m_new"), "无成长端口时不学会任何技能");
         assertEquals(1, player.getActive().getMoveSlots().size(), "只保留原有技能");
     }
 
@@ -159,7 +163,7 @@ class BattleDataPortTest {
     // ------------------------------------------------------------------
 
     @Test
-    void 升级进化经由注入端口查询种族() {
+    void 升级进化经由成长模块查询种族() {
         Species mine = species("mine_sp", 200, 200, 40, 200,
                 List.of("m_slam"), "mine_evo", 2, Map.of());
         Species evolved = species("mine_evo", 220, 220, 50, 220,
@@ -170,15 +174,16 @@ class BattleDataPortTest {
         RecordingPort port = new RecordingPort();
         port.species.put("mine_evo", evolved);
 
-        BattleService battle = BattleServices.newBattle(player, pokemon(foe, 5, SLAM), new Random(7), port);
+        BattleService battle = BattleServices.newBattle(player, pokemon(foe, 5, SLAM), new Random(7),
+                port, new GrowthService(port));
         battle.useMove(player.getActive().getMoveSlots().get(0));
 
-        assertTrue(port.calls.contains("species:mine_evo"), "引擎应通过端口查询进化目标种族");
+        assertTrue(port.calls.contains("species:mine_evo"), "成长模块应通过端口查询进化目标种族");
         assertEquals("mine_evo", player.getActive().getSpecies().getId(), "应进化为端口返回的种族");
     }
 
     @Test
-    void 未注入端口时进化降级为无操作() {
+    void 未注入成长端口时不触发进化() {
         Species mine = species("mine_sp", 200, 200, 40, 200,
                 List.of("m_slam"), "mine_evo", 2, Map.of());
         Species foe = species("foe_sp", 40, 10, 40, 10, List.of("m_slam"), null, 0, Map.of());
@@ -187,7 +192,7 @@ class BattleDataPortTest {
         BattleService battle = BattleServices.newBattle(player, pokemon(foe, 5, SLAM), new Random(7));
         battle.useMove(player.getActive().getMoveSlots().get(0));
 
-        assertEquals("mine_sp", player.getActive().getSpecies().getId(), "无端口时不进化");
+        assertEquals("mine_sp", player.getActive().getSpecies().getId(), "无成长端口时不进化");
     }
 
     // ------------------------------------------------------------------

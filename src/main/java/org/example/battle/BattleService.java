@@ -60,9 +60,9 @@ public interface BattleService {
     }
 
     /**
-     * 一次待玩家抉择的「学习新技能」：获胜发放经验升级后，若精灵已掌握 4 个技能，
-     * 不再自动遗忘，而是挂起等待玩家选择遗忘哪一招或放弃学习（见
-     * {@link #decideLearn(int)}）。
+     * 一次待玩家抉择的「学习新技能」：战斗结算后由外部成长模块（{@link BattleGrowthPort}）
+     * 判定成长时，若精灵已掌握 4 个技能，不再自动遗忘，而是挂起等待玩家选择遗忘哪一招或
+     * 放弃学习（见 {@link #decideLearn(int)}）。
      *
      * @param pokemon 受益精灵
      * @param move    想学习的新技能
@@ -177,18 +177,18 @@ public interface BattleService {
     // ------------------------------------------------------------------
 
     /**
-     * 战斗胜利（{@link Status#PLAYER_WIN}）且发放经验升级后，尚未由玩家决定的
-     * 「学习新技能」请求，按产生顺序排列。
+     * 战斗胜利（{@link Status#PLAYER_WIN}）结算后，外部成长模块（{@link BattleGrowthPort}）
+     * 返回的、尚未由玩家决定的「学习新技能」请求，按产生顺序排列。
      *
      * <p>精灵有空格时新技能已被直接学会，不会进入本队列；仅当 4 招全满时才挂起等待
-     * 玩家决定。</p>
+     * 玩家决定。战斗模块只转发本队列，学习判定本身由成长模块负责。</p>
      *
      * @return 只读的待抉择列表；为空表示没有待处理的学招抉择
      */
     List<LearnChoice> pendingLearnChoices();
 
     /**
-     * 处理队首一项待抉择学招（见 {@link #pendingLearnChoices()}）。
+     * 处理队首一项待抉择学招（见 {@link #pendingLearnChoices()}），转发给外部成长模块执行。
      *
      * @param forgetSlotIndex 要遗忘（替换）的技能槽下标，取值 0~3；传 -1 表示放弃学习
      * @return 本次抉择产生的新日志行

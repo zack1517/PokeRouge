@@ -9,9 +9,7 @@ import org.example.model.MoveEffect;
 import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
-import org.example.model.Species;
 import org.example.model.StatusCondition;
-import org.example.model.Stats;
 import org.example.model.Terrain;
 import org.example.model.Trainer;
 import org.example.model.TypeChart;
@@ -35,9 +33,11 @@ import java.util.Random;
  * 不可逃跑、不可捕捉训练师的精灵；敌方当前出战精灵倒下后自动派出下一只健康的（敌方不会主动
  * 换宠），天气/场地与技能 PP 跨整场持续。胜利时经验按整队被击败对手一次性结算。</p>
  *
- * <p>获胜发放经验升级时，若有空格则直接学会到级技能；技能已满则不自动遗忘，挂起为待抉择
- * （{@link #pendingLearnChoices()}），由玩家经 {@link #decideLearn(int)} 手动选择遗忘
- * 哪一招或放弃学习。</p>
+ * <p><b>职责边界</b>：本引擎只做战斗演算与胜负结算，<b>不负责经验增加、升级、学招与进化</b>。
+ * 结算出胜利后把「参战且未倒下的己方精灵」与「被击败的对手」交给外部成长模块
+ * （{@link BattleGrowthPort}）判定；成长模块返回的日志文本行原样进入战斗日志，返回的
+ * 「技能栏已满」挂起学招项由本引擎转发给调用方（{@link #pendingLearnChoices()}），
+ * 玩家经 {@link #decideLearn(int)} 选择遗忘哪一招或放弃学习后再交回成长模块执行。</p>
  *
  * <p>战斗支持天气与场地（原版宝可梦风格）：携带 {@link MoveEffect} 的变化类技能会开启对应
  * 天气/场地，持续 {@value Weather#DURATION_TURNS} 回合（含开启当回合）后自然消退；生效期间
@@ -50,8 +50,9 @@ import java.util.Random;
  * 速度减半（影响先后手与逃跑），灼伤使物理攻击减半；中毒/灼伤/剧毒在回合末扣血（剧毒逐回合递增），
  * 混乱在回合末递减。换宠清除混乱（挥发性异常），主要异常保留至治愈。</p>
  *
- * <p><b>数据来源</b>：引擎只消费外部数据，通过 {@link BattleDataPort} 查询技能与种族
- * （升级学招 / 进化）；未注入端口时相关功能降级为无操作，引擎本身不内建任何数据。</p>
+ * <p><b>数据来源</b>：引擎只消费外部数据与外部判定，通过 {@link BattleDataPort} 查询技能与种族
+ * （伤害计算 / 野生个体生成），通过 {@link BattleGrowthPort} 申报成长；未注入时相关功能降级为
+ * 无操作，引擎本身不内建任何数据，也不含任何成长规则。</p>
  *
  * <p>战斗行为契约见 {@link BattleService}，实例统一由 {@link BattleServices} 工厂创建，
  * 调用方不应直接持有本实现类。</p>
@@ -64,8 +65,10 @@ public class BattleEngine implements BattleService {
     /** 训练师轮战中的敌方训练师；野生战斗时为 {@code null}。 */
     private final Trainer trainer;
     private final Random random;
-    /** 外部注入的只读数据端口：升级学招 / 进化等所需技能与种族数据的唯一来源。 */
+    /** 外部注入的只读数据端口：伤害计算 / 野生个体生成等所需技能与种族数据的唯一来源。 */
     private final BattleDataPort dataPort;
+    /** 外部注入的成长申报端口：经验 / 升级 / 学招 / 进化判定全部交由其实施。 */
+    private final BattleGrowthPort growthPort;
     /** 全程日志（按行累积）。 */
     private final List<String> log = new ArrayList<>();
     /** 获胜升级后「技能满、待玩家抉择是否/如何学习」的请求队列。 */
@@ -82,20 +85,20 @@ public class BattleEngine implements BattleService {
     private int terrainTurnsLeft = 0;
 
     public BattleEngine(Player player, Pokemon wild) {
-        this(player, wild, null, new Random(), BattleDataPorts.none());
+        this(player, wild, null, new Random(), BattleDataPorts.none(), BattleGrowthPort.none());
     }
 
     public BattleEngine(Player player, Pokemon wild, Random random) {
-        this(player, wild, null, random, BattleDataPorts.none());
+        this(player, wild, null, random, BattleDataPorts.none(), BattleGrowthPort.none());
     }
 
     /**
-     * 创建一场野生战斗，并注入外部数据端口（升级学招 / 进化用）。
+     * 创建一场野生战斗，并注入外部数据端口。
      *
      * @param dataPort 只读数据端口，不可为 {@code null}
      */
     public BattleEngine(Player player, Pokemon wild, BattleDataPort dataPort) {
-        this(player, wild, null, new Random(), dataPort);
+        this(player, wild, null, new Random(), dataPort, BattleGrowthPort.none());
     }
 
     /**
@@ -105,25 +108,37 @@ public class BattleEngine implements BattleService {
      * @param dataPort 只读数据端口，不可为 {@code null}
      */
     public BattleEngine(Player player, Pokemon wild, Random random, BattleDataPort dataPort) {
-        this(player, wild, null, random, dataPort);
+        this(player, wild, null, random, dataPort, BattleGrowthPort.none());
+    }
+
+    /**
+     * 创建一场野生战斗，并注入外部数据端口与成长申报端口。
+     *
+     * @param random     随机源
+     * @param dataPort   只读数据端口，不可为 {@code null}
+     * @param growthPort 成长申报端口（经验 / 升级 / 学招 / 进化判定），不可为 {@code null}
+     */
+    public BattleEngine(Player player, Pokemon wild, Random random, BattleDataPort dataPort,
+                        BattleGrowthPort growthPort) {
+        this(player, wild, null, random, dataPort, growthPort);
     }
 
     /** 创建一场训练师轮战（玩家 × 训练师）：不可逃跑、不可捕捉，一方精灵全部倒下才结束。 */
     public BattleEngine(Player player, Trainer trainer) {
-        this(player, null, trainer, new Random(), BattleDataPorts.none());
+        this(player, null, trainer, new Random(), BattleDataPorts.none(), BattleGrowthPort.none());
     }
 
     public BattleEngine(Player player, Trainer trainer, Random random) {
-        this(player, null, trainer, random, BattleDataPorts.none());
+        this(player, null, trainer, random, BattleDataPorts.none(), BattleGrowthPort.none());
     }
 
     /**
-     * 创建一场训练师轮战，并注入外部数据端口（升级学招 / 进化用）。
+     * 创建一场训练师轮战，并注入外部数据端口。
      *
      * @param dataPort 只读数据端口，不可为 {@code null}
      */
     public BattleEngine(Player player, Trainer trainer, BattleDataPort dataPort) {
-        this(player, null, trainer, new Random(), dataPort);
+        this(player, null, trainer, new Random(), dataPort, BattleGrowthPort.none());
     }
 
     /**
@@ -133,15 +148,29 @@ public class BattleEngine implements BattleService {
      * @param dataPort 只读数据端口，不可为 {@code null}
      */
     public BattleEngine(Player player, Trainer trainer, Random random, BattleDataPort dataPort) {
-        this(player, null, trainer, random, dataPort);
+        this(player, null, trainer, random, dataPort, BattleGrowthPort.none());
     }
 
-    private BattleEngine(Player player, Pokemon wild, Trainer trainer, Random random, BattleDataPort dataPort) {
+    /**
+     * 创建一场训练师轮战，并注入外部数据端口与成长申报端口。
+     *
+     * @param random     随机源
+     * @param dataPort   只读数据端口，不可为 {@code null}
+     * @param growthPort 成长申报端口（经验 / 升级 / 学招 / 进化判定），不可为 {@code null}
+     */
+    public BattleEngine(Player player, Trainer trainer, Random random, BattleDataPort dataPort,
+                        BattleGrowthPort growthPort) {
+        this(player, null, trainer, random, dataPort, growthPort);
+    }
+
+    private BattleEngine(Player player, Pokemon wild, Trainer trainer, Random random,
+                         BattleDataPort dataPort, BattleGrowthPort growthPort) {
         this.player = Objects.requireNonNull(player);
         this.wild = wild;
         this.trainer = trainer;
         this.random = Objects.requireNonNull(random);
         this.dataPort = Objects.requireNonNull(dataPort);
+        this.growthPort = Objects.requireNonNull(growthPort);
         if (trainer != null && wild != null) {
             throw new IllegalArgumentException("野生精灵与训练师不能同时存在");
         }
@@ -230,7 +259,12 @@ public class BattleEngine implements BattleService {
         return List.copyOf(pendingLearns);
     }
 
-    /** 处理队首一项待抉择学招：替换指定槽位（0~3），或传 -1 放弃学习。 */
+    /**
+     * 处理队首一项待抉择学招：替换指定槽位（0~3），或传 -1 放弃学习。
+     *
+     * <p>本引擎只做转发：抉择仍由外部成长模块执行（见 {@link BattleGrowthPort#resolveLearn}），
+     * 返回的日志文本行原样追加。</p>
+     */
     @Override
     public List<String> decideLearn(int forgetSlotIndex) {
         int mark = log.size();
@@ -238,19 +272,8 @@ public class BattleEngine implements BattleService {
             throw new IllegalStateException("当前没有待抉择的新技能学习");
         }
         LearnChoice choice = pendingLearns.remove(0);
-        Pokemon p = choice.pokemon();
-        Move move = choice.move();
-        if (forgetSlotIndex >= 0 && forgetSlotIndex < p.getMoveSlots().size()) {
-            Move forgotten = p.replaceMove(forgetSlotIndex, move);
-            if (forgotten == null) {
-                append(p.getName() + " 想学习【" + move.getName()
-                        + "】，但没有可遗忘的槽位。");
-            } else {
-                append(p.getName() + " 忘记了【" + forgotten.getName()
-                        + "】，学会了【" + move.getName() + "】！");
-            }
-        } else {
-            append(p.getName() + " 没有学习【" + move.getName() + "】。");
+        for (String line : growthPort.resolveLearn(choice, forgetSlotIndex)) {
+            append(line);
         }
         return slice(mark);
     }
@@ -753,7 +776,7 @@ public class BattleEngine implements BattleService {
                 // 野生战斗：野生精灵倒下即获胜
                 status = Status.PLAYER_WIN;
                 append("野生的 " + foe.getName() + " 倒下了！你赢了！");
-                awardExpAndSettle();
+                settleGrowth();
                 return;
             }
             // 训练师轮战：出战精灵倒下后自动派出下一只健康的；没有了 → 玩家获胜
@@ -761,7 +784,7 @@ public class BattleEngine implements BattleService {
             if (next == null) {
                 status = Status.PLAYER_WIN;
                 append("训练师 " + trainer.getName() + " 的所有精灵都倒下了！你赢了！");
-                awardExpAndSettle();
+                settleGrowth();
                 return;
             }
             append(trainer.getName() + " 派出了 " + next.getName() + "！");
@@ -890,78 +913,28 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 胜利后向队伍发放经验：每只未倒下的精灵获得全额经验，结算逐级升级、
-     * 到级学招与进化。野生战斗按单只野生精灵折算；训练师轮战按整队被击败对手一次性结算。
+     * 胜利结算：把「参战且未倒下的己方精灵」与「被击败的对手」交给外部成长模块判定
+     * 经验增加、升级、学招与进化（见 {@link BattleGrowthPort}）。
+     *
+     * <p>本引擎不自行计算经验、不判定升级 / 学招 / 进化：成长模块返回的日志文本行原样追加，
+     * 返回的「技能栏已满」挂起学招项进入待抉择队列。未注入成长端口时本方法无任何副作用。</p>
      */
-    private void awardExpAndSettle() {
+    private void settleGrowth() {
         if (status != Status.PLAYER_WIN) {
             return;
         }
-        int gain = trainer == null ? expGain(wild) : expSum(trainer.getParty());
+        List<Pokemon> survivors = new ArrayList<>();
         for (Pokemon p : player.getParty()) {
-            if (p.isFainted()) {
-                continue;
-            }
-            int before = p.getLevel();
-            int gainedLevels = p.addExp(gain);
-            if (gainedLevels <= 0) {
-                continue;
-            }
-            for (int lv = before + 1; lv <= p.getLevel(); lv++) {
-                append(p.getName() + " 升到了 Lv." + lv + "！");
-                tryLearnAt(p, lv);
-                tryEvolve(p, lv);
+            if (!p.isFainted()) {
+                survivors.add(p);
             }
         }
-    }
-
-    /** 依据被击败精灵的种族与等级折算经验：六维种族值总和 × 等级 / 5。 */
-    private static int expGain(Pokemon defeated) {
-        Stats stats = defeated.getSpecies().getBaseStats();
-        int total = stats.getHp() + stats.getAttack() + stats.getDefense()
-                + stats.getSpAttack() + stats.getSpDefense() + stats.getSpeed();
-        return Math.max(30, total * defeated.getLevel() / 5);
-    }
-
-    /** 整队经验之和：训练师轮战胜利时按全队被击败对手一次性结算。 */
-    private static int expSum(List<Pokemon> party) {
-        int sum = 0;
-        for (Pokemon p : party) {
-            sum += expGain(p);
+        List<Pokemon> defeated = trainer == null ? List.of(wild) : List.copyOf(trainer.getParty());
+        BattleGrowthPort.Settlement settlement = growthPort.settle(survivors, defeated);
+        for (String line : settlement.log()) {
+            append(line);
         }
-        return sum;
-    }
-
-    /** 等级达到习得表要求时尝试学会新技能：有空槽直接学会；4 招全满则挂起等待玩家抉择。 */
-    private void tryLearnAt(Pokemon p, int level) {
-        String moveId = p.getSpecies().moveLearnedAt(level);
-        if (moveId == null) {
-            return;
-        }
-        Move move = dataPort.findMove(moveId);
-        if (move == null || p.hasMove(move)) {
-            return;
-        }
-        if (p.moveSlotsFull()) {
-            // 技能已满：不自动遗忘，交给玩家手动选择（见 pendingLearnChoices/decideLearn）
-            pendingLearns.add(new LearnChoice(p, move));
-            return;
-        }
-        p.learnMove(move);
-        append(p.getName() + " 记住了【" + move.getName() + "】！");
-    }
-
-    /** 达到进化等级时进化为目标形态（重新演算属性并回满状态）。 */
-    private void tryEvolve(Pokemon p, int level) {
-        if (!p.canEvolve()) {
-            return;
-        }
-        Species target = dataPort.findSpecies(p.getSpecies().getEvolvesToId());
-        if (target == null) {
-            return;
-        }
-        append(p.getName() + " 进化成了 " + target.getName() + "！");
-        p.evolveTo(target);
+        pendingLearns.addAll(settlement.pendingLearns());
     }
 
     // ------------------------------------------------------------------

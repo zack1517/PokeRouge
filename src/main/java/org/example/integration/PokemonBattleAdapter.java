@@ -6,7 +6,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 import org.example.battle.BattleDataPort;
+import org.example.battle.BattleGrowthPort;
 import org.example.data.GameDataBattleDataPort;
+import org.example.growth.GrowthService;
 import org.example.model.ElementType;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
@@ -34,6 +36,16 @@ public final class PokemonBattleAdapter {
     /** 战斗模块所需的数据端口：由数据模块实现，在此组装层注入给战斗引擎。 */
     public static BattleDataPort battleDataPort() {
         return new GameDataBattleDataPort();
+    }
+
+    /**
+     * 战斗结算所需的成长端口：经验增加 / 升级 / 学招 / 进化由成长模块判定（见
+     * {@link GrowthService}）。与战斗模块共用同一份数据端口。
+     *
+     * @param dataPort 只读数据端口（技能 / 种族查询），不可为 {@code null}
+     */
+    public static BattleGrowthPort battleGrowthPort(BattleDataPort dataPort) {
+        return new GrowthService(dataPort);
     }
 
     /** 将玩家在新宝可梦库中选择的初始精灵交给战斗系统。 */

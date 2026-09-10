@@ -5,6 +5,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.stage.Stage;
 import org.example.GameSession;
+import org.example.battle.BattleDataPort;
 import org.example.battle.BattleService;
 import org.example.battle.BattleServices;
 import org.example.config.AppConfig;
@@ -96,8 +97,9 @@ public class MainController {
             return;
         }
         try {
-            BattleService engine = BattleServices.newBattle(player, wild.get(),
-                    PokemonBattleAdapter.battleDataPort());
+            BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
+            BattleService engine = BattleServices.newBattle(player, wild.get(), dataPort,
+                    PokemonBattleAdapter.battleGrowthPort(dataPort));
             BattleController battle = new BattleController(engine, this::showMainMenu, session.getSegment());
             stage.setScene(battle.createScene());
         } catch (IllegalArgumentException ex) {

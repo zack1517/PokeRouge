@@ -33,6 +33,8 @@ public class BattleConsole {
     static final org.example.data.GameDataBattleDataPort BATTLE_DATA =
             new org.example.data.GameDataBattleDataPort(g);
     static final Scanner in = new Scanner(System.in, StandardCharsets.UTF_8);
+    /** 注入给战斗模块的成长端口：经验 / 升级 / 学招 / 进化由成长模块判定。 */
+    static final org.example.growth.GrowthService GROWTH = new org.example.growth.GrowthService(BATTLE_DATA);
     static Player player;
     static int wins = 0, losses = 0, caught = 0, fled = 0;
 
@@ -98,7 +100,7 @@ public class BattleConsole {
         Pokemon wild = WildEncounter.randomWild(WildEncounter.levelAround(top), BATTLE_DATA)
                 .orElseThrow(() -> new IllegalStateException("野生池为空"));
         player.leadWithFirstHealthy();
-        BattleService b = BattleServices.newBattle(player, wild, BATTLE_DATA);
+        BattleService b = BattleServices.newBattle(player, wild, BATTLE_DATA, GROWTH);
 
         System.out.println("\n野生的 " + wild.getSpecies().getName() + " Lv" + wild.getLevel() + " 出现了！");
         System.out.println("你派出了 " + player.getActive().getName() + "！");
