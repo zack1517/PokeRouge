@@ -115,6 +115,22 @@ public class GameSession {
         rogueTurnManager.startRun(team, 1);
     }
 
+    /**
+     * 把当前队伍重新快照进肉鸽轮次。
+     *
+     * <p>{@code RunData.team} 只在开局时快照一次，而战斗直接读写唯一持有的 {@link Player}，
+     * 因此肉鸽进行中新捕捉/新入队的精灵不会出现在旧快照里。事件结算（尤其是急救站的
+     * 全队恢复）与 BOSS 战力评估都读取该快照，故结算前必须重新同步，否则新精灵会被漏掉。</p>
+     */
+    public void syncRogueTeam() {
+        if (player == null || player.getParty().isEmpty()) {
+            return;
+        }
+        rogueTurnManager.setTeam(player.getParty().stream()
+                .map(PokemonInstance::new)
+                .toList());
+    }
+
     /** 进入指定楼层，生成该层事件选项。 */
     public void enterRogueFloor(int floor) {
         rogueTurnManager.enterFloor(floor);
@@ -125,6 +141,7 @@ public class GameSession {
         if (rogueTurnManager.isGameOver()) {
             return false;
         }
+        syncRogueTeam();
         rogueTurnManager.selectOption(option);
         return !rogueTurnManager.isGameOver();
     }
@@ -141,6 +158,7 @@ public class GameSession {
 
     /** 执行选项的事件效果结算（HOSPITAL/RANDOM 等直接效果事件由 UI 扣点后调用）。 */
     public void resolveRogueOptionEffect(Option option) {
+        syncRogueTeam();
         rogueTurnManager.resolveOptionEffect(option);
     }
 
@@ -151,6 +169,7 @@ public class GameSession {
 
     /** 强制进入 BOSS 战（点数耗尽时由流程触发）。 */
     public void triggerRogueBossFight() {
+        syncRogueTeam();
         rogueTurnManager.triggerBossFight();
     }
 
