@@ -378,7 +378,7 @@ public class RougeApp extends Application {
         try {
             BattleService engine = BattleServices.newBattle(player, foe);
             BattleController controller = new BattleController(engine,
-                    () -> onBattleExit(engine));
+                    () -> onBattleExit(engine), flow.segmentNo());
             stage.setScene(controller.createScene());
         } catch (RuntimeException e) {
             log("（战斗无法开始：" + e.getMessage() + "，按胜利结算）");

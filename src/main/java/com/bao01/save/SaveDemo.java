@@ -62,6 +62,34 @@ public final class SaveDemo {
         System.out.println("采样得到的存档文本:");
         System.out.print(SaveManager.toText(world));
 
+        List<String> failures = runSuite();
+
+        System.out.println("==== 结果: " + (checks - failures.size()) + "/" + checks + " 通过 ====");
+        if (failures.isEmpty()) {
+            System.out.println("存档系统自测全部通过");
+            return;
+        }
+        for (String f : failures) {
+            System.out.println("  失败: " + f);
+        }
+        System.exit(1);
+    }
+
+    /**
+     * 执行全部用例并返回失败描述（空列表表示全部通过）。
+     *
+     * <p>把用例入口从 {@link #main} 中抽出，使 JUnit（{@code mvn test}）与命令行
+     * 两种方式都能驱动同一套断言，避免两处维护。</p>
+     *
+     * @return 每条失败的文字说明；全部通过时为空列表
+     */
+    public static List<String> runSuite() {
+        FAILURES.clear();
+        checks = 0;
+
+        Player player = samplePlayer();
+        SaveData.World world = SaveManager.captureWorld(player);
+
         run("1. 内存采样 → 重建回环", () -> memoryRoundTrip(player, world));
         run("2. 文本编解码", () -> textCodec(world));
         run("3. 磁盘读写回环", () -> diskRoundTrip(world));
@@ -72,15 +100,12 @@ public final class SaveDemo {
         run("8. 流程真实推进 → 存盘 → 读档续玩", SaveDemo::flowSaveLoadRoundTrip);
         run("9. v1 旧档向后兼容", SaveDemo::legacyV1Save);
 
-        System.out.println("==== 结果: " + (checks - FAILURES.size()) + "/" + checks + " 通过 ====");
-        if (FAILURES.isEmpty()) {
-            System.out.println("存档系统自测全部通过");
-            return;
-        }
-        for (String f : FAILURES) {
-            System.out.println("  失败: " + f);
-        }
-        System.exit(1);
+        return List.copyOf(FAILURES);
+    }
+
+    /** 上一次 {@link #runSuite()} 实际执行的断言总数。 */
+    public static int checks() {
+        return checks;
     }
 
     // ---------- 用例 ----------
