@@ -186,6 +186,13 @@ FXML 重写，要求：
   **可以是队伍中任意精灵（含替补）**；精灵球跳过目标步骤直接投向敌方。
   可用性判定改为「队伍中是否存在任一合法目标」（回复：未倒下且未满血；解除：有可解除的异常），
   精灵球恒可用。目标面板中不可选精灵呈灰格（仍可悬停查看详情），返回键回到背包菜单。
+- 战斗动画（v0.1.10，参考实现已落地）：行动结算后由引擎演出事件驱动**进场 / 放出 / 收回 /
+  技能释放 / 受击 / 倒下 / 投球 / 道具 / 逃跑**动画（见《接口文档_战斗服务.md》§15）。
+  界面要求：① 事件序列播放期间**锁死行动输入**（按钮置灰），播完才解锁；② 精灵立绘、HP 条等
+  在**动画结束后**才刷新（避免「还没挨打 HP 就掉了」，也避免引擎已自动换宠导致动画作用到新精灵）；
+  ③ 日志与天气/场地行可在动画开始前刷新，让本回合文本与演出同步可见；④ 动画只用几何/纹理特效，
+  **禁止对动态中文文本使用描边或特效**（实测每字约 50ms 且不缓存，会导致数秒卡顿）；
+  ⑤ 整场景等比缩放（`UiScale`），动画按 640×427.6 设计单位书写。
 
 ### 3.4 存档对页面的约束（新增）
 
@@ -210,6 +217,7 @@ FXML 重写，要求：
 | `playerActive() / foeActive() / getPlayer()` | 战斗页 | 面板与队伍菜单渲染（引擎自动换宠后重新读取，可能为 null，需空态）。**敌方面板一律用 `foeActive()`**：野生为野生精灵，训练师轮战为训练师当前出战精灵（训练师换宠后自动跟随）；`getWild()` 在训练师轮战中为 `null` |
 | `getTrainer()` | 战斗页 | 训练师轮战非空：可用 `getTrainer().getName()` 显示对手名，`getTrainer().getParty()` 显示对方队伍/剩余数量 |
 | `getLog()` | 战斗页 | 完整日志只读，行动后全量覆盖展示 |
+| `drainEvents()` | 战斗页 | **取走**本回合演出事件（`List<BattleEvent>`，取走即清空）驱动战斗动画；为纯演出数据，不参与结算，界面可按需忽略。**v1.10**：推荐顺序「行动 → 取事件 → 播动画 → 播完再刷新界面」（见《接口文档_战斗服务.md》§15） |
 | `getBag()` | 战斗页 | 配合 `Bag.availableStacks()` 渲染背包菜单 |
 
 ### 4.2 工厂与遭遇环境（引用《接口文档_战斗服务.md》§4）
@@ -235,6 +243,7 @@ FXML 重写，要求：
 | `Bag / ItemStack` | `availableStacks() / countOf / getAll`；`getItem() / getCount()` |
 | `Item` | `getId / getName / getCategory / getEffect / isAlwaysCatch / getCuresSpec / canCure / curedStatuses / curesAll`（`ItemCategory.HEAL / POKE_BALL / CURE`） |
 | `MoveSlot / Move` | `getMove / getPp / exhausted`；`getId / getName / getType / getCategory / getPower / getMaxPp / hasInfliction / getInflicts / getInflictionChance` |
+| `BattleEvent`（v1.10 新增） | `kind / side / actor / moveName / element / category / success / opponent()`；嵌套枚举 `Kind`（`BATTLE_START / SEND_OUT / RECALL / MOVE / HIT / FAINT / CAPTURE / ITEM / RUN`）与 `Side`（`PLAYER / FOE`）；`ElementType.getColorCode()` 供动画配色，`MoveCategory` 供动画形态 |
 | `StatusCondition` | `getDisplayName / isMajor / isVolatile / immunityType`；`parse(name)` 供数据加载 |
 
 > 展示所需中文名均有现成 getter，**不要求逻辑层为展示拼装字符串**；格式拼接由 UI 负责。
@@ -331,8 +340,25 @@ public interface ScreenFactory {
 - 战斗页：行动后全量刷新（面板/日志/按钮区），与 battle 参考实现一致；自动换宠后
   `playerActive()` 可能为 null，需空态防御；
 - 非战斗页：进入时构建 + 操作后局部刷新（金币/AP/货架文本）；
-- 战斗过程更新（HP 动画等）若需要定时器，一律 `Platform.runLater` 安全提交 [待确认
-  是否需要动画，首版可静态跳变]。
+- 战斗过程更新（HP 动画等）**v0.1.10 已落地**：由 `drainEvents()` 的演出事件驱动动画，
+  见 §6.6；动画一律在 JavaFX 主线程用 `Animation`/`setOnFinished` 串联，无需自建定时器。
+
+### 6.6 战斗动画层（v0.1.10，参考实现已落地）
+
+参考实现：`org.example.view.BattleView`（动画层）+ `org.example.controller.BattleController`（编排）。
+
+| 要点 | 约定 |
+| --- | --- |
+| 数据来源 | `BattleService.drainEvents()`；界面**不解析日志文本**推断动作 |
+| 编排 | 控制器持有 `playing` 标志：结算后取事件 → 锁输入 → 逐条播动画 → 播完解锁并 `render()` |
+| 播放 | `playEvents(events, onFinished)` 逐条串行播放（每条动画用 `setOnFinished` 触发下一条），事件为空立即回调 |
+| 特效层 | 与内容根同尺寸的透明 `Pane` 叠放（`StackPane`），`setMouseTransparent(true)`；飞行道具/闪光/光点挂此层，落位用 `sceneToLocal` 换算（不受全局缩放与内边距影响） |
+| 立绘定位 | 事件只携带**精灵名**：放出/收回/倒下动画先按名切图再演，避免引擎已自动换宠时作用到错误精灵 |
+| 刷新时机 | 动画开始前只刷日志 + 天气/场地；立绘、HP 条在动画**结束后**刷新 |
+| 输入防护 | 播放期间 `setInputLocked(true)` 禁用行动区，控制器各行动处理器再加 `if (playing) return;` 二次防护 |
+| 性能红线 | **禁止**对动态中文文本使用描边（`Stroke`）或 `Effect`：实测每字约 50ms 且不缓存，会造成数秒卡顿。动画只用形状/图片特效 |
+| 验证 | `src/test/java/org/example/view/BattleAnimationSmokeTest.java`（默认跳过）：`mvn -o test -Dtest=BattleAnimationSmokeTest -Dbattle.smoke=true -DfailIfNoSpecifiedTests=false`，在真实工具包/窗口下确认动画播完、回调触发、输入解锁 |
+
 
 ### 6.5 空态与异常防御
 
@@ -393,3 +419,4 @@ public interface ScreenFactory {
 | v0.1.7 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.7 职责收敛：遭遇生成（等级浮动 / 随机挑种族）移出战斗模块，改由组装侧 `WildEncounter` 提供；§1.2 战斗系统行与外部依赖表同步 | [待确认：UI 负责人] |
 | v0.1.8 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.8 道具目标选择：§3.3 增「选道具 → 选目标精灵」两步交互与新的可用性判定；§4.1 契约表补 `useItem(item, partyIndex)` 重载说明 | [待确认：UI 负责人] |
 | v0.1.9 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.9 成长判定外移：经验/升级/学招/进化改由外部成长模块经 `BattleGrowthPort` 结算；§1.2 战斗系统行与 §4.2 组装入口补成长端口注入与 `pendingLearnChoices()/decideLearn(int)` 学习抉择弹窗，渲染无变化 | [待确认：UI 负责人] |
+| v0.1.10 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.10 战斗演出事件：§3.3 增战斗动画要求（锁输入、延后刷新、性能红线）；§4.1 补 `drainEvents()` 契约；§4.3 补 `BattleEvent` 只读查询；新增 §6.6 战斗动画层约定，替换原「动画待确认」条目 | [待确认：UI 负责人] |
