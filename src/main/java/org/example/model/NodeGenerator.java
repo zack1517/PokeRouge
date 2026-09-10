@@ -24,6 +24,9 @@ public class NodeGenerator {
     /** 节点描述里用于提示「本次免单」的后缀。 */
     public static final String FREE_HINT = "（本次遭遇不消耗行动点）";
 
+    /** 常驻节点（路人 / 野外精灵 / 医院）描述里的重复进入提示。 */
+    public static final String RESIDENT_HINT = "常驻节点：可重复进入，行动点是唯一限制";
+
     private final Random random;
 
     public NodeGenerator() {
@@ -112,26 +115,26 @@ public class NodeGenerator {
         return null;
     }
 
-    /** 路人：常驻节点，行动点 2，胜利获得金币、失败仅扣金币。 */
+    /** 路人：常驻节点，行动点 2，胜利获得金币、失败仅扣金币；可重复进入。 */
     public Option createTrainer() {
         return new Option("路人训练家", OptionType.TRAINER, OptionType.TRAINER.getApCost(),
-                "与路人训练家对战，胜利获得金币；失败仅扣金币");
+                "与路人训练家对战，胜利获得金币；失败仅扣金币。" + RESIDENT_HINT);
     }
 
-    /** 野外精灵：常驻节点，行动点 1（有概率消耗为 0 点），可捕获。 */
+    /** 野外精灵：常驻节点，行动点 1（有概率消耗为 0 点），可捕获；可重复进入。 */
     public Option createWild() {
         boolean free = roll(RouteConfig.WILD_FREE_PERCENT);
         String description = free
-                ? "遭遇野生宝可梦，可战斗并捕获；" + FREE_HINT
-                : "遭遇野生宝可梦，可战斗并捕获；失败仅扣金币";
+                ? "遭遇野生宝可梦，可战斗并捕获；" + FREE_HINT + RESIDENT_HINT
+                : "遭遇野生宝可梦，可战斗并捕获；失败仅扣金币。" + RESIDENT_HINT;
         return new Option("野生宝可梦出没", OptionType.WILD, free ? 0 : OptionType.WILD.getApCost(),
                 description);
     }
 
-    /** 医院：常驻节点，行动点 1，治疗濒死 / 受伤的宝可梦。 */
+    /** 医院：常驻节点，行动点 1，治疗濒死 / 受伤的宝可梦；可重复进入。 */
     public Option createHospital() {
         return new Option("宝可梦医院", OptionType.HOSPITAL, OptionType.HOSPITAL.getApCost(),
-                "治疗全队伤病与 PP、复活濒死宝可梦；恢复途径只有医院与道具");
+                "治疗全队伤病与 PP、复活濒死宝可梦；恢复途径只有医院与道具。" + RESIDENT_HINT);
     }
 
     /** 商店：随机节点，行动点 1，段数越靠后商品种类与数量越多。 */

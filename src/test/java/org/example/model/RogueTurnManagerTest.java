@@ -113,12 +113,12 @@ class RogueTurnManagerTest {
     }
 
     @Test
-    void testConsumeNode_rejectsRepeatedAndForeignOptions() {
+    void testConsumeNode_rejectsRepeatedOneOffAndForeignOptions() {
         RogueTurnManager manager = newManager();
-        Option first = addOption(manager, OptionType.HOSPITAL, 1);
+        Option shop = addOption(manager, OptionType.SHOP, 1);
 
-        assertTrue(manager.consumeNode(first));
-        assertFalse(manager.consumeNode(first), "已走过的节点不能再次进入");
+        assertTrue(manager.consumeNode(shop));
+        assertFalse(manager.consumeNode(shop), "一次性节点（商店）走过后不能再次进入");
 
         Option foreign = new Option("外来节点", OptionType.WILD, 1, "不属于本段");
         assertFalse(manager.consumeNode(foreign), "不属于本段的节点应被拒绝");
@@ -126,9 +126,50 @@ class RogueTurnManagerTest {
     }
 
     @Test
+    void testConsumeNode_residentNodeCanBeEnteredRepeatedly() {
+        RogueTurnManager manager = newManager();
+        Option hospital = addOption(manager, OptionType.HOSPITAL, 1);
+        int before = manager.getRunData().getAp();
+
+        assertTrue(manager.consumeNode(hospital));
+        assertEquals(before - 1, manager.getRunData().getAp(), "常驻节点首次进入照常扣点");
+        assertEquals(1, hospital.getVisitCount());
+
+        assertTrue(manager.consumeNode(hospital), "常驻节点（医院）走过后仍可再次进入");
+        assertEquals(before - 2, manager.getRunData().getAp(), "重复进入照常扣点");
+        assertEquals(2, hospital.getVisitCount(), "应记录已走过的次数");
+    }
+
+    @Test
+    void testConsumeNode_repeatEntryRejectedWhenApInsufficient() {
+        RogueTurnManager manager = newManager();
+        Option trainer = addOption(manager, OptionType.TRAINER, 2);
+
+        assertTrue(manager.consumeNode(trainer));
+        manager.getRunData().setAp(1);
+
+        assertFalse(manager.consumeNode(trainer), "行动点不足时常驻节点也不能再次进入");
+        assertEquals(1, manager.getRunData().getAp(), "被拒绝时不扣点");
+    }
+
+    @Test
+    void testConsumeNode_freeEntryOnlyAppliesToFirstEntry() {
+        RogueTurnManager manager = newManager();
+        Option free = addOption(manager, OptionType.WILD, 0);
+        int before = manager.getRunData().getAp();
+
+        assertTrue(manager.consumeNode(free));
+        assertEquals(before, manager.getRunData().getAp(), "首次进入享受免单");
+        assertEquals(OptionType.WILD.getApCost(), free.apCostForNextEntry(), "再次进入按类型默认消耗计");
+
+        assertTrue(manager.consumeNode(free));
+        assertEquals(before - OptionType.WILD.getApCost(), manager.getRunData().getAp(), "重复进入不再免单");
+    }
+
+    @Test
     void testHasSelectableOption_respectsApAndConsumedFlag() {
         RogueTurnManager manager = newManager();
-        Option gymLike = addOption(manager, OptionType.TRAINER, 5);
+        Option shopLike = addOption(manager, OptionType.SHOP, 5);
         manager.getRunData().setAp(4);
 
         assertFalse(manager.hasSelectableOption(), "行动点不够的节点不算可走");
@@ -136,8 +177,22 @@ class RogueTurnManagerTest {
         manager.getRunData().setAp(5);
         assertTrue(manager.hasSelectableOption(), "行动点刚好够时应可走");
 
-        gymLike.markConsumed();
-        assertFalse(manager.hasSelectableOption(), "已走过的节点不算可走");
+        shopLike.markConsumed();
+        assertFalse(manager.hasSelectableOption(), "已走过的一次性节点不算可走");
+    }
+
+    @Test
+    void testHasSelectableOption_countsConsumedResidentNodes() {
+        RogueTurnManager manager = newManager();
+        Option hospital = addOption(manager, OptionType.HOSPITAL, 1);
+        manager.getRunData().setAp(1);
+
+        assertTrue(manager.consumeNode(hospital));
+        assertEquals(0, manager.getRunData().getAp());
+        assertFalse(manager.hasSelectableOption(), "行动点耗尽时无可走节点，道馆战触发");
+
+        manager.getRunData().setAp(1);
+        assertTrue(manager.hasSelectableOption(), "已走过的常驻节点只要行动点够仍算可走");
     }
 
     // ------------------------------------------------------------------
@@ -173,13 +228,24 @@ class RogueTurnManagerTest {
     @Test
     void testAdvanceAfterNode_triggersGymWhenNoNodeLeft() {
         RogueTurnManager manager = newManager();
-        Option only = addOption(manager, OptionType.HOSPITAL, 1);
+        Option only = addOption(manager, OptionType.SHOP, 1);
         manager.consumeNode(only);
         manager.getRunData().setAp(5);
 
-        assertTrue(manager.advanceAfterNode(), "本段已无节点可走时直接触发道馆战");
+        assertTrue(manager.advanceAfterNode(), "本段已无可走节点（一次性节点走完且无常驻节点）时触发道馆战");
 
         assertEquals(RoutePhase.GYM, manager.getRunData().getPhase());
+    }
+
+    @Test
+    void testAdvanceAfterNode_keepsExploringWhileResidentNodeRemainsEnterable() {
+        RogueTurnManager manager = newManager();
+        Option hospital = addOption(manager, OptionType.HOSPITAL, 1);
+        manager.consumeNode(hospital);
+
+        assertFalse(manager.advanceAfterNode(), "常驻节点可重复进入，行动点还有剩余时不触发道馆战");
+
+        assertEquals(RoutePhase.EXPLORING, manager.getRunData().getPhase());
     }
 
     @Test

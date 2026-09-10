@@ -253,7 +253,10 @@ public class GameSession {
         return rogueTurnManager.getRunData();
     }
 
-    /** 当前可选的路线节点列表（含已走过的节点，已走过节点由 {@link Option#isConsumed()} 标记）。 */
+    /**
+     * 当前可选的路线节点列表（含已走过的节点：一次性节点由 {@link Option#isConsumed()} 标记且
+     * 不可再进，常驻节点走过后仍可重复进入）。
+     */
     public List<Option> getRogueOptions() {
         return rogueTurnManager.getAvailableOptions();
     }

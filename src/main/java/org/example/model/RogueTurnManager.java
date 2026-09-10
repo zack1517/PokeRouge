@@ -105,7 +105,7 @@ public class RogueTurnManager {
         return !runData.getAvailableOptions().isEmpty();
     }
 
-    /** 本段是否还有行动点足够且未走过的路线节点。 */
+    /** 本段是否还有下一次进入行动点足够、且（若为一次性节点）尚未走过的路线节点。 */
     public boolean hasSelectableOption() {
         return runData.hasSelectableOption();
     }
@@ -116,22 +116,29 @@ public class RogueTurnManager {
     }
 
     /**
-     * 进入某个路线节点：校验节点合法、未走过且行动点够用，然后扣除行动点并把该节点
-     * 标记为已走过（保留在原位供玩家查看，不再可进入）。
+     * 进入某个路线节点：校验节点合法、可进入（一次性节点未走过）且行动点够用，然后扣除
+     * 行动点并把该节点标记为已走过（保留在原位供玩家查看）。
+     *
+     * <p>常驻节点（路人 / 野外精灵 / 医院）走过后<b>仍可重复进入</b>，行动点是唯一限制；
+     * 一次性节点走过后保持灰色不可点。</p>
      *
      * <p>进入节点的同时结算剧情线标记（《需求文档》§5）：进入过火箭队节点即开启后期
      * 「火箭队抓捕神兽」剧情线；神兽偶遇每局至多一次，进入即算已触发。</p>
      *
-     * @return 成功返回 true；节点为 null / 已被走过 / 不属于本段 / 行动点不足时返回 false 且不改变任何状态
+     * @return 成功返回 true；节点为 null / 一次性节点已走过 / 不属于本段 / 行动点不足时
+     *         返回 false 且不改变任何状态
      */
     public boolean consumeNode(Option chosen) {
-        if (chosen == null || chosen.isConsumed()) {
+        if (chosen == null) {
+            return false;
+        }
+        if (chosen.isConsumed() && !chosen.isRepeatable()) {
             return false;
         }
         if (!runData.getAvailableOptions().contains(chosen)) {
             return false;
         }
-        int nextAp = runData.getAp() - chosen.getCost();
+        int nextAp = runData.getAp() - chosen.apCostForNextEntry();
         if (nextAp < 0) {
             return false;
         }

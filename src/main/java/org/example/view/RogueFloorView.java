@@ -21,11 +21,13 @@ import java.util.function.Consumer;
 /**
  * 路线节点页：显示当前段、行动点与金币，并按《需求文档》§4.2 列出本段节点供玩家消耗行动点进入。
  *
- * <p>三类呈现：</p>
+ * <p>呈现方式：</p>
  * <ul>
  *   <li>可进入的路线节点 —— 按钮形式，标题带行动点消耗；</li>
- *   <li>已走过的节点 —— 灰色只读文字（由 {@link Option#isConsumed()} 标记，取代旧版
+ *   <li>已走过的一次性节点 —— 灰色只读文字（由 {@link Option#isConsumed()} 标记，取代旧版
  *       「名字等于『隐藏事件』」的哨兵写法）；</li>
+ *   <li>已走过的常驻节点（路人 / 野外精灵 / 医院）—— 仍是按钮，标题标注「可再次进入」与
+ *       再次进入的行动点消耗，仅受行动点限制；</li>
  *   <li>行动点耗尽 / 无节点可走 —— 提示必然节点（道馆战）即将展开，并给出「挑战道馆」按钮。</li>
  * </ul>
  */
@@ -101,9 +103,12 @@ public class RogueFloorView {
         return UiScale.scene(root);
     }
 
-    /** 单个节点：可进入时是按钮，已走过时是灰色只读条目。 */
+    /**
+     * 单个节点：可进入时是按钮，已走过的一次性节点是灰色只读条目；
+     * 已走过的常驻节点仍是按钮（可重复进入，仅受行动点限制）。
+     */
     private VBox buildOptionEntry(Option option, RunData data) {
-        if (option.isConsumed()) {
+        if (option.isConsumed() && !option.isRepeatable()) {
             Label used = new Label("［已走过］" + option.getName());
             used.setWrapText(true);
             used.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 12px; -fx-text-fill: #777;");
@@ -112,9 +117,13 @@ public class RogueFloorView {
             return usedEntry;
         }
 
-        boolean affordable = option.getCost() <= data.getAp();
-        String costText = option.getCost() == 0 ? "不消耗行动点" : "消耗 " + option.getCost() + " 点行动点";
-        Button btn = new Button(option.getTypeDisplayName() + " · " + option.getName() + "  (" + costText + ")");
+        int cost = option.apCostForNextEntry();
+        boolean affordable = cost <= data.getAp();
+        String costText = cost == 0 ? "不消耗行动点" : "消耗 " + cost + " 点行动点";
+        String prefix = option.isConsumed()
+                ? "［已走过 " + option.getVisitCount() + " 次 · 可再次进入］"
+                : "";
+        Button btn = new Button(prefix + option.getTypeDisplayName() + " · " + option.getName() + "  (" + costText + ")");
         btn.setMaxWidth(Double.MAX_VALUE);
         btn.setWrapText(true);
         btn.setDisable(!affordable);

@@ -195,10 +195,21 @@ public class RunData {
         this.mandatoryOption = mandatoryOption;
     }
 
-    /** 本段是否还有可走的路线节点（未消耗且行动点足够）。 */
+    /**
+     * 本段是否还有可走的路线节点。
+     *
+     * <p>一次性节点必须未走过、常驻节点（{@link Option#isRepeatable()}）走过也可再走，
+     * 两者都以「下一次进入的行动点消耗 ≤ 剩余行动点」为准。</p>
+     */
     public boolean hasSelectableOption() {
         for (Option option : availableOptions) {
-            if (option != null && !option.isConsumed() && option.getCost() <= ap) {
+            if (option == null) {
+                continue;
+            }
+            if (option.isConsumed() && !option.isRepeatable()) {
+                continue;
+            }
+            if (option.apCostForNextEntry() <= ap) {
                 return true;
             }
         }
