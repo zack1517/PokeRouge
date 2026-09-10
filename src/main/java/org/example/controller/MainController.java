@@ -72,7 +72,7 @@ public class MainController {
                     showMainMenu();
                 }
             }
-        });
+        }, session.mapBackgroundPath(), session.getSegment());
         stage.setScene(view.createScene());
     }
 
@@ -96,7 +96,7 @@ public class MainController {
         }
         try {
             BattleService engine = BattleServices.newBattle(player, wild.get());
-            BattleController battle = new BattleController(engine, this::showMainMenu);
+            BattleController battle = new BattleController(engine, this::showMainMenu, session.getSegment());
             stage.setScene(battle.createScene());
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());

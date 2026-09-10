@@ -3,16 +3,18 @@ package org.example.view;
 import java.util.List;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
-import org.example.config.AppConfig;
+import org.example.util.UiScale;
 import org.example.pokemon.domain.GrowthEvent;
 import org.example.pokemon.domain.Move;
 import org.example.pokemon.domain.Pokemon;
@@ -39,19 +41,29 @@ public final class PokemonLabView {
 
     public Scene createScene() {
         BorderPane root = new BorderPane();
-        root.setPadding(new Insets(18));
+        root.setPadding(new Insets(10));
         root.setTop(header());
-        root.setCenter(content());
+        root.setCenter(scrollable(content()));
         root.setBottom(actions());
-        return new Scene(root, AppConfig.WINDOW_WIDTH, AppConfig.WINDOW_HEIGHT);
+        return UiScale.scene(root);
+    }
+
+    /** 中央内容放入滚动区：3:2 画布（较 4:3 矮）内容长时以滚动保底（FitToWidth 不出现横向条）。 */
+    private ScrollPane scrollable(Parent body) {
+        ScrollPane scroll = new ScrollPane(body);
+        scroll.setFitToWidth(true);
+        scroll.setFitToHeight(false);
+        scroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;"
+                + "-fx-border-color: transparent; -fx-padding: 0;");
+        return scroll;
     }
 
     private VBox header() {
         Label title = new Label("新宝可梦系统 · 功能验证");
-        title.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 21px; -fx-font-weight: bold;");
+        title.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 18px; -fx-font-weight: bold;");
         Label subtitle = new Label("此页面直接使用 org.example.pokemon 的数据、服务和领域模型。");
         subtitle.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-text-fill: #555;");
-        return new VBox(5, title, subtitle);
+        return new VBox(3, title, subtitle);
     }
 
     private VBox content() {
@@ -71,15 +83,15 @@ public final class PokemonLabView {
         HBox setup = new HBox(10, new Label("训练家："), trainer, new Label("初始宝可梦："), starters, create);
         setup.setAlignment(Pos.CENTER_LEFT);
 
-        VBox card = new VBox(8, summary, stats, moves, events);
-        card.setPadding(new Insets(14));
+        VBox card = new VBox(6, summary, stats, moves, events);
+        card.setPadding(new Insets(10));
         card.setStyle("-fx-background-color: #f7f7f7; -fx-border-color: #b8c6d9; -fx-border-radius: 6; -fx-background-radius: 6;");
         for (Label label : List.of(summary, stats, moves, events)) {
             label.setWrapText(true);
             label.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 14px;");
         }
         events.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-text-fill: #306090;");
-        return new VBox(20, setup, card);
+        return new VBox(12, setup, card);
     }
 
     private HBox actions() {
@@ -92,7 +104,7 @@ public final class PokemonLabView {
         Button back = new Button("返回旧主菜单");
         back.setOnAction(e -> onBack.run());
         HBox bar = new HBox(10, exp, damage, heal, back);
-        bar.setPadding(new Insets(14, 0, 0, 0));
+        bar.setPadding(new Insets(8, 0, 0, 0));
         bar.setAlignment(Pos.CENTER);
         return bar;
     }

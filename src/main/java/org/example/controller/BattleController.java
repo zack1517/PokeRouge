@@ -24,17 +24,21 @@ public class BattleController implements BattleView.Actions {
 
     private final BattleService engine;
     private final Runnable onExit;
+    private final int segment; // 当前地图段号（流程系统接入前由会话持有，仅用于右上角段文案）
     private final BattleView view = new BattleView(this);
 
     /** @param engine 已就绪的战斗服务实例（玩家与野生精灵均已非倒下，通常来自
      *                {@link org.example.battle.BattleServices#newBattle}）
-     *  @param onExit 战斗结束（含逃跑/捕捉/胜负）后返回主菜单的回调 */
-    public BattleController(BattleService engine, Runnable onExit) {
+     *  @param onExit 战斗结束（含逃跑/捕捉/胜负）后返回主菜单的回调
+     *  @param segment 当前地图段号（与主菜单/会话一致，用于战斗页右上角段展示） */
+    public BattleController(BattleService engine, Runnable onExit, int segment) {
         this.engine = engine;
         this.onExit = onExit;
+        this.segment = segment;
     }
 
     public Scene createScene() {
+        view.setHud("第 " + segment + " 段 · 野外遭遇", 500); // 金币为桩值（流程系统接入后替换，TODO(dev)）
         Scene scene = view.createScene();
         render(); // 首屏：填充双方面板/日志并展示行动按钮
         return scene;
@@ -92,7 +96,7 @@ public class BattleController implements BattleView.Actions {
             }
             return;
         }
-        view.showMainMenu(this::showMoveMenu, this::showBagMenu, canSwitch(), this::showPartyMenu);
+        view.showMainMenu(this::showMoveMenu, this::showBagMenu, this::showPartyMenu);
     }
 
     /** 展示队首一项「技能满、想学新招」的抉择菜单。 */
@@ -111,12 +115,6 @@ public class BattleController implements BattleView.Actions {
                     engine.decideLearn(-1);
                     render();
                 });
-    }
-
-    /** 是否存在一只健康且非当前出战的精灵可切换。 */
-    private boolean canSwitch() {
-        return engine.getPlayer().getParty().stream()
-                .anyMatch(p -> !p.isFainted() && p != engine.playerActive());
     }
 
     private void showPartyMenu() {

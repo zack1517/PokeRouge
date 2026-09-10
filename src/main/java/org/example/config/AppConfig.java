@@ -18,9 +18,17 @@ public final class AppConfig {
     /** 是否允许用户调整窗口大小。 */
     public static final boolean RESIZABLE = false;
 
-    /** 窗口初始宽高。 */
+    /** 界面设计分辨率（逻辑画布，3:2 = 640×426.67）：各页面布局与字号一律按此设计（UiScale 统一缩放）。 */
     public static final double WINDOW_WIDTH = 640;
-    public static final double WINDOW_HEIGHT = 480;
+
+    /** = 宽 × 2/3，精确 3:2；窗口实际 = 960×640（×WINDOW_SCALE）。 */
+    public static final double WINDOW_HEIGHT = WINDOW_WIDTH * 2.0 / 3.0;
+
+    /**
+     * 全局界面缩放系数：窗口实际尺寸 = 设计分辨率 × 系数（UiScale.scene 统一施加，见其 javadoc）。
+     * <p>等比放大/缩小整体界面只需调此常量，无需改动任何 View 内布局/字号数值。</p>
+     */
+    public static final double WINDOW_SCALE = 1.5;
 
     /** 退出确认弹窗文案。 */
     public static final String EXIT_CONFIRM_TITLE = "退出程序";
