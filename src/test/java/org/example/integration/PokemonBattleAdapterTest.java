@@ -5,13 +5,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.example.model.ElementType;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
+import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.Trainer;
 import org.example.pokemon.domain.LearnableMove;
 import org.example.pokemon.domain.Species;
 import org.example.pokemon.infrastructure.GameData;
@@ -74,7 +78,7 @@ class PokemonBattleAdapterTest {
         assertEquals(Math.min(Pokemon.MAX_MOVES, (int) eligible), battlePokemon.getMoves().size());
     }
 
-    /** 野生精灵应来自宝可梦库、等级在目标值 ±2 内、技能转换有效。 */
+    /** 野生精灵应能在新系统图鉴中回查、等级在目标值 ±2 内且满足 BST 等级门槛、技能转换有效。 */
     @Test
     void testCreateWildPokemon_levelWithinOffsetAndMovesValid() {
         Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(5);
@@ -83,13 +87,16 @@ class PokemonBattleAdapterTest {
         Pokemon wildPokemon = wild.get();
         assertTrue(wildPokemon.getLevel() >= 3 && wildPokemon.getLevel() <= 7,
                 "野生等级应在 5±2 范围内，实际为 " + wildPokemon.getLevel());
-        // 候选池按种族值总和分级（见 PokemonBattleAdapter#wildCandidates）：5 级只会遇到 BST ≤ 350 的基础形态
-        Species origin = GameData.instance().getSpecies(wildPokemon.getSpecies().getId())
+        // 野生精灵从新系统全图鉴按 BST 等级门槛抽取（低 BST 早出现），不再限定初始池
+        Species source = GameData.instance()
+                .getSpecies(wildPokemon.getSpecies().getId())
                 .orElseThrow(() -> new AssertionError(
-                        "野生精灵应来自宝可梦库，实际为 " + wildPokemon.getSpecies().getId()));
-        assertTrue(origin.getBaseStats().getTotal() <= 350,
-                "5 级遭遇不应出现高种族值宝可梦，实际为 " + origin.getId()
-                        + "（BST " + origin.getBaseStats().getTotal() + "）");
+                        "野生精灵种族不在新系统图鉴中: " + wildPokemon.getSpecies().getId()));
+        int bst = source.getBaseStats().getTotal();
+        int minLevel = bst <= 350 ? 1 : (bst <= 500 ? 12 : 20);
+        assertTrue(wildPokemon.getLevel() >= minLevel,
+                "野生精灵 " + source.getId() + "（BST " + bst + "）不应在等级 " + wildPokemon.getLevel()
+                        + " 出现，其最低出现等级为 " + minLevel);
         assertMovesAreValid(wildPokemon);
     }
 
@@ -100,6 +107,46 @@ class PokemonBattleAdapterTest {
             assertNotNull(ElementType.parse(type.name()),
                     "新体系属性 " + type.name() + " 在旧战斗模型中缺少对应枚举");
         }
+    }
+
+    /** 小队对战：队伍按顺序转交战斗系统（第 0 只首发），全员满级、满血、满 PP。 */
+    @Test
+    void testCreateBattlePlayer_squadKeepsOrderAndFullState() {
+        List<Species> all = GameData.instance().getAllSpecies();
+        List<org.example.pokemon.domain.Pokemon> squad = new ArrayList<>();
+        for (int i = 0; i < 6; i++) {
+            squad.add(service.createPokemon(all.get(i).getId(), 100));
+        }
+
+        Player player = PokemonBattleAdapter.createBattlePlayer("小队测试", squad);
+
+        assertEquals(6, player.getPartySize());
+        assertEquals(squad.get(0).getName(), player.getActive().getName(), "队伍第 0 只应为首发出战");
+        for (int i = 0; i < player.getPartySize(); i++) {
+            Pokemon member = player.getParty().get(i);
+            assertEquals(100, member.getLevel(), member.getName() + " 应为满级 Lv.100");
+            assertEquals(member.getMaxHp(), member.getCurrentHp(), member.getName() + " 应满血入场");
+            for (MoveSlot slot : member.getMoveSlots()) {
+                assertEquals(slot.getMaxPp(), slot.getPp(), member.getName() + " 技能 PP 应补满");
+            }
+        }
+    }
+
+    /** 小队对战对手：随机不重复抽取指定数量、满级满状态的整队；数量上限 6。 */
+    @Test
+    void testCreateSquadTrainer_buildsRequestedCountAtFullState() {
+        Trainer trainer = PokemonBattleAdapter.createSquadTrainer("测试对手", 3, 100);
+
+        assertEquals(3, trainer.getPartySize());
+        assertEquals(3L, trainer.getParty().stream()
+                .map(member -> member.getSpecies().getId()).distinct().count(), "对手队伍不应重复抽取种族");
+        for (Pokemon member : trainer.getParty()) {
+            assertEquals(100, member.getLevel(), member.getName() + " 应为满级 Lv.100");
+            assertEquals(member.getMaxHp(), member.getCurrentHp(), member.getName() + " 应满血入场");
+        }
+        // 数量边界：1 vs 1 / 2 vs 2 等小数量模式按需生成；超过 6 只按 6 截断
+        assertEquals(1, PokemonBattleAdapter.createSquadTrainer("单人对手", 1, 100).getPartySize());
+        assertEquals(6, PokemonBattleAdapter.createSquadTrainer("满编对手", 9, 100).getPartySize());
     }
 
     /** 新体系全部技能类别必须能在旧战斗模型中解析（防枚举漂移）。 */

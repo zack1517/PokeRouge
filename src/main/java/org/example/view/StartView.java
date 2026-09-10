@@ -15,8 +15,8 @@ import org.example.util.UiScale;
 
 /**
  * 游戏启动页（第一屏）：整页铺 bg_main 主画面背景，中央半透明卡片承载五个入口按钮。
- * <p>「开始游戏」进入初始宝可梦选择流程（由 {@code MainController} 接线）；
- * 「宝可梦图鉴」「自定义战斗」「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
+ * <p>「开始游戏」进入初始宝可梦选择流程；「自定义战斗」进入模式选择页（均由 {@code MainController} 接线）；
+ * 「宝可梦图鉴」「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
  */
 public final class StartView {
 
@@ -28,8 +28,11 @@ public final class StartView {
 
     private final Runnable onStartGame;
 
-    public StartView(Runnable onStartGame) {
+    private final Runnable onCustomBattle;
+
+    public StartView(Runnable onStartGame, Runnable onCustomBattle) {
         this.onStartGame = onStartGame;
+        this.onCustomBattle = onCustomBattle;
     }
 
     public Scene createScene() {
@@ -45,13 +48,13 @@ public final class StartView {
         Button startGame = menuButton("开始游戏");
         startGame.setOnAction(e -> onStartGame.run());
 
-        // 原「继续游戏」（存档入口）随团队「不做存档」决定撤下，改为「宝可梦图鉴」；
-        // 「宝可梦图鉴」与「自定义战斗」为新增预留入口，暂不实现功能。
+        // 原「继续游戏」（存档入口）随团队「不做存档」决定撤下，改为「宝可梦图鉴」（暂为预留入口）。
         Button pokedex = menuButton("宝可梦图鉴");
         pokedex.setOnAction(e -> LogUtil.info("[StartView] 宝可梦图鉴：图鉴展示功能待实现（预留入口）"));
 
+        // 「自定义战斗」进入模式选择页（CustomBattleView；四种模式暂未实现）
         Button customBattle = menuButton("自定义战斗");
-        customBattle.setOnAction(e -> LogUtil.info("[StartView] 自定义战斗：自定义对战功能待实现（预留入口）"));
+        customBattle.setOnAction(e -> onCustomBattle.run());
 
         Button achievements = menuButton("成就系统");
         achievements.setOnAction(e -> LogUtil.info("[StartView] 成就系统：成就展示与管理功能待实现（预留入口）"));
