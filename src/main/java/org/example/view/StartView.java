@@ -5,6 +5,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
@@ -15,8 +16,8 @@ import org.example.util.UiScale;
 
 /**
  * 游戏启动页（第一屏）：整页铺 bg_main 主画面背景，中央半透明卡片承载四个入口按钮。
- * <p>「开始游戏」进入初始宝可梦选择流程（由 {@code MainController} 接线）；
- * 「继续游戏」「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
+ * <p>「开始游戏」进入初始宝可梦选择流程、「继续游戏」进入存档位选择页（均由 {@code MainController} 接线）；
+ * 「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
  */
 public final class StartView {
 
@@ -27,9 +28,19 @@ public final class StartView {
     private static final double BUTTON_WIDTH = 180;
 
     private final Runnable onStartGame;
+    private final Runnable onContinueGame;
+    /** 是否存在可继续的存档：没有存档时「继续游戏」置灰。 */
+    private final boolean canContinue;
 
-    public StartView(Runnable onStartGame) {
+    /**
+     * @param onStartGame    「开始游戏」回调
+     * @param onContinueGame 「继续游戏」回调
+     * @param canContinue    是否存在可继续的存档
+     */
+    public StartView(Runnable onStartGame, Runnable onContinueGame, boolean canContinue) {
         this.onStartGame = onStartGame;
+        this.onContinueGame = onContinueGame;
+        this.canContinue = canContinue;
     }
 
     public Scene createScene() {
@@ -46,7 +57,16 @@ public final class StartView {
         startGame.setOnAction(e -> onStartGame.run());
 
         Button continueGame = menuButton("继续游戏");
-        continueGame.setOnAction(e -> LogUtil.info("[StartView] 继续游戏：加载存档功能待实现（预留入口）"));
+        if (canContinue) {
+            continueGame.setOnAction(e -> {
+                if (onContinueGame != null) {
+                    onContinueGame.run();
+                }
+            });
+        } else {
+            continueGame.setDisable(true);
+            continueGame.setTooltip(new Tooltip("还没有任何存档，先开始游戏吧"));
+        }
 
         Button achievements = menuButton("成就系统");
         achievements.setOnAction(e -> LogUtil.info("[StartView] 成就系统：成就展示与管理功能待实现（预留入口）"));
