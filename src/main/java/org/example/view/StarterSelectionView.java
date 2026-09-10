@@ -21,17 +21,20 @@ import org.example.pokemon.domain.Species;
 import org.example.pokemon.service.PokemonService;
 import org.example.pokemon.service.PokemonServiceImpl;
 
-/** 游戏开始页（初始主页面）：整页铺 bg_main 主画面背景，仅中央一张半透明卡片承载标题与表单，选择初始精灵后进入战斗主流程。 */
+/** 游戏开始页（初始主页面）：整页铺 bg_main 主画面背景，仅中央一张半透明卡片承载标题与表单；
+ * 选择初始精灵后进入战斗主流程，「返回」不创建精灵直接回启动页。 */
 public final class StarterSelectionView {
 
     /** 初始主页面背景（classpath；素材源在 临时/images/background/bg_main.jpeg，与资源目录同步）。 */
     private static final String MAIN_BACKGROUND = "/images/background/bg_main.jpeg";
 
     private final BiConsumer<String, org.example.pokemon.domain.Pokemon> onStart;
+    private final Runnable onBack;
     private final PokemonService service = new PokemonServiceImpl();
 
-    public StarterSelectionView(BiConsumer<String, org.example.pokemon.domain.Pokemon> onStart) {
+    public StarterSelectionView(BiConsumer<String, org.example.pokemon.domain.Pokemon> onStart, Runnable onBack) {
         this.onStart = onStart;
+        this.onBack = onBack;
     }
 
     public Scene createScene() {
@@ -84,6 +87,13 @@ public final class StarterSelectionView {
             onStart.accept(trainerName, service.createPokemon(selected.getId(), 5));
         });
 
+        // 「返回」：不创建宝可梦，直接切回启动页（开始页 → 启动页）
+        Button back = new Button("返回");
+        back.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 6 14;");
+        back.setOnAction(e -> onBack.run());
+        HBox buttonRow = new HBox(8, start, back);
+        buttonRow.setAlignment(Pos.CENTER);
+
         // 不做外层大衬底框，背景尽量露出；标题/说明并入卡内，由半透明白卡统一承载以保持可读
         // （0.65 与主菜单半透明面板同族；卡宽只容纳内容，所有行文本水平居中）
         Label nameCaption = new Label("训练家名称");
@@ -94,7 +104,7 @@ public final class StarterSelectionView {
         speciesCaption.setAlignment(Pos.CENTER);
         // 行距 8→6、内边距 14→10：上下整体收紧，卡片更矮更紧凑
         VBox card = new VBox(6, title, detail, nameCaption, name,
-                speciesCaption, choices, description, start);
+                speciesCaption, choices, description, buttonRow);
         card.setMaxWidth(330);
         // 关键：BorderPane 会把 center 子节点拉满可用高度，不设上限时卡片背景将
         // 撑满整窗高（上下大片空白）。maxHeight 封顶后卡片按内容高收拢并垂直居中。
