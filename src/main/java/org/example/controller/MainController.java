@@ -138,7 +138,7 @@ public class MainController {
         // 离开主界面即停 BGM：其它界面暂未配置音乐；
         // 后续各界面各有 BGM 时，改为在对应界面入口调 MusicPlayer.playBgm（自动停旧播新）
         MusicPlayer.stop();
-        stage.setScene(new StarterSelectionView(this::startWithStarter).createScene());
+        stage.setScene(new StarterSelectionView(this::startWithStarter, this::showStartScreen).createScene());
     }
 
     private void startWithStarter(String trainerName, org.example.pokemon.domain.Pokemon starter) {
@@ -173,6 +173,11 @@ public class MainController {
             @Override
             public void onShowPokemonDetail(int index) {
                 showPokemonDetail(index);
+            }
+
+            @Override
+            public void onBackToStart() {
+                showStartScreen();
             }
         }, session.mapBackgroundPath(), session.getSegment());
         stage.setScene(view.createScene());

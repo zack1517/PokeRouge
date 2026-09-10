@@ -22,7 +22,7 @@ import java.util.List;
 
 /**
  * 主菜单视图（当前阶段的地图驻留页占位，见 GameSession 类 javadoc）：铺当前段的 bg_map 随机背景，
- * 展示训练家队伍与背包（可设先发），并给予「进入层内事件」「退出」两个入口。
+ * 展示训练家队伍与背包（可设先发），并给予「进入层内事件」「返回开始界面」「退出游戏」三个入口。
  * <p>背景由控制器按“段”决定后传入（同段多张图固定，换段才变），本类不做任何背景状态；
  * 每次进入主菜单都由控制器重新构建（队伍可能在对战中变化），因此本类不做状态刷新。</p>
  */
@@ -40,6 +40,9 @@ public class MainView {
 
         /** 打开 index 对应精灵的详情页（立绘/属性/技能/装备；装备穿脱后返回主菜单自动同步）。 */
         void onShowPokemonDetail(int index);
+
+        /** 返回游戏启动页（第一屏；重新「开始游戏」将重新创建训练家）。 */
+        void onBackToStart();
     }
 
     private static final String YH = "-fx-font-family: 'Microsoft YaHei'; ";
@@ -180,7 +183,12 @@ public class MainView {
         exit.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
         exit.setOnAction(e -> actions.onExit());
 
-        HBox bar = new HBox(12, rogue, exit);
+        // 返回第一屏：不弹确认，直接切场景（玩家可能误点，重新「开始游戏」即可继续新流程）
+        Button back = new Button("返回开始界面");
+        back.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
+        back.setOnAction(e -> actions.onBackToStart());
+
+        HBox bar = new HBox(12, rogue, back, exit);
         bar.setAlignment(Pos.CENTER);
         bar.setPadding(new Insets(10, 0, 0, 0));
         return bar;
