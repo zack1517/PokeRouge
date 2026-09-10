@@ -13,6 +13,7 @@ import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.Stats;
 import org.example.model.Terrain;
+import org.example.model.Trainer;
 import org.example.model.TypeChart;
 import org.example.model.Weather;
 
@@ -25,9 +26,14 @@ import java.util.Random;
 /**
  * 回合制对战引擎：{@link BattleService} 的默认实现。
  *
- * <p>规则：玩家与野生精灵每回合各执行一次行动（技能 / 道具 / 逃跑 / 换宠）。双方都用技能时按
- * 速度快者先动（相同速度随机）。物理技能取 物攻 vs 物防，特殊技能取 特攻 vs 特防，
- * 伤害受克制倍率、STAB(本系加成) 与随机浮动影响。捕捉成功、逃跑成功或一方全灭即结束。</p>
+ * <p>规则：玩家与对手每回合各执行一次行动（技能 / 道具 / 逃跑 / 换宠）。对手可以是单只野生
+ * 精灵，也可以是持有一整支队伍的训练师（训练师轮战）。双方都用技能时按速度快者先动（相同速度
+ * 随机）。物理技能取 物攻 vs 物防，特殊技能取 特攻 vs 特防，伤害受克制倍率、STAB(本系加成)
+ * 与随机浮动影响。捕捉成功、逃跑成功或一方精灵全部倒下即结束。</p>
+ *
+ * <p><b>训练师轮战</b>（{@link #getTrainer()} 非空）：战斗持续到某一方队伍精灵全部倒下为止。
+ * 不可逃跑、不可捕捉训练师的精灵；敌方当前出战精灵倒下后自动派出下一只健康的（敌方不会主动
+ * 换宠），天气/场地与技能 PP 跨整场持续。胜利时经验按整队被击败对手一次性结算。</p>
  *
  * <p>获胜发放经验升级时，若有空格则直接学会到级技能；技能已满则不自动遗忘，挂起为待抉择
  * （{@link #pendingLearnChoices()}），由玩家经 {@link #decideLearn(int)} 手动选择遗忘
@@ -43,7 +49,10 @@ import java.util.Random;
 public class BattleEngine implements BattleService {
 
     private final Player player;
+    /** 野生战斗中的敌方野生精灵；训练师轮战（{@code trainer} 非空）时为 {@code null}。 */
     private final Pokemon wild;
+    /** 训练师轮战中的敌方训练师；野生战斗时为 {@code null}。 */
+    private final Trainer trainer;
     private final Random random;
     /** 全程日志（按行累积）。 */
     private final List<String> log = new ArrayList<>();
@@ -61,17 +70,39 @@ public class BattleEngine implements BattleService {
     private int terrainTurnsLeft = 0;
 
     public BattleEngine(Player player, Pokemon wild) {
-        this(player, wild, new Random());
+        this(player, wild, null, new Random());
     }
 
     public BattleEngine(Player player, Pokemon wild, Random random) {
+        this(player, wild, null, random);
+    }
+
+    /** 创建一场训练师轮战（玩家 × 训练师）：不可逃跑、不可捕捉，一方精灵全部倒下才结束。 */
+    public BattleEngine(Player player, Trainer trainer) {
+        this(player, null, trainer, new Random());
+    }
+
+    public BattleEngine(Player player, Trainer trainer, Random random) {
+        this(player, null, trainer, random);
+    }
+
+    private BattleEngine(Player player, Pokemon wild, Trainer trainer, Random random) {
         this.player = Objects.requireNonNull(player);
-        this.wild = Objects.requireNonNull(wild);
+        this.wild = wild;
+        this.trainer = trainer;
         this.random = Objects.requireNonNull(random);
+        if (trainer != null && wild != null) {
+            throw new IllegalArgumentException("野生精灵与训练师不能同时存在");
+        }
         if (player.getActive() == null || player.getActive().isFainted()) {
             throw new IllegalArgumentException("玩家没有可用精灵出战");
         }
-        if (wild == null || wild.isFainted()) {
+        if (trainer != null) {
+            trainer.leadWithFirstHealthy();
+            if (trainer.getActive() == null || trainer.getActive().isFainted()) {
+                throw new IllegalArgumentException("训练师没有可用精灵出战");
+            }
+        } else if (wild == null || wild.isFainted()) {
             throw new IllegalArgumentException("野生精灵无效");
         }
     }
@@ -88,6 +119,18 @@ public class BattleEngine implements BattleService {
     @Override
     public Pokemon getWild() {
         return wild;
+    }
+
+    /** @return 敌方训练师；野生战斗返回 {@code null}。 */
+    @Override
+    public Trainer getTrainer() {
+        return trainer;
+    }
+
+    /** 当前敌方出战精灵：野生战斗为野生精灵，训练师轮战为训练师当前出战精灵。 */
+    @Override
+    public Pokemon foeActive() {
+        return trainer != null ? trainer.getActive() : wild;
     }
 
     @Override
@@ -166,7 +209,7 @@ public class BattleEngine implements BattleService {
     // ------------------------------------------------------------------
 
     /**
-     * 玩家选择技能。野生精灵自动选择可用技能；按速度决定先后。
+     * 玩家选择技能。敌方自动选择可用技能；按速度决定先后。
      *
      * @return 本回合产生的新日志
      */
@@ -185,20 +228,21 @@ public class BattleEngine implements BattleService {
         append(playerActive().getName() + " 使用了【" + usable.getMove().getName() + "】！");
 
         // 决定本回合先后手：双方都行动，比较速度
+        Pokemon foe = foeActive();
         int playerSpeed = playerActive().getStats().getSpeed();
-        int wildSpeed = wild.getStats().getSpeed();
-        boolean playerFirst = playerSpeed > wildSpeed
-                || (playerSpeed == wildSpeed && random.nextBoolean());
+        int foeSpeed = foe.getStats().getSpeed();
+        boolean playerFirst = playerSpeed > foeSpeed
+                || (playerSpeed == foeSpeed && random.nextBoolean());
 
         if (playerFirst) {
-            executeMove(playerActive(), wild, usable.getMove());
-            if (isOngoing() && !wild.isFainted() && !playerActive().isFainted()) {
-                wildTurn();
+            executeMove(playerActive(), foe, usable.getMove());
+            if (isOngoing() && !foe.isFainted() && !playerActive().isFainted()) {
+                foeTurn();
             }
         } else {
-            wildTurn();
-            if (isOngoing() && !playerActive().isFainted() && !wild.isFainted()) {
-                executeMove(playerActive(), wild, usable.getMove());
+            foeTurn();
+            if (isOngoing() && !playerActive().isFainted() && !foe.isFainted()) {
+                executeMove(playerActive(), foe, usable.getMove());
             }
         }
         finishRound();
@@ -207,7 +251,8 @@ public class BattleEngine implements BattleService {
 
     /**
      * 玩家使用道具：回复道具回复当前精灵 HP；精灵球尝试捕捉野生精灵。
-     * 道具使用不计先后手（视为先行动作），使用后若战斗未结束则野生精灵行动一次。
+     * 道具使用不计先后手（视为先行动作），使用后若战斗未结束则敌方行动一次。
+     * 训练师轮战中投掷精灵球会被拒绝（球不消耗）。
      *
      * @return 本回合产生的新日志
      */
@@ -227,14 +272,19 @@ public class BattleEngine implements BattleService {
             }
             player.getBag().consume(item);
             append("使用了【" + item.getName() + "】，" + active.getName() + " 回复了 " + healed + " HP");
-            if (isOngoing() && !wild.isFainted() && !playerActive().isFainted()) {
-                wildTurn();
+            if (isOngoing() && !foeActive().isFainted() && !playerActive().isFainted()) {
+                foeTurn();
             }
         } else if (item.getCategory() == ItemCategory.POKE_BALL) {
+            // 训练师轮战不可捕捉（即使 alwaysCatch 的球也不行）；野生遭遇才能捕捉
+            if (trainer != null) {
+                append("训练师的精灵无法被捕捉！");
+                return slice(mark);
+            }
             player.getBag().consume(item);
             append("向 " + wild.getName() + " 投出了【" + item.getName() + "】！");
             if (!tryCapture(item) && isOngoing() && !wild.isFainted() && !playerActive().isFainted()) {
-                wildTurn();
+                foeTurn();
             }
         } else {
             append("该道具暂时无法使用");
@@ -244,7 +294,8 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 玩家尝试逃跑：速度越快成功率越高。失败则野生精灵行动一次。
+     * 玩家尝试逃跑：速度越快成功率越高。失败则敌方行动一次。
+     * 训练师轮战中无法逃跑，仅追加提示日志。
      *
      * @return 本回合产生的新日志
      */
@@ -252,6 +303,10 @@ public class BattleEngine implements BattleService {
     public List<String> tryRun() {
         int mark = log.size();
         requireOngoing();
+        if (trainer != null) {
+            append("与训练师的对战中无法逃跑！");
+            return slice(mark);
+        }
         int playerSpeed = playerActive().getStats().getSpeed();
         int wildSpeed = wild.getStats().getSpeed();
         double ratio = (double) playerSpeed / Math.max(1, playerSpeed + wildSpeed);
@@ -263,14 +318,14 @@ public class BattleEngine implements BattleService {
         }
         append("逃跑失败……");
         if (!wild.isFainted() && !playerActive().isFainted()) {
-            wildTurn();
+            foeTurn();
         }
         finishRound();
         return slice(mark);
     }
 
     /**
-     * 玩家回合切换出战精灵：消耗本回合行动，收换完成后野生精灵行动一次。
+     * 玩家回合切换出战精灵：消耗本回合行动，收换完成后敌方行动一次。
      *
      * @return 本回合产生的新日志
      */
@@ -285,8 +340,8 @@ public class BattleEngine implements BattleService {
         }
         append(player.getName() + " 收回了 " + current.getName() + "！");
         append("你派出了 " + target.getName() + "！");
-        if (!wild.isFainted() && !target.isFainted()) {
-            wildTurn();
+        if (!foeActive().isFainted() && !target.isFainted()) {
+            foeTurn();
         }
         finishRound();
         return slice(mark);
@@ -296,26 +351,34 @@ public class BattleEngine implements BattleService {
     // 内部流程
     // ------------------------------------------------------------------
 
-    private void wildTurn() {
+    private void foeTurn() {
         if (status != Status.ONGOING) {
             return;
         }
-        MoveSlot usable = pickWildMove();
+        Pokemon foe = foeActive();
+        if (foe == null) {
+            return;
+        }
+        MoveSlot usable = pickFoeMove();
         if (usable == null) {
-            append(wild.getName() + " 没有可用技能了，正在挣扎！");
-            int dmg = Math.max(1, wild.getLevel() / 4);
+            append(foe.getName() + " 没有可用技能了，正在挣扎！");
+            int dmg = Math.max(1, foe.getLevel() / 4);
             int dealt = playerActive().takeDamage(dmg);
             append("对 " + playerActive().getName() + " 造成了 " + dealt + " 点伤害");
         } else {
             usable.use();
-            append(wild.getName() + " 使用了【" + usable.getMove().getName() + "】！");
-            executeMove(wild, playerActive(), usable.getMove());
+            append(foe.getName() + " 使用了【" + usable.getMove().getName() + "】！");
+            executeMove(foe, playerActive(), usable.getMove());
         }
     }
 
     /** 敌方自动选择技能：从仍有 PP 的技能中随机挑一个。 */
-    private MoveSlot pickWildMove() {
-        List<MoveSlot> usable = wild.getMoveSlots().stream()
+    private MoveSlot pickFoeMove() {
+        Pokemon foe = foeActive();
+        if (foe == null) {
+            return null;
+        }
+        List<MoveSlot> usable = foe.getMoveSlots().stream()
                 .filter(s -> !s.exhausted())
                 .toList();
         if (usable.isEmpty()) {
@@ -463,19 +526,37 @@ public class BattleEngine implements BattleService {
         return false;
     }
 
-    /** 回合结束结算：胜负判定与玩家精灵倒下后的自动换宠。 */
+    /** 回合结束结算：胜负判定、敌方出战倒下后的自动替换/续战、玩家精灵倒下后的自动换宠。 */
     private void resolveRoundEnd() {
         if (status != Status.ONGOING) {
             return;
         }
-        if (wild.isFainted()) {
-            status = Status.PLAYER_WIN;
-            append("野生的 " + wild.getName() + " 倒下了！你赢了！");
-            awardExpAndSettle();
-            return;
+        Pokemon pa = playerActive();
+        Pokemon foe = foeActive();
+        boolean foeDown = foe != null && foe.isFainted();
+        boolean playerDown = pa != null && pa.isFainted();
+
+        if (foeDown) {
+            if (trainer == null) {
+                // 野生战斗：野生精灵倒下即获胜
+                status = Status.PLAYER_WIN;
+                append("野生的 " + foe.getName() + " 倒下了！你赢了！");
+                awardExpAndSettle();
+                return;
+            }
+            // 训练师轮战：出战精灵倒下后自动派出下一只健康的；没有了 → 玩家获胜
+            Pokemon next = trainer.switchToNextHealthy();
+            if (next == null) {
+                status = Status.PLAYER_WIN;
+                append("训练师 " + trainer.getName() + " 的所有精灵都倒下了！你赢了！");
+                awardExpAndSettle();
+                return;
+            }
+            append(trainer.getName() + " 派出了 " + next.getName() + "！");
         }
-        if (playerActive() != null && playerActive().isFainted()) {
-            append(playerActive().getName() + " 倒下了……");
+
+        if (playerDown) {
+            append(pa.getName() + " 倒下了……");
             if (player.switchToNextHealthy() != null) {
                 append("你派出了 " + playerActive().getName() + "！");
             } else {
@@ -494,7 +575,8 @@ public class BattleEngine implements BattleService {
             return;
         }
         Pokemon pa = playerActive();
-        boolean bothStanding = !wild.isFainted() && pa != null && !pa.isFainted();
+        Pokemon foe = foeActive();
+        boolean bothStanding = foe != null && !foe.isFainted() && pa != null && !pa.isFainted();
         if (bothStanding) {
             applyFieldEndEffects(pa);
         }
@@ -506,11 +588,12 @@ public class BattleEngine implements BattleService {
 
     /** 回合末天气/场地效果：沙暴/冰雹对双方扣血；青草场地对双方回复。 */
     private void applyFieldEndEffects(Pokemon pa) {
+        Pokemon foe = foeActive();
         weatherChip(pa);
-        weatherChip(wild);
+        weatherChip(foe);
         if (terrain == Terrain.GRASSY) {
             grassyHeal(pa);
-            grassyHeal(wild);
+            grassyHeal(foe);
         }
     }
 
@@ -567,13 +650,13 @@ public class BattleEngine implements BattleService {
 
     /**
      * 胜利后向队伍发放经验：每只未倒下的精灵获得全额经验，结算逐级升级、
-     * 到级学招与进化。
+     * 到级学招与进化。野生战斗按单只野生精灵折算；训练师轮战按整队被击败对手一次性结算。
      */
     private void awardExpAndSettle() {
         if (status != Status.PLAYER_WIN) {
             return;
         }
-        int gain = expGain(wild);
+        int gain = trainer == null ? expGain(wild) : expSum(trainer.getParty());
         for (Pokemon p : player.getParty()) {
             if (p.isFainted()) {
                 continue;
@@ -597,6 +680,15 @@ public class BattleEngine implements BattleService {
         int total = stats.getHp() + stats.getAttack() + stats.getDefense()
                 + stats.getSpAttack() + stats.getSpDefense() + stats.getSpeed();
         return Math.max(30, total * defeated.getLevel() / 5);
+    }
+
+    /** 整队经验之和：训练师轮战胜利时按全队被击败对手一次性结算。 */
+    private static int expSum(List<Pokemon> party) {
+        int sum = 0;
+        for (Pokemon p : party) {
+            sum += expGain(p);
+        }
+        return sum;
     }
 
     /** 等级达到习得表要求时尝试学会新技能：有空槽直接学会；4 招全满则挂起等待玩家抉择。 */

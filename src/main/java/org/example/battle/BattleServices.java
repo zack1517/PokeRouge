@@ -3,6 +3,7 @@ package org.example.battle;
 import org.example.data.GameData;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.Trainer;
 
 import java.util.Optional;
 import java.util.Random;
@@ -49,6 +50,34 @@ public final class BattleServices {
      */
     public static BattleService newBattle(Player player, Pokemon wild, Random random) {
         return new BattleEngine(player, wild, random);
+    }
+
+    /**
+     * 创建一场训练师轮战（默认随机源）：玩家 × 训练师整支队伍。不可逃跑、不可捕捉，
+     * 直到某一方精灵全部倒下才结束。
+     *
+     * @param player  玩家（当前出战精灵必须存活，否则抛异常）
+     * @param trainer 敌方训练师（队伍中须有健康精灵，否则抛异常）
+     * @return 一个已就绪的 {@link BattleService} 实例
+     * @throws NullPointerException     参数为 {@code null}
+     * @throws IllegalArgumentException 玩家或训练师无可用出战精灵
+     */
+    public static BattleService newTrainerBattle(Player player, Trainer trainer) {
+        return new BattleEngine(player, trainer);
+    }
+
+    /**
+     * 创建一场可指定随机源的训练师轮战（便于测试复现）。
+     *
+     * @param player  玩家（当前出战精灵必须存活，否则抛异常）
+     * @param trainer 敌方训练师（队伍中须有健康精灵，否则抛异常）
+     * @param random  随机源
+     * @return 一个已就绪的 {@link BattleService} 实例
+     * @throws NullPointerException     参数为 {@code null}
+     * @throws IllegalArgumentException 玩家或训练师无可用出战精灵
+     */
+    public static BattleService newTrainerBattle(Player player, Trainer trainer, Random random) {
+        return new BattleEngine(player, trainer, random);
     }
 
     // ------------------------------------------------------------------
