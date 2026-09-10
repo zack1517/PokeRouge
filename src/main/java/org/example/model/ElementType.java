@@ -39,7 +39,11 @@ public enum ElementType {
     /** 超能力。 */
     PSYCHIC("超能力", "#F85888"),
     /** 妖精。 */
-    FAIRY("妖精", "#EE99AC");
+    FAIRY("妖精", "#EE99AC"),
+    /** 恶（兼容补充：对齐新宝可梦系统的全部属性）。 */
+    DARK("恶", "#705848"),
+    /** 钢（兼容补充：对齐新宝可梦系统的全部属性）。 */
+    STEEL("钢", "#B8B8D0");
 
     private final String displayName;
     private final String colorCode;

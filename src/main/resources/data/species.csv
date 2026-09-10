@@ -1,17 +1,31 @@
-# 精灵统一格式：
-# id,name,type1,type2,hp,atk,def,spatk,spdef,speed,catchRate,wild,evolvesTo,evolveLevel,moves,learns
-# type2 可为空；wild 1 进野怪随机池、0 不进；evolvesTo 进化目标 id（空=不进化）；
-# evolveLevel 进化等级；moves 出生即会的技能（; 分隔、最多 4 个）；
-# learns 按等级习得，格式 等级:技能id;等级:技能id（如 8:m_flame_wheel）
-id,name,type1,type2,hp,atk,def,spatk,spdef,speed,catchRate,wild,evolvesTo,evolveLevel,moves,learns
-s_fire_cat,焰尾猫,FIRE,,45,52,43,60,50,65,45,1,s_flame_lion,16,m_tackle;m_ember,8:m_flame_wheel;10:m_sunny_day;13:m_flamethrower
-s_flame_lion,烈焰狮,FIRE,,65,75,58,90,68,95,45,0,,0,m_tackle;m_ember;m_flame_wheel;m_fire_blast,
-s_water_tad,泡泡蛙,WATER,,44,48,65,50,64,43,45,1,s_surge_frog,16,m_tackle;m_bubble,9:m_aqua_jet;12:m_rain_dance;15:m_hydro_pump
-s_surge_frog,涌浪蛙,WATER,,68,70,80,85,80,70,45,0,,0,m_tackle;m_bubble;m_aqua_jet;m_muddy_water,
-s_leaf_chick,叶芽雀,GRASS,FLYING,45,49,49,65,65,45,45,1,s_gale_owl,16,m_tackle;m_vine_whip,9:m_razor_leaf;13:m_grassy_terrain;15:m_wing_attack
-s_gale_owl,苍翼枭,GRASS,FLYING,65,75,60,85,75,90,45,0,,0,m_tackle;m_vine_whip;m_razor_leaf;m_leaf_blade,
-s_spark_rat,电光鼠,ELECTRIC,,35,55,40,50,50,90,190,1,s_volt_mink,22,m_tackle;m_thunder_shock,8:m_quick;14:m_electric_terrain;18:m_thunderbolt
-s_volt_mink,迅雷貂,ELECTRIC,,60,80,55,85,65,125,190,0,,0,m_tackle;m_quick;m_thunder_shock;m_volt_tackle,
-s_ice_fox,冰晶狐,ICE,,40,45,40,65,45,65,120,1,,0,m_tackle;m_icy_wind,7:m_quick;10:m_hail;12:m_ice_fang
-s_rock_tort,岩甲龟,ROCK,GROUND,44,48,65,50,64,43,45,1,,0,m_tackle;m_rock_throw,6:m_mud_slap;11:m_rock_slide;14:m_sandstorm
-s_wing_viper,翼毒蛇,POISON,FLYING,55,60,44,40,54,55,90,1,,0,m_tackle;m_wing_attack,7:m_quick;12:m_cross_poison
+# id,name,type1,type2,hp,attack,defense,spAttack,spDefense,speed,evolutionLevel,evolutionTarget,baseExp,captureRate,category,description
+bulbasaur,妙蛙种子,GRASS,POISON,45,49,49,65,65,45,16,ivysaur,64,45,种子宝可梦,背上的种子从出生时就种下了 会随成长慢慢长大
+ivysaur,妙蛙草,GRASS,POISON,60,62,63,80,80,60,32,venusaur,142,45,种子宝可梦,背上的花苞积蓄着进化的力量
+venusaur,妙蛙花,GRASS,POISON,80,82,83,100,100,80,0,,236,45,种子宝可梦,背上的大花会散发迷人的香气
+charmander,小火龙,FIRE,,39,52,43,60,50,65,16,charmeleon,62,45,蜥蜴宝可梦,尾巴上的火焰代表它的生命
+charmeleon,火恐龙,FIRE,,58,64,58,80,65,80,36,charizard,142,45,火焰宝可梦,会挥动尾巴上的火焰战斗
+charizard,喷火龙,FIRE,FLYING,78,84,78,109,85,100,0,,240,45,火焰宝可梦,能喷出融化岩石的炽热火焰
+squirtle,杰尼龟,WATER,,44,48,65,50,64,43,16,wartortle,63,45,小龟宝可梦,出生后龟壳会逐渐变硬
+wartortle,卡咪龟,WATER,,59,63,80,65,80,58,36,blastoise,142,45,龟宝可梦,蓬松的尾巴是长寿的象征
+blastoise,水箭龟,WATER,,79,83,100,85,105,78,0,,239,45,甲壳宝可梦,背上的水炮威力惊人
+pikachu,皮卡丘,ELECTRIC,,35,55,40,50,50,90,0,,112,190,鼠宝可梦,脸颊上的电气袋储存电力 遇到危险时会放电
+eevee,伊布,NORMAL,,55,55,50,45,65,55,0,,65,45,进化宝可梦,基因不稳定 会根据环境进化成多种形态
+growlithe,卡蒂狗,FIRE,,55,70,45,70,50,60,25,arcanine,70,190,小狗宝可梦,对训练家非常忠诚 会用吼叫威吓敌人
+arcanine,风速狗,FIRE,,90,110,80,100,80,95,0,,194,75,传说宝可梦,威风凛凛 奔跑起来像风一样快
+horsea,墨海马,WATER,,30,40,70,70,25,60,25,seadra,59,225,龙宝可梦,用尾巴卷住珊瑚 防止被水流冲走
+seadra,海刺龙,WATER,,55,65,95,95,45,85,0,,154,75,龙宝可梦,性情暴躁 被激怒时会喷射墨汁
+abra,凯西,PSYCHIC,,25,20,15,105,55,90,16,kadabra,62,200,念力宝可梦,每天睡18个小时 睡着时也能使用超能力
+kadabra,勇基拉,PSYCHIC,,40,35,30,120,70,105,36,alakazam,140,100,念力宝可梦,念力强大 据说使用超能力时会发生灵异现象
+alakazam,胡地,PSYCHIC,,55,50,45,135,95,120,0,,225,50,念力宝可梦,智商极高 大脑时刻高速运转
+machop,腕力,FIGHTING,,70,80,50,35,35,35,16,machoke,61,180,怪力宝可梦,全身都是肌肉 能举起比自己重几倍的物体
+machoke,豪力,FIGHTING,,80,100,70,50,60,45,36,machamp,142,90,怪力宝可梦,肌肉发达 据说能空手投掷成年人
+machamp,怪力,FIGHTING,,90,130,80,65,85,55,0,,227,45,怪力宝可梦,四只手臂能连续出拳 拳速快得看不见
+geodude,小拳石,ROCK,GROUND,40,80,100,30,30,20,16,graveler,60,255,岩石宝可梦,像石头一样一动不动 会滚下山坡袭击猎物
+graveler,隆隆石,ROCK,GROUND,55,95,115,45,45,35,36,golem,137,120,岩石宝可梦,滚下山时速度惊人 沿途碾压一切
+golem,隆隆岩,ROCK,GROUND,80,120,130,55,65,45,0,,223,45,重量级宝可梦,身体坚硬如铁 从高处滚落也不会受伤
+gastly,鬼斯,GHOST,POISON,30,35,30,100,35,80,16,haunter,62,190,气体宝可梦,由毒气组成 被风吹就会散开
+haunter,鬼斯通,GHOST,POISON,45,50,45,115,55,95,36,gengar,142,90,气体宝可梦,喜欢躲藏在暗处 会伸出舌头吓人
+gengar,耿鬼,GHOST,POISON,60,65,60,130,75,110,0,,225,45,影子宝可梦,潜藏在影子里 据说被它舔到会被吸取生命
+dratini,迷你龙,DRAGON,,41,64,45,50,50,50,16,dragonair,60,45,龙宝可梦,传说中的宝可梦 成长过程中会不断蜕皮
+dragonair,哈克龙,DRAGON,,61,84,65,70,70,70,36,dragonite,144,45,龙宝可梦,头部和翅膀上的水晶能改变天气
+dragonite,快龙,DRAGON,FLYING,91,134,95,100,100,80,0,,270,45,龙宝可梦,心地善良 会救助落水的人和宝可梦

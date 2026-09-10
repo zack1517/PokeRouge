@@ -1,10 +1,15 @@
 # UI 模块接口与界面设计文档（接口文档_UI模块）
 
-> 版本：v0.1.3（草稿） · 日期：2026-09-08 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
+> 版本：v0.1.8（草稿） · 日期：2026-09-10 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
 > 角色：UI 负责人 · 状态：**待组长评审**，评审通过前不进入编码
-> 依据：《需求文档》§7 界面与交互需求、《测试用例草稿》§D、《接口文档_战斗服务.md》v1.0、
+> 依据：《需求文档》§7 界面与交互需求、《测试用例草稿》§D、《接口文档_战斗服务.md》v1.8、
 > **本阶段六系统任务分工**（游戏流程系统 / 存档系统 / 宝可梦系统 / 战斗系统 / 肉鸽系统 / JavaFX UI；其中游戏流程与存档由同一人负责）
 > 版本说明：v0.1.3 将「游戏流程&存档」拆为游戏流程系统与存档系统（同一人负责，共六系统），并同步修订边界表、接口归属与内部设计措辞；
+> **v0.1.4 同步战斗服务 v1.4 的训练师轮战契约：§3.3 增训练师轮战界面要求，§4.1/§4.2 敌方渲染改用 `foeActive()` 并补 `getTrainer()`、`newTrainerBattle`，§4.3 补 `Trainer` 查询**；
+> **v0.1.5 同步战斗服务 v1.5 的异常状态契约：战斗页显示异常摘要与实际速度，道具菜单显示解除适用范围**；
+> **v0.1.6 同步战斗服务 v1.6 的数据端口：战斗模块只消费数据，技能/种族/野生池由外部数据模块经 `BattleDataPort` 注入，UI 侧只在组装入口注入、渲染无变化**；
+> **v0.1.7 同步战斗服务 v1.7 的职责收敛：遭遇生成（等级浮动 / 随机挑种族）移出战斗模块，改由组装侧 `WildEncounter` 提供，主界面的随机遭遇仍由 `MainController` 调用、渲染无变化**；
+> **v0.1.8 同步战斗服务 v1.8 的道具目标选择：背包菜单改为「选道具 → 选目标精灵」两步，可对队伍任意精灵（含替补）使用回复 / 解除道具，精灵球跳过目标步骤；道具可用性判定改为「队伍中是否存在合法目标」**；
 > 文中「[待确认]」项为需与组长 / 对应系统负责人确认后方可定稿的内容。
 
 ## 1. 概述
@@ -28,7 +33,7 @@ UI 只做三件事：
 | 游戏流程系统 | 菜单、游戏流程、**场景切换** | **调度方**：决定显示哪个页面、传页面参数 |
 | 存档系统 | 保存 / 读取当前游戏状态 | **状态提供方**：页面状态对象定义与序列化（读档直达任意页面）；与游戏流程系统**同一人负责** |
 | 宝可梦系统 | 宝可梦、技能、队伍 | **数据提供方**：选队/图鉴/面板/队伍展示的数据与扩展（性格等 [待确认]） |
-| 战斗系统 | 一场战斗的规则 | **服务提供方**：`BattleService`（v1.0 已交付），战斗页的结算来源 |
+| 战斗系统 | 一场战斗的规则 | **服务提供方**：`BattleService`（v1.7 已交付），战斗页的结算来源；**数据由外部模块经 `BattleDataPort` 注入、遭遇生成由组装侧 `WildEncounter` 提供**（UI 不感知） |
 | 肉鸽系统 | 战斗后的奖励、强化、下一轮 | **服务提供方**：节点/奖励/商店等页面数据与交互结果 |
 | **JavaFX UI（本模块）** | FXML、Controller、CSS、界面 | 消费宝可梦/战斗/肉鸽系统；被游戏流程系统调度；依赖存档系统的页面状态定义 |
 
@@ -162,10 +167,24 @@ FXML 重写，要求：
 
 - 布局：上=双方精灵信息面板（名称/属性/Lv/HP 条/EXP 条），中=战斗日志，下=行动区
   （主菜单：技能/背包/精灵/逃跑；子菜单：技能列表、背包列表、队伍列表）；
-- 按钮可用性规则（沿用参考实现）：PP 耗尽禁用、满血回复道具禁用、倒下/当前出战
+- 按钮可用性规则（沿用参考实现）：PP 耗尽禁用、倒下/当前出战
   精灵禁用；非 `ONGOING` 时清空行动区显示结果与"返回"；
 - 日志展示只读、行动后全量覆盖（与参考实现一致），胜负/升级/学招/进化等文案
-  一律来自日志行透传，UI 不自行生成业务文案。
+  一律来自日志行透传，UI 不自行生成业务文案；
+- 训练师轮战（v1.4）：敌方为一整支队伍，敌方面板取 `foeActive()`（对方换宠后自动跟随），
+  可用 `getTrainer()` 显示对手名与对方剩余精灵；逃跑与投球会被引擎拒绝（仅提示日志、
+  不消耗回合），按钮可置灰；仅当对方整队精灵全部倒下才展示胜利。
+- 异常状态展示（v0.1.5，参考实现已落地）：双方精灵卡片在 HP 条下方显示**状态徽章**
+  （主要异常/混乱/倒下，橙底 `#ffe6c7` + 深字 `#a35200`，无异常时不占位）；
+  技能列表的说明文字叠加异常提示（100% 为"使目标陷入X状态"，否则"可能使目标陷入X状态（n%）"）；
+  队伍列表与队伍菜单显示异常摘要，并给出计异常倍率后的**实际速度**（`effectiveSpeed()`）；
+- 道具可用性（v0.1.5）：解除类道具（`ItemCategory.CURE`）在当前出战精灵无对应异常时禁用，
+  菜单中显示其解除范围（多项用 `/` 连接，"全部异常状态"表示 `ALL`）。
+- 道具目标选择（v0.1.8，参考实现已落地）：背包菜单为「选道具 → 选目标精灵」两步 ——
+  回复 / 解除类道具选中后进入目标面板（3×2 六格，复用精灵面板布局），
+  **可以是队伍中任意精灵（含替补）**；精灵球跳过目标步骤直接投向敌方。
+  可用性判定改为「队伍中是否存在任一合法目标」（回复：未倒下且未满血；解除：有可解除的异常），
+  精灵球恒可用。目标面板中不可选精灵呈灰格（仍可悬停查看详情），返回键回到背包菜单。
 
 ### 3.4 存档对页面的约束（新增）
 
@@ -178,15 +197,17 @@ FXML 重写，要求：
 
 ## 4. UI 依赖的外部契约（已存在，可直接引用）
 
-以下接口/类型已由 feature/battle（战斗系统）交付，版本 v1.0；契约引用以此为准。
+以下接口/类型已由 feature/battle（战斗系统）交付，版本 v1.0（v1.4 新增训练师轮战，
+见《接口文档_战斗服务.md》§3.4）；契约引用以此为准。
 
 ### 4.1 战斗服务（引用《接口文档_战斗服务.md》§3）
 
 | 需求 | 使用方页面 | 说明 |
 | --- | --- | --- |
-| `BattleService.Status` 枚举 | 战斗页、结算页 | 战斗结束分流：`PLAYER_WIN / PLAYER_LOSE / FLED / CAUGHT / ONGOING` |
-| `useMove / useItem / tryRun / switchActive` | 战斗页 | 四个行动入口；返回 `List<String>`（本回合新日志）；非 ONGOING 调用抛 `IllegalStateException`（UI 先判 `isOngoing()`） |
-| `playerActive() / getWild() / getPlayer()` | 战斗页 | 面板与队伍菜单渲染（引擎自动换宠后重新读取，可能为 null，需空态） |
+| `BattleService.Status` 枚举 | 战斗页、结算页 | 战斗结束分流：`PLAYER_WIN / PLAYER_LOSE / FLED / CAUGHT / ONGOING`；`FLED/CAUGHT` 仅野生遭遇会出现 |
+| `useMove / useItem(item, partyIndex) / useItem(item) / tryRun / switchActive` | 战斗页 | 行动入口；返回 `List<String>`（本回合新日志）；非 ONGOING 调用抛 `IllegalStateException`（UI 先判 `isOngoing()`）。**v1.8**：`useItem(item, partyIndex)` 对队伍任意精灵（含替补）使用回复/解除道具，`useItem(item)` 为作用于出战精灵的便捷重载；精灵球忽略 `partyIndex`。训练师轮战中 `tryRun()` 与对训练师投球只回提示日志、不消耗回合，按钮可置灰或保留提示 |
+| `playerActive() / foeActive() / getPlayer()` | 战斗页 | 面板与队伍菜单渲染（引擎自动换宠后重新读取，可能为 null，需空态）。**敌方面板一律用 `foeActive()`**：野生为野生精灵，训练师轮战为训练师当前出战精灵（训练师换宠后自动跟随）；`getWild()` 在训练师轮战中为 `null` |
+| `getTrainer()` | 战斗页 | 训练师轮战非空：可用 `getTrainer().getName()` 显示对手名，`getTrainer().getParty()` 显示对方队伍/剩余数量 |
 | `getLog()` | 战斗页 | 完整日志只读，行动后全量覆盖展示 |
 | `getBag()` | 战斗页 | 配合 `Bag.availableStacks()` 渲染背包菜单 |
 
@@ -194,21 +215,24 @@ FXML 重写，要求：
 
 | 方法 | 归属 | 说明 |
 | --- | --- | --- |
-| `BattleServices.newBattle(Player, Pokemon[, Random])` | 战斗页创建入口（由流程系统在调度战斗页前调用并传入现场，或经页面回调创建 [待确认]） | 玩家无存活出战精灵抛异常，创建前校验 `hasHealthyPokemon()` |
-| `BattleServices.wildLevelAround / randomWild` | 肉鸽系统 | 遭遇生成属流程/肉鸽侧，UI 不直接调用；`Optional` 空值需空态提示 |
+| `BattleServices.newBattle(Player, Pokemon[, Random])` | 战斗页创建入口（野生遭遇） | 玩家无存活出战精灵抛异常，创建前校验 `hasHealthyPokemon()` |
+| `BattleServices.newTrainerBattle(Player, Trainer[, Random])` | 战斗页创建入口（训练师轮战） | 敌方为一整支队伍，某一方精灵全部倒下才结束（不可逃跑/捕捉）；训练师队伍无健康精灵时抛 `IllegalArgumentException` |
+| `WildEncounter.levelAround / randomWild` | 肉鸽系统 | 遭遇生成属流程/肉鸽侧（v1.7 已移出战斗模块），UI 不直接调用；`Optional` 空值需空态提示 |
 
 ### 4.3 model 只读查询（UI 展示所需字段，归宝可梦系统维护）
 
 | 对象 | UI 用到的查询 |
 | --- | --- |
-| `Pokemon` | `getName / getLevel / getSpecies / getCurrentHp / getMaxHp / getExp / expToNextLevel / isFainted / getMoveSlots / getMoves / getStats / hasType` |
+| `Pokemon` | `getName / getLevel / getSpecies / getCurrentHp / getMaxHp / getExp / expToNextLevel / isFainted / getMoveSlots / getMoves / getStats / hasType / getStatus / isConfused / getSleepTurns / getConfusionTurns / getBadlyPoisonCounter / effectiveSpeed / effectiveAttack`（v0.1.5 增异常状态与计倍率的实际能力值） |
 | `Species` | `getId / getName / getTypes / getBaseStats / canEvolveAt(level)` |
 | `Stats` | `getHp / getAttack / getDefense / getSpAttack / getSpDefense / getSpeed` |
 | `ElementType` | `getDisplayName()`；`parse(name)` 供数据加载 |
 | `Player` | `getName / getParty / getActive / getBag / hasHealthyPokemon / healParty`（医院页） |
+| `Trainer`（v1.4 新增） | `getName / getParty / getActive / getPartySize / hasHealthyPokemon / isPartyAllFainted`（训练师轮战的对手名、对方队伍与剩余精灵展示） |
 | `Bag / ItemStack` | `availableStacks() / countOf / getAll`；`getItem() / getCount()` |
-| `Item` | `getId / getName / getCategory / getEffect / isAlwaysCatch`（`ItemCategory.HEAL / POKE_BALL`） |
-| `MoveSlot / Move` | `getMove / getPp / exhausted`；`getId / getName / getType / getCategory / getPower / getMaxPp` |
+| `Item` | `getId / getName / getCategory / getEffect / isAlwaysCatch / getCuresSpec / canCure / curedStatuses / curesAll`（`ItemCategory.HEAL / POKE_BALL / CURE`） |
+| `MoveSlot / Move` | `getMove / getPp / exhausted`；`getId / getName / getType / getCategory / getPower / getMaxPp / hasInfliction / getInflicts / getInflictionChance` |
+| `StatusCondition` | `getDisplayName / isMajor / isVolatile / immunityType`；`parse(name)` 供数据加载 |
 
 > 展示所需中文名均有现成 getter，**不要求逻辑层为展示拼装字符串**；格式拼接由 UI 负责。
 > 若宝可梦系统扩展 model（金币、性格、努力值等），保持现有 getter 风格并**同步更新本文档
@@ -360,3 +384,8 @@ public interface ScreenFactory {
 | v0.1.1 | 2026-09-08 | 初稿：页面清单、场景流转、外部契约引用、接口缺口、内部设计、验收映射（按 README 六人分工） | [待确认] |
 | v0.1.2 | 2026-09-08 | 按五系统分工重写：场景调度归流程&存档（§1/§6.2）、界面 FXML 化（§1.3/§2/§6.1）、缺口按系统重分配（§5）、新增存档约束-状态驱动渲染（§3.4/§6.3）、待确认清单分 A/B 组 | [待确认：UI 负责人] |
 | v0.1.3 | 2026-09-08 | 系统拆分："游戏流程&存档"拆为游戏流程系统与存档系统（同一人负责，共六系统）；修订 §1.2 边界表/§3.1-3.2/§5 归属（新增 I-02c、I-09）/§6.2-6.3/§9 A 组 | [待确认：UI 负责人] |
+| v0.1.4 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.4 训练师轮战：§3.3 增训练师轮战界面要求（敌方面板取 `foeActive()`、对手名与剩余精灵、逃跑/投球被拒提示）；§4.1 契约表补 `foeActive()/getTrainer()` 并说明 `getWild()` 在训练师战为 null；§4.2 补 `newTrainerBattle` 工厂；§4.3 补 `Trainer` 只读查询 | [待确认：UI 负责人] |
+| v0.1.5 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.5 异常状态：§3.3 增状态徽章、招式异常提示、异常摘要与实际速度、解除道具可用性要求；§4.3 契约表补 `Pokemon` 异常查询与 `effectiveSpeed/effectiveAttack`、`Item` 解除范围方法、`Move` 附带异常字段与 `ItemCategory.CURE`；新增 `StatusCondition` 只读查询 | [待确认：UI 负责人] |
+| v0.1.6 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.6 数据端口：战斗模块只消费数据，技能/种族/野生池由外部数据模块经 `BattleDataPort` 注入；UI 侧仅在组装入口注入，渲染无变化 | [待确认：UI 负责人] |
+| v0.1.7 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.7 职责收敛：遭遇生成（等级浮动 / 随机挑种族）移出战斗模块，改由组装侧 `WildEncounter` 提供；§1.2 战斗系统行与外部依赖表同步 | [待确认：UI 负责人] |
+| v0.1.8 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.8 道具目标选择：§3.3 增「选道具 → 选目标精灵」两步交互与新的可用性判定；§4.1 契约表补 `useItem(item, partyIndex)` 重载说明 | [待确认：UI 负责人] |

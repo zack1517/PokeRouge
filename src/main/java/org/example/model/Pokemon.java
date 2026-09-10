@@ -11,8 +11,8 @@ import java.util.UUID;
  * <p>HP 上限与六项实际属性由种族值与等级演算而来，演算规则集中在 {@link #computeStats}。
  * 个体可以积累经验升级（属性随之提升），达到条件时进化并更换种族。</p>
  * <p>契约补充（接口文档 v1.0 §2.11）：提供 uuid/IV/性格/异常状态 字段与读取方法。
- * 现有个体由 {@link #create} 创建时以随机 IV + 勤奋性格初始化；异常状态当前仅作为
- * 状态字段维护，尚未接入战斗结算。</p>
+ * 现有个体由 {@link #create} 创建时以随机 IV + 勤奋性格初始化；异常状态（主要异常 + 混乱）
+ * 由战斗引擎按 {@link StatusCondition} 规则施加与结算，见 {@code BattleEngine}。</p>
  */
 public class Pokemon {
 
@@ -30,8 +30,14 @@ public class Pokemon {
     private int maxHp;
     private final List<MoveSlot> moveSlots;
     private int currentHp;
-    /** 异常状态（当前仅维护字段，战斗结算未接入）。 */
+    /** 异常状态（主要异常；混乱为挥发性状态，另见 {@link #confusionTurns}）。 */
     private StatusCondition status;
+    /** 睡眠剩余回合数（非睡眠状态为 0）；回合末/行动前递减，归零即醒来。 */
+    private int sleepTurns;
+    /** 剧毒计数（自 1 起逐回合递增；非剧毒为 0），决定回合末扣血比例 n/16。 */
+    private int badlyPoisonCounter;
+    /** 混乱剩余回合数（0 表示未混乱），换宠或倒下即清零。 */
+    private int confusionTurns;
     /** 当前等级内累积的经验（跨级归零后进入下一级）。 */
     private long exp;
 
@@ -89,14 +95,136 @@ public class Pokemon {
         return nature;
     }
 
-    /** 契约补充：当前异常状态（§2.11）。 */
+    /** 当前主要异常状态（未陷入主要异常时为 {@link StatusCondition#NONE}；混乱见 {@link #isConfused()}）。 */
     public StatusCondition getStatus() {
         return status;
     }
 
-    /** 供战斗系统按需设置异常状态（当前战斗结算尚未消费该状态）。 */
+    /**
+     * 直接设置主要异常状态（内部按状态初始化计数：睡眠取最短回合、剧毒从 1 层起算）。
+     * <p>战斗中的施加应优先使用 {@link #tryApplyStatus(StatusCondition, int)} 以走属性免疫与互斥判定。</p>
+     */
     public void setStatus(StatusCondition status) {
-        this.status = status == null ? StatusCondition.NONE : status;
+        StatusCondition target = status == null ? StatusCondition.NONE : status;
+        if (target == StatusCondition.CONFUSION) {
+            confusionTurns = StatusCondition.CONFUSION_MIN_TURNS;
+            return;
+        }
+        this.status = target;
+        this.sleepTurns = target == StatusCondition.SLEEP ? StatusCondition.SLEEP_MIN_TURNS : 0;
+        this.badlyPoisonCounter = target == StatusCondition.BADLY_POISON
+                ? StatusCondition.BADLY_POISON_START : 0;
+    }
+
+    /**
+     * 按原版规则施加异常状态（属性免疫、已有主要异常不可覆盖、混乱不可叠加）。
+     *
+     * @param condition 目标异常状态
+     * @param turns     持续回合数（睡眠/混乱使用；其他状态忽略）
+     * @return 是否成功施加
+     */
+    public boolean tryApplyStatus(StatusCondition condition, int turns) {
+        if (condition == null || !condition.canApply(this)) {
+            return false;
+        }
+        if (condition == StatusCondition.CONFUSION) {
+            confusionTurns = Math.max(1, turns);
+            return true;
+        }
+        status = condition;
+        sleepTurns = condition == StatusCondition.SLEEP ? Math.max(1, turns) : 0;
+        badlyPoisonCounter = condition == StatusCondition.BADLY_POISON
+                ? StatusCondition.BADLY_POISON_START : 0;
+        return true;
+    }
+
+    /** 解除主要异常状态并清理计数；返回被解除的状态（本无异常则为 {@link StatusCondition#NONE}）。 */
+    public StatusCondition cureStatus() {
+        StatusCondition cured = status;
+        status = StatusCondition.NONE;
+        sleepTurns = 0;
+        badlyPoisonCounter = 0;
+        return cured;
+    }
+
+    /** 是否处于混乱（挥发性异常）。 */
+    public boolean isConfused() {
+        return confusionTurns > 0;
+    }
+
+    /** 混乱剩余回合数（0 表示未混乱）。 */
+    public int getConfusionTurns() {
+        return confusionTurns;
+    }
+
+    /** 设置混乱持续回合数（供战斗引擎按随机值施加）。 */
+    public void applyConfusion(int turns) {
+        confusionTurns = Math.max(0, turns);
+    }
+
+    /** 清除混乱（换宠、倒下或道具治疗时调用），返回本次是否真的有混乱被清除。 */
+    public boolean clearConfusion() {
+        boolean had = confusionTurns > 0;
+        confusionTurns = 0;
+        return had;
+    }
+
+    /** 同时清除主要异常与混乱（万灵药等全解道具）。 */
+    public void clearAllStatus() {
+        cureStatus();
+        clearConfusion();
+    }
+
+    /** 睡眠剩余回合数（0 表示未睡眠）。 */
+    public int getSleepTurns() {
+        return sleepTurns;
+    }
+
+    /** 剧毒计数（自 1 起逐回合递增；0 表示未中毒/非剧毒）。 */
+    public int getBadlyPoisonCounter() {
+        return badlyPoisonCounter;
+    }
+
+    /** 推进剧毒计数（回合末结算后调用），返回新的计数。 */
+    public int increaseBadlyPoisonCounter() {
+        if (status == StatusCondition.BADLY_POISON) {
+            badlyPoisonCounter++;
+        }
+        return badlyPoisonCounter;
+    }
+
+    /**
+     * 行动前推进睡眠：仍睡则返回 {@code true}（本回合无法行动）；刚好睡满则醒来并返回 {@code false}。
+     */
+    public boolean tickSleep() {
+        if (status != StatusCondition.SLEEP) {
+            return false;
+        }
+        sleepTurns--;
+        if (sleepTurns > 0) {
+            return true;
+        }
+        cureStatus();
+        return false;
+    }
+
+    /** 回合末推进混乱回合数；返回本次是否因回合耗尽而解除混乱。 */
+    public boolean tickConfusion() {
+        if (confusionTurns <= 0) {
+            return false;
+        }
+        confusionTurns--;
+        return confusionTurns <= 0;
+    }
+
+    /** 计入异常状态后的实际速度（麻痹减半，最低 1）。 */
+    public int effectiveSpeed() {
+        return Math.max(1, (int) Math.round(stats.getSpeed() * status.speedMultiplier()));
+    }
+
+    /** 计入异常状态后的实际物理攻击（灼伤减半，最低 1）。 */
+    public int effectiveAttack() {
+        return Math.max(1, (int) Math.round(stats.getAttack() * status.attackMultiplier()));
     }
 
     public String getName() {
@@ -163,10 +291,13 @@ public class Pokemon {
         return currentHp <= 0;
     }
 
-    /** 承受伤害，返回实际扣除量（不低于剩余 HP）。 */
+    /** 承受伤害，返回实际扣除量（不低于剩余 HP）；倒下时清除混乱（挥发性状态）。 */
     public int takeDamage(int amount) {
         int real = Math.min(currentHp, Math.max(0, amount));
         currentHp -= real;
+        if (currentHp <= 0) {
+            confusionTurns = 0;
+        }
         return real;
     }
 
@@ -177,18 +308,19 @@ public class Pokemon {
         return real;
     }
 
-    /** 完全恢复：HP 回满并补满全部技能 PP。 */
+    /** 完全恢复：HP 回满、补满全部技能 PP，并清除异常状态与混乱。 */
     public void fullRestore() {
         currentHp = maxHp;
         for (MoveSlot slot : moveSlots) {
             slot.restore(slot.getMove().getMaxPp());
         }
+        clearAllStatus();
     }
 
-    /** 契约补充：仅回满 HP 并清除异常状态（§2.11 fullHeal）。 */
+    /** 契约补充：仅回满 HP 并清除异常状态（§2.11 fullHeal；混乱一并清除）。 */
     public void fullHeal() {
         currentHp = maxHp;
-        status = StatusCondition.NONE;
+        clearAllStatus();
     }
 
     /** 是否满足进化条件（定义了进化目标且达到等级）。 */

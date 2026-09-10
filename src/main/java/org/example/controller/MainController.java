@@ -4,46 +4,63 @@ import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.stage.Stage;
+import org.example.GameSession;
 import org.example.battle.BattleService;
 import org.example.battle.BattleServices;
 import org.example.config.AppConfig;
-import org.example.data.GameData;
-import org.example.model.Bag;
+import org.example.model.Option;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.RunData;
+import org.example.model.Trainer;
 import org.example.util.LogUtil;
+import org.example.util.MusicPlayer;
 import org.example.view.MainView;
+import org.example.view.RogueFloorView;
+import org.example.view.StarterSelectionView;
+import org.example.view.StartView;
+import org.example.integration.PokemonBattleAdapter;
+import org.example.integration.WildEncounter;
 
 import java.util.Optional;
 
 /**
- * 主控制器：负责窗口生命周期、训练家会话，以及 主菜单 ⇄ 战斗 的场景切换。
+ * 主控制器：负责窗口生命周期、训练家会话，以及 主菜单 ⇄ 战斗/肉鸽楼层 的场景切换。
  *
  * <p>玩家（队伍/背包）在应用生命周期内唯一持有，每次战斗后返回主菜单时重新构建
  * 主视图以反映最新状态。</p>
+ *
+ * <p>肉鸽流程：主菜单「进入层内事件」→ 楼层选项页（点数/事件）→ WILD/ENEMY 走真实战斗、
+ * HOSPITAL/RANDOM 当场结算 → 点数耗尽与楼层 BOSS 决战 → 胜利推进下一层（地图段号同步）。</p>
  */
 public class MainController {
 
     private final Stage stage;
-    private final Player player;
+    private GameSession session;
+    private Player player;
 
     public MainController(Stage stage) {
         this.stage = stage;
-        this.player = createStarterPlayer();
     }
 
-    /** 组装玩家开局状态：初始精灵与背包补给。 */
-    private Player createStarterPlayer() {
-        Player p = new Player(AppConfig.PLAYER_NAME);
-        GameData data = GameData.instance();
-        data.createPokemon("s_fire_cat", 5).ifPresent(p::addToParty);
-        data.createPokemon("s_leaf_chick", 5).ifPresent(p::addToParty);
-        Bag bag = p.getBag();
-        bag.add(data.item("i_potion"), 5);
-        bag.add(data.item("i_super_potion"), 2);
-        bag.add(data.item("i_poke_ball"), 6);
-        bag.add(data.item("i_great_ball"), 3);
-        return p;
+    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；其余三项为预留入口）。 */
+    public void showStartScreen() {
+        MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环；文件缺失静默降级）
+        stage.setScene(new StartView(this::showStarterSelection).createScene());
+    }
+
+    /** 初始宝可梦选择页：使用新 pokemon 系统选择初始宝可梦（由启动页「开始游戏」进入）。 */
+    public void showStarterSelection() {
+        // 离开主界面即停 BGM：其它界面暂未配置音乐；
+        // 后续各界面各有 BGM 时，改为在对应界面入口调 MusicPlayer.playBgm（自动停旧播新）
+        MusicPlayer.stop();
+        stage.setScene(new StarterSelectionView(this::startWithStarter).createScene());
+    }
+
+    private void startWithStarter(String trainerName, org.example.pokemon.domain.Pokemon starter) {
+        this.player = PokemonBattleAdapter.createBattlePlayer(trainerName, starter);
+        this.session = new GameSession(player);
+        showMainMenu();
     }
 
     /** 显示主菜单（重新构建，反映最新的队伍/背包）。 */
@@ -55,14 +72,19 @@ public class MainController {
             }
 
             @Override
+            public void onStartRogueFloor() {
+                startRogueFloor();
+            }
+
+            @Override
             public void onSetActive(int index) {
-                player.setActive(index);
+                session.setActive(index);
                 showMainMenu();
             }
 
             @Override
             public void onHealAll() {
-                player.healParty();
+                session.healAll();
                 showMainMenu();
             }
 
@@ -74,35 +96,215 @@ public class MainController {
                     showMainMenu();
                 }
             }
-        });
+        }, session.mapBackgroundPath(), session.getSegment());
         stage.setScene(view.createScene());
     }
 
     /** 进入一场新的随机遭遇战。 */
     public void startRandomBattle() {
-        if (!player.hasHealthyPokemon()) {
+        if (!session.hasHealthyPokemon()) {
             infoAlert("没有能战斗的精灵", "队伍已全部倒下，先去治疗队伍吧。");
             return;
         }
         // 尊重玩家在主页设好的先发精灵；仅当当前出战精灵已倒下（或被清空）时才重置为首只健康精灵
-        Pokemon active = player.getActive();
+        Pokemon active = session.getActive();
         if (active == null || active.isFainted()) {
-            player.leadWithFirstHealthy();
+            session.leadWithFirstHealthy();
         }
-        Pokemon lead = player.getActive();
-        int level = BattleServices.wildLevelAround(lead.getLevel());
-        Optional<Pokemon> wild = BattleServices.randomWild(level);
+        Pokemon lead = session.getActive();
+        int level = WildEncounter.levelAround(lead.getLevel());
+        Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level);
         if (wild.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的野生精灵（数据缺失）。");
             return;
         }
         try {
-            BattleService engine = BattleServices.newBattle(player, wild.get());
-            BattleController battle = new BattleController(engine, this::showMainMenu);
+            BattleService engine = BattleServices.newBattle(player, wild.get(),
+                    PokemonBattleAdapter.battleDataPort());
+            BattleController battle = new BattleController(engine, this::showMainMenu, session.getSegment());
             stage.setScene(battle.createScene());
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 肉鸽楼层流程：「进入层内事件」入口 ⇄ 真实战斗 ⇄ BOSS
+    // ------------------------------------------------------------------
+
+    /** 进入肉鸽楼层事件：无进行中的一轮则新开，有则继续当前进度。 */
+    public void startRogueFloor() {
+        if (session == null || player == null) {
+            return;
+        }
+        if (player.getParty().isEmpty()) {
+            infoAlert("队伍为空", "先选择并加入宝可梦再开始肉鸽层内事件。");
+            return;
+        }
+        RunData data = session.getRogueRunData();
+        boolean inProgress = data.getCurrentFloor() > 0 && !data.isGameOver() && data.getCurrentPoints() > 0;
+        if (!inProgress) {
+            session.startRogueRun(); // 新开一轮：从第 1 层起，队伍快照进 RogueTurnManager
+        }
+        showRogueFloorScene();
+    }
+
+    /** 显示肉鸽楼层事件页（每次重绘反映最新点数/选项）。 */
+    private void showRogueFloorScene() {
+        stage.setScene(new RogueFloorView(session, this::handleRogueOption, this::showMainMenu).createScene());
+    }
+
+    /**
+     * 楼层事件统一入口：先扣点（不结算效果），战斗型事件（WILD/ENEMY）接管为真实战斗，
+     * 直接效果事件（HOSPITAL/RANDOM）当场结算后统一推进。
+     */
+    private void handleRogueOption(Option option) {
+        if (option == null || session == null) {
+            return;
+        }
+        if (!session.consumeRogueOption(option)) {
+            showRogueFloorScene(); // 隐藏事件 / 点数不足：重绘提示
+            return;
+        }
+        switch (option.getType()) {
+            case WILD -> startRogueWildBattle();
+            case ENEMY -> startRogueEnemyBattle();
+            case HOSPITAL, RANDOM -> {
+                session.resolveRogueOptionEffect(option);
+                afterRogueStep();
+            }
+        }
+    }
+
+    /** 一次楼层事件（含战斗）结束后的统一推进：已结束→主菜单；点数耗尽→BOSS；否则重绘。 */
+    private void afterRogueStep() {
+        if (session.isRogueRunFinished()) {
+            infoAlert("本轮结束", "队伍倒下了……肉鸽远征到此为止。");
+            showMainMenu();
+            return;
+        }
+        if (session.getRogueRunData().getCurrentPoints() <= 0) {
+            startRogueBossBattle(); // 点数耗尽：真实 BOSS 战
+            return;
+        }
+        showRogueFloorScene();
+    }
+
+    /** 战斗前队伍就绪检查：无健康精灵直接判负结束；当前先发倒下则换首只健康精灵。 */
+    private boolean ensureRogueBattleReady() {
+        if (!session.hasHealthyPokemon()) {
+            session.endRogueRun();
+            infoAlert("本轮结束", "队伍已全部倒下，肉鸽远征结束。");
+            showMainMenu();
+            return false;
+        }
+        Pokemon active = session.getActive();
+        if (active == null || active.isFainted()) {
+            session.leadWithFirstHealthy();
+        }
+        return true;
+    }
+
+    /** 肉鸽战斗结束回调：战败结束本轮，其余（胜/捕捉/逃跑）继续楼层推进。 */
+    private Runnable rogueBattleFinished(BattleService engine) {
+        return () -> {
+            if (engine.getStatus() == BattleService.Status.PLAYER_LOSE) {
+                session.endRogueRun();
+                infoAlert("本轮结束", "队伍倒下了……肉鸽远征到此为止。");
+                showMainMenu();
+                return;
+            }
+            afterRogueStep();
+        };
+    }
+
+    /** WILD 事件：生成与先发等级相当的野生精灵，进入真实遭遇战。 */
+    private void startRogueWildBattle() {
+        if (!ensureRogueBattleReady()) {
+            return;
+        }
+        int level = WildEncounter.levelAround(session.getActive().getLevel());
+        Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level);
+        if (wild.isEmpty()) {
+            infoAlert("数据异常", "没有可遭遇的野生精灵（数据缺失）。");
+            showRogueFloorScene();
+            return;
+        }
+        try {
+            BattleService engine = BattleServices.newBattle(player, wild.get(),
+                    PokemonBattleAdapter.battleDataPort());
+            stage.setScene(new BattleController(engine, rogueBattleFinished(engine), session.getSegment())
+                    .createScene());
+        } catch (IllegalArgumentException ex) {
+            LogUtil.info("无法开始战斗: " + ex.getMessage());
+            infoAlert("无法开始战斗", ex.getMessage());
+            showRogueFloorScene();
+        }
+    }
+
+    /** ENEMY 事件：拦路训练家 1~2 只轮战（不可逃/不可捕），等级略高于先发。 */
+    private void startRogueEnemyBattle() {
+        if (!ensureRogueBattleReady()) {
+            return;
+        }
+        int level = WildEncounter.levelAround(session.getActive().getLevel() + 2);
+        Trainer trainer = new Trainer("拦路训练家");
+        int count = 1 + (int) (Math.random() * 2);
+        for (int i = 0; i < count; i++) {
+            PokemonBattleAdapter.createWildPokemon(level).ifPresent(trainer::addPokemon);
+        }
+        if (trainer.getParty().isEmpty()) {
+            infoAlert("数据异常", "没有可遭遇的精灵（数据缺失）。");
+            showRogueFloorScene();
+            return;
+        }
+        try {
+            BattleService engine = BattleServices.newTrainerBattle(player, trainer,
+                    PokemonBattleAdapter.battleDataPort());
+            stage.setScene(new BattleController(engine, rogueBattleFinished(engine), session.getSegment())
+                    .createScene());
+        } catch (IllegalArgumentException ex) {
+            LogUtil.info("无法开始战斗: " + ex.getMessage());
+            infoAlert("无法开始战斗", ex.getMessage());
+            showRogueFloorScene();
+        }
+    }
+
+    /** 点数耗尽：与同层 BOSS 展开真实决斗；胜利推进下一层+下一段，战败/逃跑结束本轮。 */
+    private void startRogueBossBattle() {
+        if (!ensureRogueBattleReady()) {
+            return;
+        }
+        RunData data = session.getRogueRunData();
+        int bossLevel = Math.max(5, session.getActive().getLevel() + 4 + data.getCurrentFloor() * 2);
+        Optional<Pokemon> boss = PokemonBattleAdapter.createWildPokemon(bossLevel);
+        if (boss.isEmpty()) {
+            infoAlert("数据异常", "BOSS 数据缺失，无法开战。");
+            showRogueFloorScene();
+            return;
+        }
+        try {
+            BattleService engine = BattleServices.newBattle(player, boss.get(),
+                    PokemonBattleAdapter.battleDataPort());
+            stage.setScene(new BattleController(engine, () -> {
+                BattleService.Status status = engine.getStatus();
+                if (status == BattleService.Status.PLAYER_WIN || status == BattleService.Status.CAUGHT) {
+                    int cleared = data.getCurrentFloor();
+                    infoAlert("BOSS 战胜利", "第 " + cleared + " 层 BOSS 已被击败！进入下一层。");
+                    session.enterNextSegment(); // 段号与层号同步推进：主菜单地图背景随层刷新
+                    session.enterRogueFloor(cleared + 1);
+                    showRogueFloorScene();
+                } else {
+                    session.endRogueRun();
+                    infoAlert("本轮结束", "BOSS 战失败……肉鸽远征到此为止。");
+                    showMainMenu();
+                }
+            }, session.getSegment()).createScene());
+        } catch (IllegalArgumentException ex) {
+            LogUtil.info("无法开始战斗: " + ex.getMessage());
+            infoAlert("无法开始战斗", ex.getMessage());
+            showRogueFloorScene();
         }
     }
 

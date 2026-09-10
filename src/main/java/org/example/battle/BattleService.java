@@ -7,6 +7,7 @@ import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.Terrain;
+import org.example.model.Trainer;
 import org.example.model.Weather;
 
 import java.util.List;
@@ -14,12 +15,21 @@ import java.util.List;
 /**
  * 回合制战斗服务接口。
  *
- * <p>抽象一场「玩家 × 野生精灵」对战的完整生命周期。调用方（界面/控制器）只依赖本接口，
- * 具体结算规则由实现类承担（当前唯一实现为 {@link BattleEngine}）。</p>
+ * <p>抽象一场「玩家 × 野生精灵」或「玩家 × 训练师」对战的完整生命周期。调用方（界面/控制器）
+ * 只依赖本接口，具体结算规则由实现类承担（当前唯一实现为 {@link BattleEngine}）。</p>
  *
- * <p><b>回合规则</b>：双方每回合各执行一次行动（技能 / 道具 / 逃跑 / 换宠）。双方都用技能时
- * 按速度快者先动（相同速度随机）。物理技能取 物攻 vs 物防，特殊技能取 特攻 vs 特防，伤害受
- * 克制倍率、STAB(本系加成) 与随机浮动影响。捕捉成功、逃跑成功或一方全灭即结束。</p>
+ * <p><b>野生遭遇</b>：敌方为单只野生精灵（{@link #getWild()} 非空、{@link #getTrainer()} 为
+ * {@code null}）。规则：双方每回合各执行一次行动（技能 / 道具 / 逃跑 / 换宠）；野生精灵倒下、
+ * 逃跑成功或捕捉成功即结束。</p>
+ *
+ * <p><b>训练师轮战</b>（{@link #getTrainer()} 非空、{@link #getWild()} 为 {@code null}）：
+ * 敌方持有一整支队伍，双方都用技能时按速度快者先动（相同速度随机）。<b>不可逃跑、不可捕捉
+ * 训练师的精灵</b>；敌方当前出战精灵倒下后自动派出下一只健康的（敌方不会主动换宠），直到某一方
+ * 精灵<b>全部倒下</b>才结束战斗；天气/场地与技能 PP 跨整场持续；胜利时经验按整队被击败对手
+ * 一次性结算。</p>
+ *
+ * <p>战斗行为契约见 {@link BattleService}，实例统一由 {@link BattleServices} 工厂创建，
+ * 调用方不应直接持有本实现类。</p>
  *
  * <p><b>天气与场地</b>：携带效果的变化类技能会开启对应天气/场地（见 {@link Weather}/
  * {@link Terrain}，通过 {@link #getWeather()}/{@link #getTerrain()} 查询）。生效期间按各自
@@ -31,7 +41,7 @@ import java.util.List;
  *
  * <p><b>约定</b>：所有行动方法执行后返回<b>本回合新增</b>的日志行（调用前已产生的日志不含在内）；
  * 当战斗已结束时（非 {@link Status#ONGOING}）调用行动方法将抛出 {@link IllegalStateException}。
- * 返回的状态与方法内 {@link Player}/{@link Pokemon} 对象引用均不应被修改。</p>
+ * 返回的状态与方法内 {@link Player}/{@link Pokemon}/{@link Trainer} 对象引用均不应被修改。</p>
  */
 public interface BattleService {
 
@@ -39,13 +49,13 @@ public interface BattleService {
     enum Status {
         /** 进行中。 */
         ONGOING,
-        /** 玩家获胜（野生精灵倒下）。 */
+        /** 玩家获胜（野生精灵倒下，或训练师整队全部倒下）。 */
         PLAYER_WIN,
         /** 玩家战败（队伍全部倒下）。 */
         PLAYER_LOSE,
-        /** 逃跑成功。 */
+        /** 逃跑成功（仅野生遭遇）。 */
         FLED,
-        /** 捕捉成功。 */
+        /** 捕捉成功（仅野生遭遇）。 */
         CAUGHT
     }
 
@@ -65,7 +75,7 @@ public interface BattleService {
     // ------------------------------------------------------------------
 
     /**
-     * 玩家选择技能攻击。野生精灵会自动选择可用技能；按速度决定先后手。
+     * 玩家选择技能攻击。敌方（野生精灵或训练师当前出战精灵）自动选择技能；按速度决定先后手。
      *
      * @param slot 玩家当前出战精灵的某个技能槽；为 {@code null} 或 PP 耗尽时会自动退回
      *             第一个可用技能，无可技能则本回合不行动
@@ -75,17 +85,37 @@ public interface BattleService {
     List<String> useMove(MoveSlot slot);
 
     /**
-     * 玩家使用道具：回复道具回复当前精灵 HP；精灵球尝试捕捉野生精灵。道具不计先后手
-     * （视为先行动作），使用后若战斗未结束则野生精灵行动一次。
+     * 玩家使用道具于**指定队伍精灵**：回复道具回复目标 HP、解除道具治愈目标异常状态；
+     * 精灵球始终投向敌方野生精灵（与目标无关）。道具不计先后手（视为先行动作），
+     * 使用后若战斗未结束则敌方行动一次。
+     *
+     * <p><b>目标约束</b>：{@code partyIndex} 为玩家队伍下标，越界时本回合不行动；
+     * 回复道具对**已倒下**的精灵无效（无法以此复活，原版行为），解除道具对已倒下精灵仍有效。</p>
+     *
+     * <p><b>训练师轮战不可捕捉</b>：对训练师使用精灵球时球不消耗，仅追加一条提示日志。</p>
+     *
+     * @param item       要使用的道具；为 {@code null} 或背包中数量不足时本回合不行动
+     * @param partyIndex 目标精灵在玩家队伍中的下标
+     * @return 本回合产生的新日志
+     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）时
+     */
+    List<String> useItem(Item item, int partyIndex);
+
+    /**
+     * 玩家对**当前出战精灵**使用道具（等价于 {@code useItem(item, 出战精灵下标)}）。
      *
      * @param item 要使用的道具；为 {@code null} 或背包中数量不足时本回合不行动
      * @return 本回合产生的新日志
      * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）时
      */
-    List<String> useItem(Item item);
+    default List<String> useItem(Item item) {
+        return useItem(item, getPlayer().getParty().indexOf(playerActive()));
+    }
 
     /**
      * 玩家尝试逃跑：速度越快成功率越高。失败则野生精灵行动一次。
+     *
+     * <p><b>仅野生遭遇可用</b>：训练师轮战中调用不消耗回合，仅追加「无法逃跑」提示日志。</p>
      *
      * @return 本回合产生的新日志
      * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）时
@@ -93,7 +123,7 @@ public interface BattleService {
     List<String> tryRun();
 
     /**
-     * 玩家回合切换出战精灵：消耗本回合行动，收换完成后野生精灵行动一次。
+     * 玩家回合切换出战精灵：消耗本回合行动，收换完成后敌方行动一次。
      *
      * @param partyIndex 玩家队伍中目标精灵下标；目标为 {@code null}、下标非法或与当前
      *                   出战精灵相同则不行动
@@ -109,8 +139,17 @@ public interface BattleService {
     /** @return 本场战斗的玩家（含队伍与背包） */
     Player getPlayer();
 
-    /** @return 本场战斗的野生精灵 */
+    /**
+     * @return 本场战斗的野生精灵；训练师轮战中为 {@code null}（敌方精灵经
+     * {@link #foeActive()} 与 {@link #getTrainer()} 访问）
+     */
     Pokemon getWild();
+
+    /** @return 本场战斗的训练师；野生遭遇中为 {@code null} */
+    Trainer getTrainer();
+
+    /** @return 当前敌方出战精灵：野生遭遇为野生精灵，训练师轮战为训练师当前出战精灵 */
+    Pokemon foeActive();
 
     /** @return 玩家当前出战精灵（引擎会在倒下后自动切换，可能为 {@code null}） */
     Pokemon playerActive();
