@@ -31,8 +31,6 @@ public class MainView {
     public interface Actions {
         void onStartBattle();
 
-        void onStartRogueFloor();
-
         /** 将 index 对应的精灵设为下一场战斗先发。 */
         void onSetActive(int index);
 
@@ -170,10 +168,6 @@ public class MainView {
         battle.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 15px; -fx-padding: 10 18;");
         battle.setOnAction(e -> actions.onStartBattle());
 
-        Button rogue = new Button("进入层内事件");
-        rogue.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
-        rogue.setOnAction(e -> actions.onStartRogueFloor());
-
         Button heal = new Button("治疗队伍");
         heal.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
         heal.setOnAction(e -> actions.onHealAll());
@@ -182,7 +176,7 @@ public class MainView {
         exit.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
         exit.setOnAction(e -> actions.onExit());
 
-        HBox bar = new HBox(12, battle, rogue, heal, exit);
+        HBox bar = new HBox(12, battle, heal, exit);
         bar.setAlignment(Pos.CENTER);
         bar.setPadding(new Insets(10, 0, 0, 0));
         return bar;

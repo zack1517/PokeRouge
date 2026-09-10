@@ -1,13 +1,7 @@
 package org.example;
 
-import org.example.model.Option;
 import org.example.model.Player;
 import org.example.model.Pokemon;
-import org.example.model.PokemonInstance;
-import org.example.model.RogueTurnManager;
-import org.example.model.RunData;
-
-import java.util.List;
 
 /**
  * 根包级会话对象：负责持有当前玩家状态，并充当 UI/控制器与底层模型之间的编排中心。
@@ -26,7 +20,6 @@ public class GameSession {
             "/images/background/bg_map3.jpeg"};
 
     private final Player player;
-    private final RogueTurnManager rogueTurnManager = new RogueTurnManager();
 
     /** 当前地图段号（从第 1 段起；流程系统接入前不自动推进，见类 javadoc）。 */
     private int segment = 1;
@@ -99,43 +92,5 @@ public class GameSession {
 
     public boolean isPlayerReadyForBattle() {
         return hasHealthyPokemon();
-    }
-
-    public void startRogueRun() {
-        if (player == null || player.getParty().isEmpty()) {
-            return;
-        }
-        List<PokemonInstance> team = player.getParty().stream()
-                .map(PokemonInstance::new)
-                .toList();
-        rogueTurnManager.startRun(team, 1);
-    }
-
-    public void enterRogueFloor(int floor) {
-        rogueTurnManager.enterFloor(floor);
-    }
-
-    public boolean selectRogueOption(Option option) {
-        if (rogueTurnManager.isGameOver()) {
-            return false;
-        }
-        rogueTurnManager.selectOption(option);
-        return !rogueTurnManager.isGameOver();
-    }
-
-    public void triggerRogueBossFight() {
-        rogueTurnManager.triggerBossFight();
-    }
-
-    public RunData getRogueRunData() {
-        return rogueTurnManager.getRunData();
-    }
-
-    public List<Option> getRogueOptions() {
-        return rogueTurnManager.getAvailableOptions();
-    }
-
-    public boolean isRogueRunFinished() {
-        return rogueTurnManager.isGameOver();
     }
 }

@@ -13,6 +13,7 @@ import org.example.model.Pokemon;
 import org.example.util.LogUtil;
 import org.example.view.MainView;
 import org.example.view.StarterSelectionView;
+import org.example.view.StartView;
 import org.example.integration.PokemonBattleAdapter;
 
 import java.util.Optional;
@@ -33,7 +34,12 @@ public class MainController {
         this.stage = stage;
     }
 
-    /** 游戏第一屏：使用新 pokemon 系统选择初始宝可梦。 */
+    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；其余三项为预留入口）。 */
+    public void showStartScreen() {
+        stage.setScene(new StartView(this::showStarterSelection).createScene());
+    }
+
+    /** 初始宝可梦选择页：使用新 pokemon 系统选择初始宝可梦（由启动页「开始游戏」进入）。 */
     public void showStarterSelection() {
         stage.setScene(new StarterSelectionView(this::startWithStarter).createScene());
     }
@@ -50,11 +56,6 @@ public class MainController {
             @Override
             public void onStartBattle() {
                 startRandomBattle();
-            }
-
-            @Override
-            public void onStartRogueFloor() {
-                startRogueFloor();
             }
 
             @Override
@@ -107,163 +108,6 @@ public class MainController {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
         }
-    }
-
-    public void startRogueFloor() {
-        if (session == null || player == null) {
-            return;
-        }
-        if (player.getParty().isEmpty()) {
-            infoAlert("队伍为空", "先选择并加入宝可梦再开始肉鸽层内事件。");
-            return;
-        }
-        session.startRogueRun();
-        showRogueFloorScene();
-    }
-
-    private void showRogueFloorScene() {
-        stage.setScene(new org.example.view.RogueFloorView(session, this::handleRogueOption).createScene());
-    }
-
-    private void handleRogueOption(org.example.model.Option option) {
-        if (session == null || option == null) {
-            showMainMenu();
-            return;
-        }
-
-        if (!session.selectRogueOption(option)) {
-            showMainMenu();
-            return;
-        }
-
-        if (session.isRogueRunFinished()) {
-            infoAlert("游戏结束", "你在第 " + session.getRogueRunData().getCurrentFloor() + " 层被击败。");
-            showMainMenu();
-            return;
-        }
-        if (session.getRogueRunData().getCurrentPoints() <= 0) {
-            startBossBattle();
-            return;
-        }
-        if ("隐藏事件".equals(option.getName())) {
-            showRogueFloorScene();
-            return;
-        }
-
-        switch (option.getType()) {
-            case WILD -> startWildEventBattle();
-            case ENEMY -> startEnemyEventBattle();
-            case HOSPITAL, RANDOM -> showRogueFloorScene();
-            default -> showRogueFloorScene();
-        }
-    }
-
-    private void startWildEventBattle() {
-        if (!session.hasHealthyPokemon()) {
-            infoAlert("没有能战斗的精灵", "队伍已全部倒下，返回主菜单。");
-            showMainMenu();
-            return;
-        }
-        Pokemon lead = session.getActive();
-        if (lead == null || lead.isFainted()) {
-            session.leadWithFirstHealthy();
-            lead = session.getActive();
-        }
-        int level = org.example.battle.BattleServices.wildLevelAround(lead.getLevel());
-        Optional<Pokemon> wild = org.example.battle.BattleServices.randomWild(level);
-        if (wild.isEmpty()) {
-            infoAlert("遭遇异常", "当前没有可用野生精灵。");
-            showRogueFloorScene();
-            return;
-        }
-        org.example.battle.BattleService engine = org.example.battle.BattleServices.newBattle(player, wild.get());
-        org.example.controller.BattleController battle = new org.example.controller.BattleController(engine, () -> {
-            if (session.getRogueRunData().getCurrentPoints() <= 0) {
-                startBossBattle();
-                return;
-            }
-            if (engine.getStatus() == org.example.battle.BattleService.Status.PLAYER_WIN) {
-                System.out.println("野怪战斗胜利，继续本层探索。");
-            }
-            showRogueFloorScene();
-        }, session.getSegment());
-        stage.setScene(battle.createScene());
-    }
-
-    private void startEnemyEventBattle() {
-        if (!session.hasHealthyPokemon()) {
-            infoAlert("没有能战斗的精灵", "队伍已全部倒下，返回主菜单。");
-            showMainMenu();
-            return;
-        }
-        Pokemon lead = session.getActive();
-        if (lead == null || lead.isFainted()) {
-            session.leadWithFirstHealthy();
-            lead = session.getActive();
-        }
-        int level = Math.max(2, lead.getLevel() + 2 + (int) (Math.random() * 4));
-        java.util.List<String> pool = org.example.data.GameData.instance().wildPool();
-        if (pool.isEmpty()) {
-            infoAlert("训练家对战异常", "没有可用的敌方精灵。");
-            showRogueFloorScene();
-            return;
-        }
-        Optional<Pokemon> enemy = org.example.data.GameData.instance().createPokemon(
-                pool.get((int) (Math.random() * pool.size())),
-                level);
-        if (enemy.isEmpty()) {
-            infoAlert("训练家对战异常", "没有可用的敌方精灵。");
-            showRogueFloorScene();
-            return;
-        }
-        org.example.battle.BattleService engine = org.example.battle.BattleServices.newBattle(player, enemy.get());
-        org.example.controller.BattleController battle = new org.example.controller.BattleController(engine, () -> {
-            if (session.getRogueRunData().getCurrentPoints() <= 0) {
-                startBossBattle();
-                return;
-            }
-            if (engine.getStatus() == org.example.battle.BattleService.Status.PLAYER_WIN) {
-                System.out.println("训练家战斗胜利，继续本层探索。");
-            }
-            showRogueFloorScene();
-        }, session.getSegment());
-        stage.setScene(battle.createScene());
-    }
-
-    private void startBossBattle() {
-        if (!session.hasHealthyPokemon()) {
-            infoAlert("没有能战斗的精灵", "队伍已全部倒下，返回主菜单。");
-            showMainMenu();
-            return;
-        }
-        Pokemon lead = session.getActive();
-        if (lead == null || lead.isFainted()) {
-            session.leadWithFirstHealthy();
-            lead = session.getActive();
-        }
-        int level = Math.max(5, lead.getLevel() + 4 + (session.getRogueRunData().getCurrentFloor() * 2));
-        java.util.List<String> pool = org.example.data.GameData.instance().wildPool();
-        String bossId = pool.isEmpty() ? "s_fire_cat" : pool.get((int) (Math.random() * pool.size()));
-        Optional<Pokemon> boss = org.example.data.GameData.instance().createPokemon(bossId, level);
-        if (boss.isEmpty()) {
-            infoAlert("BOSS 对战异常", "没有可用的Boss精灵。");
-            showMainMenu();
-            return;
-        }
-        org.example.battle.BattleService engine = org.example.battle.BattleServices.newBattle(player, boss.get());
-        org.example.controller.BattleController battle = new org.example.controller.BattleController(engine, () -> {
-            if (engine.getStatus() == org.example.battle.BattleService.Status.PLAYER_WIN) {
-                int nextFloor = session.getRogueRunData().getCurrentFloor() + 1;
-                session.enterRogueFloor(nextFloor);
-                infoAlert("BOSS 战胜利", "你已通过第 " + (nextFloor - 1) + " 层，进入第 " + nextFloor + " 层。");
-                showRogueFloorScene();
-            } else {
-                session.getRogueRunData().setGameOver(true);
-                infoAlert("BOSS 战失败", "队伍被击败，游戏结束。");
-                showMainMenu();
-            }
-        }, session.getSegment());
-        stage.setScene(battle.createScene());
     }
 
     /** 绑定窗口事件：关闭确认与生命周期日志。 */
