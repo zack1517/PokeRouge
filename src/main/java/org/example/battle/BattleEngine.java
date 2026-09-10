@@ -845,6 +845,8 @@ public class BattleEngine implements BattleService {
             if (!player.getParty().contains(wild)) {
                 player.addPokemon(wild);
             }
+            // 申报捕捉事件：捕捉次数驱动的局外成长（个体值加成）由成长模块自行判定
+            growthPort.onCaptured(wild.getSpecies().getId());
             return true;
         }
         append("野生的 " + wild.getName() + " 挣脱了出来！");

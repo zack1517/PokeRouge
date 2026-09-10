@@ -14,6 +14,18 @@ public class MoveSlot {
         this.pp = move.getMaxPp();
     }
 
+    /**
+     * 以指定剩余 PP 构造技能槽（读档还原用）。
+     * <p>传入值会裁剪到 {@code [0, 最大PP]}，使被手工改坏的存档不会产生非法 PP。</p>
+     *
+     * @param move 技能
+     * @param pp   当前剩余 PP
+     */
+    public MoveSlot(Move move, int pp) {
+        this.move = java.util.Objects.requireNonNull(move);
+        this.pp = Math.max(0, Math.min(move.getMaxPp(), pp));
+    }
+
     public Move getMove() {
         return move;
     }

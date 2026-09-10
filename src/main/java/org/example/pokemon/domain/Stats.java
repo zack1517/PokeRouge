@@ -40,14 +40,33 @@ public class Stats implements Serializable {
      * @return 随机个体值实例
      */
     public static Stats randomIv() {
+        return randomIv(0);
+    }
+
+    /**
+     * 生成六项个体值随机、并叠加成长加成的 Stats 实例（局外成长机制的落地入口）。
+     *
+     * <p>每项按 {@code min(31, 随机值 + bonus)} 生成，因此加成满 31 时必为「满个体」。
+     * 本方法只影响个体值，种族值与性格不在此处参与演算。</p>
+     *
+     * @param bonus 个体值加成，负数按 0 处理
+     * @return 叠加加成后的随机个体值实例
+     */
+    public static Stats randomIv(int bonus) {
         ThreadLocalRandom random = ThreadLocalRandom.current();
+        int extra = Math.max(0, bonus);
         return new Stats(
-                random.nextInt(MAX_IV + 1),
-                random.nextInt(MAX_IV + 1),
-                random.nextInt(MAX_IV + 1),
-                random.nextInt(MAX_IV + 1),
-                random.nextInt(MAX_IV + 1),
-                random.nextInt(MAX_IV + 1));
+                roll(random, extra),
+                roll(random, extra),
+                roll(random, extra),
+                roll(random, extra),
+                roll(random, extra),
+                roll(random, extra));
+    }
+
+    /** 单项个体值：随机 0-31 后叠加加成，并按 {@link #MAX_IV} 截断。 */
+    private static int roll(ThreadLocalRandom random, int bonus) {
+        return Math.min(MAX_IV, random.nextInt(MAX_IV + 1) + bonus);
     }
 
     public int getHp() {
