@@ -408,4 +408,59 @@ class RogueTurnManagerTest {
         assertTrue(RouteConfig.mandatoryDefeatGoldPenalty(1) > RouteConfig.defeatGoldPenalty(1),
                 "道馆 / 四天王战败的代价应显著高于路人 / 野外战败");
     }
+
+    // ------------------------------------------------------------------
+    // 路线节点刷新（§4.1：每走完一个路线节点，本段剩余节点重新随机生成）
+    // ------------------------------------------------------------------
+
+    @Test
+    void testRefreshRoute_regeneratesNodesAndKeepsProgress() {
+        RogueTurnManager manager = newManager();
+        RunData data = manager.getRunData();
+        data.setGold(123);
+        Option trainer = addOption(manager, OptionType.TRAINER, OptionType.TRAINER.getApCost());
+        assertTrue(manager.consumeNode(trainer));
+        int apAfterStep = data.getAp();
+
+        manager.refreshRoute();
+
+        assertEquals(apAfterStep, data.getAp(), "刷新节点不重置行动点");
+        assertEquals(1, data.getSegment(), "刷新节点不推进段号");
+        assertEquals(RoutePhase.EXPLORING, data.getPhase(), "刷新节点不改变阶段");
+        assertEquals(123, data.getGold(), "刷新节点不影响金币");
+        assertFalse(data.getAvailableOptions().isEmpty(), "刷新后应有一批新节点");
+        assertFalse(data.getAvailableOptions().contains(trainer), "走完的旧节点被新节点替换");
+        for (Option option : data.getAvailableOptions()) {
+            assertFalse(option.isConsumed(), "新生成的节点都是未走过的");
+        }
+    }
+
+    @Test
+    void testRefreshRoute_alwaysKeepsResidentNodes() {
+        RogueTurnManager manager = newManager();
+
+        manager.refreshRoute();
+
+        List<Option> options = manager.getRunData().getAvailableOptions();
+        for (OptionType resident : List.of(OptionType.TRAINER, OptionType.WILD, OptionType.HOSPITAL)) {
+            assertTrue(options.stream().anyMatch(option -> option.getType() == resident),
+                    "刷新后仍应出现常驻节点：" + resident.getDisplayName());
+        }
+        assertTrue(options.size() <= RouteConfig.MAX_ROUTE_NODES, "节点数不超过本段上限");
+    }
+
+    @Test
+    void testRefreshRoute_includesPendingLegendaryAsFreeNode() {
+        RogueTurnManager manager = newManager();
+        manager.getRunData().setPendingLegendary(true);
+
+        manager.refreshRoute();
+
+        Option legendary = manager.getRunData().getAvailableOptions().stream()
+                .filter(option -> option.getType() == OptionType.LEGENDARY)
+                .findFirst()
+                .orElse(null);
+        assertNotNull(legendary, "待触发的神兽偶遇在刷新后仍应出现");
+        assertEquals(0, legendary.apCostForNextEntry(), "火箭队线必然触发的神兽偶遇不消耗行动点");
+    }
 }

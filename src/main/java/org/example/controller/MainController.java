@@ -332,12 +332,22 @@ public class MainController {
     /** 非战斗节点：当场效果（医院治疗 / 特殊事件金币）结算后走节点收尾。 */
     private void resolveNonBattleNode(Option option) {
         session.resolveRogueOptionEffect(option);
-        finishNodeStep();
+        finishNodeStep(true);
     }
 
-    /** 节点收尾：自回血 → 可能触发道馆战 → 统一推进（战斗节点由战后回调调用）。 */
-    private void finishNodeStep() {
+    /**
+     * 节点收尾：自回血 → 刷新本段路线节点 → 可能触发道馆战 → 统一推进。
+     * 战斗节点由战后回调调用。
+     *
+     * @param refreshRoute 是否刷新本段节点。走完一个<b>路线节点</b>后为 {@code true}；
+     *                     必然节点（道馆 / 四天王 / 冠军 / 首领侵略战）结束后为 {@code false}，
+     *                     因为此时节点列表已由换段或阶段流转重新生成，不应再被覆盖
+     */
+    private void finishNodeStep(boolean refreshRoute) {
         session.applyRogueNodeHeal();
+        if (refreshRoute) {
+            session.refreshRogueRoute(); // §4.1：每走完一个路线节点，本段剩余节点重新随机生成
+        }
         session.advanceRogueNode();
         afterRogueStep();
     }
@@ -418,7 +428,7 @@ public class MainController {
     /** 离开商店：视为完成该商店节点，走节点收尾。 */
     private void leaveShop() {
         currentShopStock = null;
-        finishNodeStep();
+        finishNodeStep(true);
     }
 
     /** 战斗前队伍就绪检查：无健康精灵直接判负结束；当前先发倒下则换首只健康精灵。 */
@@ -441,9 +451,15 @@ public class MainController {
         return () -> {
             switch (engine.getStatus()) {
                 case PLAYER_WIN, CAUGHT -> {
-                    session.awardRogueWinGold(type);
-                    applyNodeReward(type);
-                    finishNodeStep();
+                    if (type.isMandatory()) {
+                        // 必然节点：胜利金币与阶段流转（下一段 / 四天王 / 冠军 / 通关）由本方法一并结算
+                        session.resolveRogueMandatoryVictory();
+                        finishNodeStep(false);
+                    } else {
+                        session.awardRogueWinGold(type);
+                        applyNodeReward(type);
+                        finishNodeStep(true);
+                    }
                 }
                 case PLAYER_LOSE -> {
                     if (type.isMandatory()) {
@@ -454,7 +470,7 @@ public class MainController {
                 }
                 default -> {
                     // 逃跑（FLED）等非胜负终态：节点已消耗，直接走收尾
-                    finishNodeStep();
+                    finishNodeStep(true);
                 }
             }
         };
@@ -526,7 +542,7 @@ public class MainController {
         }
         session.leadWithFirstHealthy();
         infoAlert("战斗失败", "仅扣除 " + lost + " 金币，本轮继续。");
-        finishNodeStep();
+        finishNodeStep(true);
     }
 
     /** WILD 节点：生成野生精灵，进入真实遭遇战（可捕获）。 */

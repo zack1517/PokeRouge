@@ -71,8 +71,7 @@ public class RogueTurnManager {
      * 阶段回到路线探索，「失败一次」的机会也一并重置（§4.1：每段路线开始时重置行动点至该段上限）。
      */
     public void enterSegment(int segment) {
-        SegmentPlan plan = generator.generateSegment(segment, runData.isRocketLineUnlocked(),
-                runData.isRocketBossDefeated(), runData.isLegendaryMet(), runData.isPendingLegendary());
+        SegmentPlan plan = generatePlan(segment);
         runData.setSegment(plan.getSegment());
         runData.setApMax(plan.getApLimit());
         runData.setAp(plan.getApLimit());
@@ -82,6 +81,25 @@ public class RogueTurnManager {
         runData.setMandatoryOption(null);
         runData.setGameOver(false);
         runData.setCleared(false);
+    }
+
+    /**
+     * 刷新本段路线节点（§4.1：<b>每走完一个路线节点，本段剩余节点重新随机生成</b>）：
+     * 按当前段号与剧情线 / 神兽状态重新抽一批节点替换旧列表，
+     * <b>行动点、阶段、金币与剧情线标记都不变</b>——刷新只换节点，不重置本段进度。
+     *
+     * <p>由于常驻节点（路人 / 野外精灵 / 医院）每次都必然入列，刷新后玩家仍能再次进入
+     * 这三类节点，行动点依旧是唯一的限制资源。</p>
+     */
+    public void refreshRoute() {
+        SegmentPlan plan = generatePlan(runData.getSegment());
+        runData.setAvailableOptions(new ArrayList<>(plan.getRouteOptions()));
+    }
+
+    /** 按当前段号与剧情线状态生成本段方案（开段与刷新共用，保证两处规则一致）。 */
+    private SegmentPlan generatePlan(int segment) {
+        return generator.generateSegment(segment, runData.isRocketLineUnlocked(),
+                runData.isRocketBossDefeated(), runData.isLegendaryMet(), runData.isPendingLegendary());
     }
 
     public void setTeam(List<PokemonInstance> team) {
@@ -208,9 +226,9 @@ public class RogueTurnManager {
     }
 
     /**
-     * 进入节点并把「不需战斗」的部分一次结算完（扣点 → 当场效果 → 自回血 → 阶段推进）。
+     * 进入节点并把「不需战斗」的部分一次结算完（扣点 → 当场效果 → 自回血 → 刷新节点 → 阶段推进）。
      * 战斗类节点请改用 {@link #consumeNode(Option)}，以便控制器在战斗结束后再回调
-     * {@link #applyNodeHeal()} 与 {@link #advanceAfterNode()}。
+     * {@link #applyNodeHeal()}、{@link #refreshRoute()} 与 {@link #advanceAfterNode()}。
      *
      * @return 扣点成功返回 true
      */
@@ -220,6 +238,7 @@ public class RogueTurnManager {
         }
         resolveImmediateEffect(chosen);
         applyNodeHeal();
+        refreshRoute();
         advanceAfterNode();
         return true;
     }

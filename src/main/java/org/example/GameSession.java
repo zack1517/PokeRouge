@@ -176,8 +176,9 @@ public class GameSession {
      * （道馆战胜利后由控制器调用）。
      */
     public void enterRogueSegment(int segment) {
+        int previous = getSegment();
         rogueTurnManager.enterSegment(segment);
-        if (getSegment() != segment) {
+        if (getSegment() != previous) {
             mapBackground = nextMapBackground();
         }
     }
@@ -211,6 +212,14 @@ public class GameSession {
         return rogueTurnManager.advanceAfterNode();
     }
 
+    /**
+     * 刷新本段路线节点：每走完一个路线节点后重新随机生成一批节点（行动点、阶段与金币不变）。
+     * 常驻节点（路人 / 野外精灵 / 医院）每次都必然入列，因此刷新后仍可再次进入。
+     */
+    public void refreshRogueRoute() {
+        rogueTurnManager.refreshRoute();
+    }
+
     /** 发放节点胜利的金币奖励，返回实际发放数额。 */
     public int awardRogueWinGold(OptionType type) {
         return rogueTurnManager.awardWinGold(type);
@@ -229,9 +238,17 @@ public class GameSession {
     /**
      * 必然节点胜利推进：道馆 → 下一段 / 四天王，四天王 → 冠军，
      * 冠军 → 通关（或已开启火箭队剧情线时的首领侵略战），首领侵略战 → 通关。
+     *
+     * <p>必然节点的胜利金币与阶段流转都在本方法内一次结算，控制器<b>不要</b>再单独调用
+     * {@link #awardRogueWinGold(OptionType)}，否则金币会重复发放。段号变化时会重抽地图背景
+     * （与 {@link #enterRogueSegment(int)} 一致）。</p>
      */
     public void resolveRogueMandatoryVictory() {
+        int previous = getSegment();
         rogueTurnManager.resolveMandatoryVictory();
+        if (getSegment() != previous) {
+            mapBackground = nextMapBackground();
+        }
     }
 
     /**

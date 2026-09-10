@@ -1,6 +1,6 @@
 # UI 模块接口与界面设计文档（接口文档_UI模块）
 
-> 版本：v0.1.14（草稿） · 日期：2026-09-10 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
+> 版本：v0.1.15（草稿） · 日期：2026-09-11 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
 > 角色：UI 负责人 · 状态：**待组长评审**，评审通过前不进入编码
 > 依据：《需求文档》§7 界面与交互需求、《测试用例草稿》§D、《接口文档_战斗服务.md》v1.9、
 > **本阶段六系统任务分工**（游戏流程系统 / 存档系统 / 宝可梦系统 / 战斗系统 / 肉鸽系统 / JavaFX UI；其中游戏流程与存档由同一人负责）
@@ -12,6 +12,7 @@
 > **v0.1.8 同步战斗服务 v1.8 的道具目标选择：背包菜单改为「选道具 → 选目标精灵」两步，可对队伍任意精灵（含替补）使用回复 / 解除道具，精灵球跳过目标步骤；道具可用性判定改为「队伍中是否存在合法目标」**；
 > **v0.1.9 同步战斗服务 v1.9 的成长判定外移：经验 / 升级 / 学招 / 进化由外部成长模块结算，战斗页只渲染日志、学习抉择仍走 `pendingLearnChoices()` / `decideLearn(int)` 弹窗，UI 侧仅组装入口多注入一个成长端口，渲染无变化**；
 > **v0.1.14 常驻节点可重复进入：路线地图页对已走过的一次性节点仍置灰，对常驻节点（路人 / 野外精灵 / 医院）改为可点并标注「已走过 N 次 · 可再次进入」，卡片消耗改取 `Option#apCostForNextEntry()`；「挑战道馆」兜底入口的触发条件不变**；
+> **v0.1.15 节点列表刷新 + 道馆胜利推进修复：每走完一个路线节点由 `MainController#finishNodeStep(boolean)` 调 `GameSession#refreshRogueRoute()` 整批重抽本段节点（AP / 段号 / 金币不变，故界面上的「已走过」标记在新一批节点里不再出现）；必然节点（道馆 / 四天王 / 冠军 / 首领侵略战）胜利改走 `GameSession#resolveRogueMandatoryVictory()`——此前该入口漏接导致打赢道馆后阶段停在 `GYM` 反复重开道馆战，现已在控制器接线**；
 > 文中「[待确认]」项为需与组长 / 对应系统负责人确认后方可定稿的内容。
 
 ## 1. 概述
@@ -252,6 +253,12 @@ FXML 重写，要求：
 > （已走过的常驻节点按类型默认消耗计，「免单」只对首次进入有效），并按 `Option#isRepeatable()`
 > 决定是否渲染为灰色只读条目；行动点仍不足时按钮禁用。「挑战道馆」兜底入口的触发条件不变，
 > 仍是 `RunData#hasSelectableOption()` 为 false（行动点已不足以进入任何节点）。
+>
+> **v0.1.15**：**每走完一个路线节点，本段节点列表整批重抽**——控制器在 `finishNodeStep(true)`
+> 里调 `GameSession#refreshRogueRoute()`，随后才用新列表判定是否触发道馆（否则 AP 归零时旧列表里
+> 的 0 点节点会让道馆永远不触发）。因此界面上「［已走过 N 次 · 可再次进入］」标签在同段内通常不会再
+> 出现（旧节点已被替换），常驻节点仍因「每批必然入列」而随时可再次进入，可见的置灰条目只剩
+> 同一批内走完的一次性节点。页面渲染逻辑本身无需改动。
 
 **`ShopView`（商店）**
 
@@ -391,8 +398,9 @@ UI 侧当前**尚未接入界面**（本轮只交付模型 + 服务 + 单测）�
 | `RunData#getSegment() / getAp() / getApMax()` | 段号、当前行动点、本段上限（标题与副标题） |
 | `RunData#getGold()` | 金币余额（标题栏与商店页） |
 | `RunData#getPhase()` | `RoutePhase`（`EXPLORING`/`GYM`/`ELITE_FOUR`/`CHAMPION`/`CLEARED`），取 `getDisplayName()` 显示 |
-| `RunData#getRouteOptions() / getMandatoryOption()` | 本段可选节点 / 当前必然节点（`Optional`，仅必然阶段有值） |
+| `RunData#getAvailableOptions() / getMandatoryOption()` | 本段可选节点 / 当前必然节点（`Optional`，仅必然阶段有值） |
 | `RunData#isNotStarted() / isGameOver() / isCleared()` | 「未开始远征」/ 失败 / 通关三态，决定主菜单与结算页文案 |
+| `GameSession#refreshRogueRoute()`（**v0.1.15 新增**） | 节点步骤收尾用：整批重抽本段剩余节点（AP / 段号 / 金币不变）。是**写操作**，只在 `MainController#finishNodeStep(true)` 内调用，视图不调用 |
 | `Option#getType() / getTypeDisplayName() / getDescription() / isConsumed() / isRepeatable() / getVisitCount() / apCostForNextEntry()`（**v0.1.14 更新**） | 单个节点的展示与置灰依据：一次性节点 `isConsumed()` 后置灰，常驻节点走过后仍可点并按 `apCostForNextEntry()` 显示下次消耗 |
 | `RoutePhase#isMandatoryBattle() / toOptionType()` | 必然阶段与 `OptionType.GYM`/`ELITE_FOUR`/`CHAMPION`/`ROCKET_INVASION` 的映射 |
 | `GameSession#isRogueRocketLineUnlocked()` / `isRogueRocketBossDefeated()` / `isRogueLegendaryMet()` / `isRoguePendingLegendary()` / `isRogueAggressionTriggered()`（**v0.1.13 新增**） | 火箭队剧情线与神兽偶遇的**只读查询**：供 UI 展示剧情提示或决定通关文案；UI 不参与分支判定（进入节点即由 `RogueTurnManager` 打标记） |
@@ -546,3 +554,4 @@ public interface ScreenFactory {
 | v0.1.12 | 2026-09-10 | **路线节点 / 行动点改版落地**：§3.2 页面总表增「商店」页并改写「路线地图」行；**新增 §3.6 路线地图页与商店页**（`RogueFloorView` 段 / 行动点 / 金币标题、已走过节点置灰、必然节点卡片与「挑战道馆」入口；`ShopView` 余额与买不起禁用；`MainView` 标题栏金币与负值隐藏）；**新增 §4.8 肉鸽路线只读查询**（`RunData`/`Option`/`RoutePhase`，界面只读不判规则）；§4.7 摘要示例随存档 v2 更新 | [待确认：UI 负责人] |
 | v0.1.13 | 2026-09-10 | **火箭队剧情线与神兽偶遇落地**：§3.6 补「节点列表沿用同一张卡片、0 点神兽偶遇即多一张不耗点卡片、通关文案随首领侵略战区分」说明；§4.8 补 `ROCKET_INVASION` 映射与 5 个剧情线**只读查询**入口 | [待确认：UI 负责人] |
 | v0.1.14 | 2026-09-10 | **常驻节点可重复进入**：§3.6 节点列表改为「一次性节点置灰、常驻节点走过后仍可点并标注『已走过 N 次 · 可再次进入』」，卡片按 `apCostForNextEntry()` 显示下次消耗；§4.8 `Option` 只读入口补 `isRepeatable()/getVisitCount()/apCostForNextEntry()` | [待确认：UI 负责人] |
+| v0.1.15 | 2026-09-11 | **节点列表刷新 + 道馆胜利推进修复**：§3.6 说明「每走完一个路线节点整批重抽本段节点」及其对「已走过」标签的影响；§4.8 新增 `GameSession#refreshRogueRoute()`（写操作，仅 `MainController#finishNodeStep(true)` 调用）并把误写的 `RunData#getRouteOptions()` 更正为 `getAvailableOptions()` | [待确认：UI 负责人] |
