@@ -20,6 +20,7 @@ import org.example.model.MoveEffect;
 import org.example.model.MoveSlot;
 import org.example.model.Pokemon;
 import org.example.model.Stats;
+import org.example.model.StatusCondition;
 import org.example.model.Terrain;
 import org.example.model.Weather;
 import org.example.util.ImageBackgrounds;
@@ -75,6 +76,7 @@ public class BattleView {
     private final Label wildLv = new Label();
     private final ProgressBar wildHpBar = new ProgressBar();
     private final Label wildHpText = new Label();
+    private final Label wildStatus = new Label(); // 异常状态徽章（无异常时隐藏）
 
     // ---- 己方信息（右下卡片，样式与敌方卡一致） ----
     private final Label playerName = new Label("--");
@@ -82,6 +84,7 @@ public class BattleView {
     private final Label playerLv = new Label();
     private final ProgressBar playerHpBar = new ProgressBar();
     private final Label playerHpText = new Label();
+    private final Label playerStatus = new Label(); // 异常状态徽章（无异常时隐藏）
 
     // ---- 右上角信息块：地图阶段 / 金币（数据来自流程系统，TODO(dev) 接入前为桩文本） ----
     private final Label stageLabel = new Label("第 1 段 · 野外遭遇");
@@ -164,12 +167,12 @@ public class BattleView {
 
     /** 敌信息卡（左上，与己方卡同款，见 {@link #buildStatCard}）。 */
     private VBox buildEnemyCard() {
-        return buildStatCard(wildName, wildType, wildLv, wildHpBar, wildHpText);
+        return buildStatCard(wildName, wildType, wildLv, wildHpBar, wildHpText, wildStatus);
     }
 
     /** 中部区域：中央留空展示背景；右下角 [己方立绘 + 己方信息卡]（立绘在信息卡左侧，与敌区镜像）。 */
     private Parent buildCenter() {
-        VBox card = buildStatCard(playerName, playerType, playerLv, playerHpBar, playerHpText);
+        VBox card = buildStatCard(playerName, playerType, playerLv, playerHpBar, playerHpText, playerStatus);
         StackPane sprite = spriteBox("我 方\n立 绘", "rgba(66, 110, 196, 0.30)");
         HBox group = new HBox(8, sprite, card);
         group.setAlignment(Pos.CENTER_LEFT);
@@ -208,9 +211,12 @@ public class BattleView {
         return bottom;
     }
 
-    /** 双方同款信息卡：上行 名称/属性徽章/等级，下行 HP 条与数值（敌我样式尺寸一致）。 */
+    /**
+     * 双方同款信息卡：上行 名称/属性徽章/等级，下行 HP 条与数值，再下行异常状态徽章
+     * （无异常时整行隐藏，卡高自动回落）。
+     */
     private VBox buildStatCard(Label name, Label type, Label lv,
-                               ProgressBar hpBar, Label hpText) {
+                               ProgressBar hpBar, Label hpText, Label status) {
         VBox card = battleCard();
         HBox line1 = new HBox(6);
         line1.setAlignment(Pos.CENTER_LEFT);
@@ -225,8 +231,51 @@ public class BattleView {
         hpText.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #333; -fx-font-weight: bold;");
         line2.getChildren().addAll(hpBar, hpText);
 
-        card.getChildren().addAll(line1, line2);
+        status.setStyle(statusChip());
+        status.setManaged(false);
+        status.setVisible(false);
+
+        card.getChildren().addAll(line1, line2, status);
         return card;
+    }
+
+    /** 异常状态徽章样式（橙底深字，与属性徽章区分）。 */
+    private static String statusChip() {
+        return YH + "-fx-background-color: #ffe6c7; -fx-background-radius: 4;"
+                + "-fx-padding: 1 8; -fx-font-size: 12px; -fx-text-fill: #a35200;"
+                + "-fx-font-weight: bold;";
+    }
+
+    /**
+     * 异常状态徽章文案：倒下 &gt; 主要异常 &gt; 混乱（两者可同时显示，用空格连接）；无异常返回空串。
+     */
+    private static String statusBadgeText(Pokemon p) {
+        if (p == null) {
+            return "";
+        }
+        if (p.isFainted()) {
+            return "已倒下";
+        }
+        StringBuilder sb = new StringBuilder();
+        if (p.getStatus() != StatusCondition.NONE) {
+            sb.append(p.getStatus().getDisplayName());
+        }
+        if (p.isConfused()) {
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(StatusCondition.CONFUSION.getDisplayName());
+        }
+        return sb.toString();
+    }
+
+    /** 把异常状态徽章刷到标签：无异常时隐藏并让出布局空间。 */
+    private static void applyStatusBadge(Label target, Pokemon p) {
+        String text = statusBadgeText(p);
+        target.setText(text);
+        boolean visible = !text.isEmpty();
+        target.setManaged(visible);
+        target.setVisible(visible);
     }
 
     /** 立绘占位色块（美术资源接入后替换）：半透明底色 + 白字占位，文本按 2×2 排列（如「我 方/立 绘」）。 */
@@ -284,17 +333,19 @@ public class BattleView {
     // 更新
     // ------------------------------------------------------------------
 
-    /** 刷新双方状态卡片。 */
+    /** 刷新双方状态卡片（含异常状态徽章）。 */
     public void refreshPokemon(Pokemon player, Pokemon wild) {
         playerName.setText(player.getName());
         playerType.setText(typeOf(player));
         playerLv.setText("Lv." + player.getLevel());
         refreshHp(playerHpBar, playerHpText, player);
+        applyStatusBadge(playerStatus, player);
 
         wildName.setText(wild.getName());
         wildType.setText(typeOf(wild));
         wildLv.setText("Lv." + wild.getLevel());
         refreshHp(wildHpBar, wildHpText, wild);
+        applyStatusBadge(wildStatus, wild);
     }
 
     /** 刷新天气/场地状态行（无天气/场地时清空；位于底栏日志上方）。 */
@@ -489,21 +540,39 @@ public class BattleView {
         };
     }
 
-    /** 效果行文案：天气/场地类技能显示开启目标；无效果返回空串（调用方隐藏该行）。 */
+    /**
+     * 效果行文案：天气/场地类技能显示开启目标；附带异常状态的技能显示「可能使目标陷入X」
+     * （必定触发时显示「使目标陷入X」）；无效果返回空串（调用方隐藏该行）。
+     */
     private static String moveEffectText(Move move) {
+        String status = inflictionText(move);
         MoveEffect effect = move.getEffect();
         if (effect == MoveEffect.NONE) {
-            return "";
+            return status;
         }
+        String fieldText;
         Weather weather = effect.toWeather();
         if (weather != null) {
-            return "效果：开启" + weather.getDisplayName();
+            fieldText = "效果：开启" + weather.getDisplayName();
+        } else {
+            Terrain terrain = effect.toTerrain();
+            fieldText = terrain != null ? "效果：开启" + terrain.getDisplayName() : "效果：附加";
         }
-        Terrain terrain = effect.toTerrain();
-        if (terrain != null) {
-            return "效果：开启" + terrain.getDisplayName();
+        return status.isEmpty() ? fieldText : fieldText + "\n" + status;
+    }
+
+    /** 异常状态说明行：按触发概率区分必然/概率文案；无附带异常返回空串。 */
+    private static String inflictionText(Move move) {
+        if (!move.hasInfliction()) {
+            return "";
         }
-        return "效果：附加";
+        StatusCondition condition = move.getInflicts();
+        String name = condition.getDisplayName();
+        int chance = move.getInflictionChance();
+        if (chance >= 100) {
+            return "使目标陷入" + name + "状态";
+        }
+        return "可能使目标陷入" + name + "状态（" + chance + "%）";
     }
 
     /** 小号紧凑按钮（技能面板状态行右侧「返回」）。 */
@@ -584,8 +653,12 @@ public class BattleView {
             }
             boolean fainted = p.isFainted();
             boolean active = index == activeIndex;
-            // 格内第二行（115px 宽，文本紧凑防溢出）：Lv + HP（斜杠不带空格）/ 倒下
+            // 格内第二行（115px 宽，文本紧凑防溢出）：Lv + HP（斜杠不带空格）/ 倒下 + 异常状态摘要
+            String badge = statusBadgeText(p);
             String sub = fainted ? "已倒下" : "HP " + p.getCurrentHp() + "/" + p.getMaxHp();
+            if (!fainted && !badge.isEmpty()) {
+                sub = sub + "  " + badge;
+            }
             Button b = partyCell((active ? "★ " : "") + p.getName(), "Lv." + p.getLevel() + "  " + sub,
                     fainted, false);
             // 悬停联动：详情卡切换（倒下/出战也可查看）；点击仅健康且非出战的精灵可换人
@@ -661,12 +734,13 @@ public class BattleView {
         partyInfoType.setText(typeOf(p));
         partyInfoLv.setText("Lv." + p.getLevel());
         refreshHp(partyInfoHpBar, partyInfoHpText, p);
-        String statusName = p.getStatus().getDisplayName();
-        partyInfoStatus.setText(p.isFainted() ? "状态：已倒下" : "状态：" + statusName);
+        String badge = statusBadgeText(p);
+        partyInfoStatus.setText(badge.isEmpty() ? "状态：无" : "状态：" + badge);
         Stats stats = p.getStats();
         partyInfoStat1.setText("攻击 " + stats.getAttack() + "    防御 " + stats.getDefense()
                 + "    特攻 " + stats.getSpAttack());
-        partyInfoStat2.setText("特防 " + stats.getSpDefense() + "    速度 " + stats.getSpeed());
+        partyInfoStat2.setText("特防 " + stats.getSpDefense() + "    速度 " + stats.getSpeed()
+                + (p.effectiveSpeed() == stats.getSpeed() ? "" : "（实际 " + p.effectiveSpeed() + "）"));
         long need = p.expToNextLevel();
         partyInfoExp.setText(need <= 0 ? "已满级" : "经验 " + p.getExp() + " / 再 " + need + " 升级");
     }

@@ -11,6 +11,7 @@ import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.Species;
+import org.example.model.StatusCondition;
 import org.example.model.Stats;
 import org.example.model.Terrain;
 import org.example.model.Trainer;
@@ -42,6 +43,13 @@ import java.util.Random;
  * <p>战斗支持天气与场地（原版宝可梦风格）：携带 {@link MoveEffect} 的变化类技能会开启对应
  * 天气/场地，持续 {@value Weather#DURATION_TURNS} 回合（含开启当回合）后自然消退；生效期间
  * 按各自倍率调整招式威力，沙暴/冰雹回合末对非免疫精灵扣血，青草场地回合末回复场上精灵。</p>
+ *
+ * <p><b>异常状态</b>（原版宝可梦风格，规则集中在 {@link StatusCondition}）：技能可附带异常状态
+ * （{@link Move#getInflicts()}，按 {@link Move#getInflictionChance()} 概率触发，属性免疫的精灵
+ * 不会陷入）。行动前判定睡眠/冰冻（无法行动）、麻痹（{@value StatusCondition#PARALYSIS_SKIP_CHANCE}
+ * 概率无法行动）与混乱（{@value StatusCondition#CONFUSION_SELF_HIT_CHANCE} 概率自伤）；麻痹使实际
+ * 速度减半（影响先后手与逃跑），灼伤使物理攻击减半；中毒/灼伤/剧毒在回合末扣血（剧毒逐回合递增），
+ * 混乱在回合末递减。换宠清除混乱（挥发性异常），主要异常保留至治愈。</p>
  *
  * <p>战斗行为契约见 {@link BattleService}，实例统一由 {@link BattleServices} 工厂创建，
  * 调用方不应直接持有本实现类。</p>
@@ -209,7 +217,7 @@ public class BattleEngine implements BattleService {
     // ------------------------------------------------------------------
 
     /**
-     * 玩家选择技能。敌方自动选择可用技能；按速度决定先后。
+     * 玩家选择技能。敌方自动选择可用技能；按计入异常状态后的实际速度决定先后。
      *
      * @return 本回合产生的新日志
      */
@@ -221,36 +229,52 @@ public class BattleEngine implements BattleService {
         if (usable == null) {
             return slice(mark);
         }
-        if (!usable.use()) {
-            append(playerActive().getName() + " 的【" + usable.getMove().getName() + "】PP 不足！");
-            return slice(mark);
-        }
-        append(playerActive().getName() + " 使用了【" + usable.getMove().getName() + "】！");
 
-        // 决定本回合先后手：双方都行动，比较速度
+        // 决定本回合先后手：双方都行动，比较计入异常状态后的实际速度
         Pokemon foe = foeActive();
-        int playerSpeed = playerActive().getStats().getSpeed();
-        int foeSpeed = foe.getStats().getSpeed();
-        boolean playerFirst = playerSpeed > foeSpeed
-                || (playerSpeed == foeSpeed && random.nextBoolean());
+        boolean playerFirst = firstMover(playerActive(), foe);
 
         if (playerFirst) {
-            executeMove(playerActive(), foe, usable.getMove());
+            playerAct(usable, foe);
             if (isOngoing() && !foe.isFainted() && !playerActive().isFainted()) {
                 foeTurn();
             }
         } else {
             foeTurn();
             if (isOngoing() && !playerActive().isFainted() && !foe.isFainted()) {
-                executeMove(playerActive(), foe, usable.getMove());
+                playerAct(usable, foe);
             }
         }
         finishRound();
         return slice(mark);
     }
 
+    /** 本回合先后手：按计入异常状态后的实际速度比较；速度相同则随机。 */
+    private boolean firstMover(Pokemon playerPokemon, Pokemon foe) {
+        if (foe == null) {
+            return true;
+        }
+        int playerSpeed = playerPokemon.effectiveSpeed();
+        int foeSpeed = foe.effectiveSpeed();
+        return playerSpeed > foeSpeed || (playerSpeed == foeSpeed && random.nextBoolean());
+    }
+
+    /** 玩家执行行动：未通过异常状态判定则不消耗 PP，通过后才播报并使用技能。 */
+    private void playerAct(MoveSlot slot, Pokemon foe) {
+        Pokemon self = playerActive();
+        if (!canAct(self)) {
+            return;
+        }
+        if (!slot.use()) {
+            append(self.getName() + " 的【" + slot.getMove().getName() + "】PP 不足！");
+            return;
+        }
+        append(self.getName() + " 使用了【" + slot.getMove().getName() + "】！");
+        executeMove(self, foe, slot.getMove());
+    }
+
     /**
-     * 玩家使用道具：回复道具回复当前精灵 HP；精灵球尝试捕捉野生精灵。
+     * 玩家使用道具：回复道具回复当前精灵 HP；解除道具治愈当前精灵异常状态；精灵球尝试捕捉野生精灵。
      * 道具使用不计先后手（视为先行动作），使用后若战斗未结束则敌方行动一次。
      * 训练师轮战中投掷精灵球会被拒绝（球不消耗）。
      *
@@ -272,6 +296,17 @@ public class BattleEngine implements BattleService {
             }
             player.getBag().consume(item);
             append("使用了【" + item.getName() + "】，" + active.getName() + " 回复了 " + healed + " HP");
+            if (isOngoing() && !foeActive().isFainted() && !playerActive().isFainted()) {
+                foeTurn();
+            }
+        } else if (item.getCategory() == ItemCategory.CURE) {
+            Pokemon active = playerActive();
+            if (!cureWithItem(active, item)) {
+                append(active.getName() + " 没有可解除的异常状态，【" + item.getName() + "】没有使用。");
+                return slice(mark);
+            }
+            player.getBag().consume(item);
+            append("使用了【" + item.getName() + "】");
             if (isOngoing() && !foeActive().isFainted() && !playerActive().isFainted()) {
                 foeTurn();
             }
@@ -307,8 +342,8 @@ public class BattleEngine implements BattleService {
             append("与训练师的对战中无法逃跑！");
             return slice(mark);
         }
-        int playerSpeed = playerActive().getStats().getSpeed();
-        int wildSpeed = wild.getStats().getSpeed();
+        int playerSpeed = playerActive().effectiveSpeed();
+        int wildSpeed = wild.effectiveSpeed();
         double ratio = (double) playerSpeed / Math.max(1, playerSpeed + wildSpeed);
         double chance = 0.35 + 0.6 * ratio; // 速度相当约 0.65，远超时接近 0.95
         if (random.nextDouble() < chance) {
@@ -339,6 +374,9 @@ public class BattleEngine implements BattleService {
             return slice(mark);
         }
         append(player.getName() + " 收回了 " + current.getName() + "！");
+        if (current.clearConfusion()) {
+            append(current.getName() + " 的混乱解除了！");
+        }
         append("你派出了 " + target.getName() + "！");
         if (!foeActive().isFainted() && !target.isFainted()) {
             foeTurn();
@@ -357,6 +395,9 @@ public class BattleEngine implements BattleService {
         }
         Pokemon foe = foeActive();
         if (foe == null) {
+            return;
+        }
+        if (!canAct(foe)) {
             return;
         }
         MoveSlot usable = pickFoeMove();
@@ -404,14 +445,124 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 执行一次行动：变化类技能改换天气/场地，其余（物理/特殊）技能正常造成伤害。
+     * 执行一次行动：变化类技能应用天气/场地效果并按概率施加异常状态，其余（物理/特殊）技能正常造成伤害。
      */
     private void executeMove(Pokemon attacker, Pokemon defender, Move move) {
         if (move.isStatus()) {
-            applyFieldEffect(move.getEffect());
+            // 纯变化招：天气/场地效果与异常状态互不排斥；两者都没有时提示无效果
+            if (move.getEffect() != MoveEffect.NONE || !move.hasInfliction()) {
+                applyFieldEffect(move.getEffect());
+            }
+            tryInflict(move, defender);
             return;
         }
         performAttack(attacker, defender, move);
+    }
+
+    /**
+     * 行动前异常状态判定。
+     *
+     * <p>睡眠/冰冻彻底无法行动（冰冻每回合有 {@value StatusCondition#FREEZE_THAW_CHANCE} 概率解冻），
+     * 麻痹有 {@value StatusCondition#PARALYSIS_SKIP_CHANCE} 概率无法行动，混乱有
+     * {@value StatusCondition#CONFUSION_SELF_HIT_CHANCE} 概率攻击自己。</p>
+     *
+     * @return 本回合能否正常行动
+     */
+    private boolean canAct(Pokemon p) {
+        if (p == null || p.isFainted()) {
+            return false;
+        }
+        if (p.getStatus() == StatusCondition.SLEEP) {
+            if (p.tickSleep()) {
+                append(p.getName() + " 正在呼呼大睡……");
+                return false;
+            }
+            append(p.getName() + " 醒过来了！");
+        }
+        if (p.getStatus() == StatusCondition.FREEZE) {
+            if (random.nextDouble() < StatusCondition.FREEZE_THAW_CHANCE) {
+                p.cureStatus();
+                append(p.getName() + " 的冰冻解除了！");
+            } else {
+                append(p.getName() + " 被冻住了，无法行动！");
+                return false;
+            }
+        }
+        if (p.getStatus() == StatusCondition.PARALYSIS
+                && random.nextDouble() < StatusCondition.PARALYSIS_SKIP_CHANCE) {
+            append(p.getName() + " 因麻痹而无法行动！");
+            return false;
+        }
+        if (p.isConfused()) {
+            if (random.nextDouble() < StatusCondition.CONFUSION_SELF_HIT_CHANCE) {
+                selfHit(p);
+                return false;
+            }
+            append(p.getName() + " 虽然混乱，但还是行动了！");
+        }
+        return true;
+    }
+
+    /** 混乱自伤：按威力 {@value StatusCondition#CONFUSION_SELF_HIT_POWER} 的无属性物理招式对自身结算。 */
+    private void selfHit(Pokemon p) {
+        append(p.getName() + " 因混乱攻击了自己！");
+        double base = (2.0 * p.getLevel() / 5.0 + 2.0) * StatusCondition.CONFUSION_SELF_HIT_POWER
+                * ((double) p.effectiveAttack() / Math.max(1, p.getStats().getDefense())) / 50.0 + 2.0;
+        int dealt = p.takeDamage(Math.max(1, (int) base));
+        append("自伤了 " + dealt + " 点伤害");
+        if (p.isFainted()) {
+            append(p.getName() + " 倒下了！");
+        }
+    }
+
+    /**
+     * 招式生效后按概率对目标施加其附带的异常状态。
+     * <p>属性免疫（如电系不会麻痹）、已有主要异常、已混乱时不会生效（判定顺序与原版一致：先免疫后概率）。</p>
+     */
+    private void tryInflict(Move move, Pokemon defender) {
+        if (!move.hasInfliction() || defender == null || defender.isFainted()
+                || move.getInflictionChance() <= 0) {
+            return;
+        }
+        StatusCondition condition = move.getInflicts();
+        if (!condition.canApply(defender)) {
+            ElementType immune = condition.immunityType();
+            if (immune != null && defender.hasType(immune)) {
+                append(defender.getName() + " 因属性免疫，不会陷入" + condition.getDisplayName() + "！");
+            } else if (condition == StatusCondition.CONFUSION) {
+                append(defender.getName() + " 已经混乱了！");
+            } else if (defender.getStatus() != StatusCondition.NONE) {
+                append(defender.getName() + " 已经处于" + defender.getStatus().getDisplayName()
+                        + "状态，无法再陷入" + condition.getDisplayName() + "！");
+            }
+            return;
+        }
+        if (random.nextInt(100) >= move.getInflictionChance()) {
+            return;
+        }
+        int turns = switch (condition) {
+            case SLEEP -> randomTurns(StatusCondition.SLEEP_MIN_TURNS, StatusCondition.SLEEP_MAX_TURNS);
+            case CONFUSION -> randomTurns(StatusCondition.CONFUSION_MIN_TURNS, StatusCondition.CONFUSION_MAX_TURNS);
+            default -> 0;
+        };
+        if (defender.tryApplyStatus(condition, turns)) {
+            append(defender.getName() + " 陷入了" + condition.getDisplayName() + "状态！");
+        }
+    }
+
+    /** 用解除道具治疗精灵的主要异常状态；返回是否确实解除了异常。 */
+    private boolean cureWithItem(Pokemon target, Item item) {
+        StatusCondition current = target.getStatus();
+        if (current == StatusCondition.NONE || !item.canCure(current)) {
+            return false;
+        }
+        target.cureStatus();
+        append(target.getName() + " 的" + current.getDisplayName() + "治愈了！");
+        return true;
+    }
+
+    private int randomTurns(int min, int max) {
+        return min + random.nextInt(max - min + 1);
     }
 
     /** 应用变化类技能的天气/场地效果；无对应效果视为失败。 */
@@ -473,14 +624,16 @@ public class BattleEngine implements BattleService {
         append(sb.toString());
         if (defender.isFainted()) {
             append(defender.getName() + " 倒下了！");
+            return;
         }
+        tryInflict(move, defender);
     }
 
     private int computeDamage(Pokemon attacker, Pokemon defender, Move move) {
         double atk;
         double def;
         if (move.getCategory() == MoveCategory.PHYSICAL) {
-            atk = attacker.getStats().getAttack();
+            atk = attacker.effectiveAttack();
             def = defender.getStats().getDefense();
         } else {
             atk = attacker.getStats().getSpAttack();
@@ -586,7 +739,7 @@ public class BattleEngine implements BattleService {
         }
     }
 
-    /** 回合末天气/场地效果：沙暴/冰雹对双方扣血；青草场地对双方回复。 */
+    /** 回合末天气/场地效果：沙暴/冰雹对双方扣血，青草场地对双方回复；随后结算异常状态。 */
     private void applyFieldEndEffects(Pokemon pa) {
         Pokemon foe = foeActive();
         weatherChip(pa);
@@ -594,6 +747,35 @@ public class BattleEngine implements BattleService {
         if (terrain == Terrain.GRASSY) {
             grassyHeal(pa);
             grassyHeal(foe);
+        }
+        statusEndTurn(pa);
+        statusEndTurn(foe);
+    }
+
+    /**
+     * 回合末异常状态结算：中毒/剧毒/灼伤按比例扣血（剧毒计数递增），混乱剩余回合递减。
+     */
+    private void statusEndTurn(Pokemon p) {
+        if (p == null || p.isFainted()) {
+            return;
+        }
+        StatusCondition condition = p.getStatus();
+        double ratio = condition.residualDamageRatio(p.getBadlyPoisonCounter());
+        if (ratio > 0) {
+            int damage = Math.max(1, (int) (p.getMaxHp() * ratio));
+            int dealt = p.takeDamage(damage);
+            append(p.getName() + " 受到" + condition.residualMessage(p.getBadlyPoisonCounter())
+                    + "的伤害，失去了 " + dealt + " HP！");
+            if (condition == StatusCondition.BADLY_POISON) {
+                p.increaseBadlyPoisonCounter();
+            }
+            if (p.isFainted()) {
+                append(p.getName() + " 倒下了！");
+                return;
+            }
+        }
+        if (p.isConfused() && p.tickConfusion()) {
+            append(p.getName() + " 的混乱解除了！");
         }
     }
 

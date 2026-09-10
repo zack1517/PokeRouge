@@ -9,6 +9,7 @@ import org.example.model.MoveEffect;
 import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.Stats;
+import org.example.model.StatusCondition;
 import org.example.util.LogUtil;
 
 import java.io.BufferedReader;
@@ -32,15 +33,20 @@ import java.util.function.Consumer;
  *
  * <p>CSV 统一格式（首行为表头，自动跳过，# 开头视为注释）：</p>
  * <ul>
- *     <li>moves.csv：id,name,type,category,power,pp[,effect]
+ *     <li>moves.csv：id,name,type,category,power,accuracy,maxPp,priority,inflicts,inflictionChance[,effect]
  *     —— type 用属性英文名，category 取 PHYSICAL/SPECIAL/STATUS（变化类 power 为 0）；
+ *     accuracy 为命中率（-1 表示必中）；priority 为先制度；inflicts 为命中后可能施加的异常状态
+ *     （POISON/BADLY_POISON/PARALYSIS/BURN/SLEEP/FREEZE/CONFUSION，留空表示无），
+ *     inflictionChance 为触发概率百分比（0~100）；
  *     effect 为可选的技能效果英文名（如 SUNNY_DAY/GRASSY_TERRAIN），不填为无效果</li>
  *     <li>species.csv：id,name,type1,type2,hp,atk,def,spatk,spdef,speed,catchRate,wild,evolvesTo,evolveLevel,moves,learns
  *     —— type2 可为空；wild 1/0 决定是否进野怪池；evolvesTo 为进化目标 id（可空），
  *     evolveLevel 为进化等级（0/空 = 不进化）；moves 为出生即会的技能（“;”分隔、最多 4 个）；
  *     learns 为按等级习得技能，格式 “等级:技能id;等级:技能id”（如 8:m_flame_wheel）</li>
- *     <li>items.csv：id,name,category,effect,alwaysCatch
- *     —— category 取 HEAL/BALL，HEAL 的 effect 为回复量、BALL 的 effect 为捕捉倍率</li>
+ *     <li>items.csv：id,name,category,effect,alwaysCatch[,curesSpec]
+ *     —— category 取 HEAL/BALL/CURE，HEAL 的 effect 为回复量、BALL 的 effect 为捕捉倍率；
+ *     CURE 的第 6 列 curesSpec 为可解除的异常状态（ALL 表示全部主要异常，或
+ *     POISON/PARALYSIS/BURN/FREEZE/SLEEP/BADLY_POISON 之一）</li>
  * </ul>
  */
 public final class GameData {
@@ -177,7 +183,6 @@ public final class GameData {
         putMove("m_thunderbolt", "十万伏特", ElementType.ELECTRIC, MoveCategory.SPECIAL, 90, 15);
         putMove("m_thunder", "打雷", ElementType.ELECTRIC, MoveCategory.SPECIAL, 110, 10);
         putMove("m_icy_wind", "冰冻之风", ElementType.ICE, MoveCategory.SPECIAL, 55, 15);
-        putMove("m_ice_fang", "冰冻牙", ElementType.ICE, MoveCategory.PHYSICAL, 65, 15);
         putMove("m_rock_slide", "岩崩", ElementType.ROCK, MoveCategory.PHYSICAL, 75, 10);
         putMove("m_rock_throw", "落石", ElementType.ROCK, MoveCategory.PHYSICAL, 50, 15);
         putMove("m_mud_slap", "掷泥", ElementType.GROUND, MoveCategory.SPECIAL, 20, 10);
@@ -199,6 +204,26 @@ public final class GameData {
         putMove("m_grassy_terrain", "青草场地", ElementType.GRASS, MoveCategory.STATUS, 0, 10, MoveEffect.GRASSY_TERRAIN);
         putMove("m_misty_terrain", "薄雾场地", ElementType.FAIRY, MoveCategory.STATUS, 0, 10, MoveEffect.MISTY_TERRAIN);
         putMove("m_psychic_terrain", "精神场地", ElementType.PSYCHIC, MoveCategory.STATUS, 0, 10, MoveEffect.PSYCHIC_TERRAIN);
+
+        // ---- 异常状态类变化技能：power=0、STATUS，命中后必定使目标陷入对应异常 ----
+        putMove("m_thunder_wave", "电磁波", ElementType.ELECTRIC, MoveCategory.STATUS, 0, 20, 90,
+                StatusCondition.PARALYSIS, 100);
+        putMove("m_poison_powder", "毒粉", ElementType.POISON, MoveCategory.STATUS, 0, 35, 75,
+                StatusCondition.POISON, 100);
+        putMove("m_toxic", "剧毒", ElementType.POISON, MoveCategory.STATUS, 0, 10, 90,
+                StatusCondition.BADLY_POISON, 100);
+        putMove("m_sleep_powder", "催眠粉", ElementType.GRASS, MoveCategory.STATUS, 0, 15, 75,
+                StatusCondition.SLEEP, 100);
+        putMove("m_will_o_wisp", "鬼火", ElementType.FIRE, MoveCategory.STATUS, 0, 15, 85,
+                StatusCondition.BURN, 100);
+        putMove("m_confuse_ray", "奇异之光", ElementType.GHOST, MoveCategory.STATUS, 0, 10, 100,
+                StatusCondition.CONFUSION, 100);
+
+        // ---- 附带异常状态的攻击技能：按概率触发 ----
+        putMove("m_body_slam", "泰山压顶", ElementType.NORMAL, MoveCategory.PHYSICAL, 85, 15, 100,
+                StatusCondition.PARALYSIS, 30);
+        putMove("m_ice_fang", "冰冻牙", ElementType.ICE, MoveCategory.PHYSICAL, 65, 15, 95,
+                StatusCondition.FREEZE, 10);
     }
 
     private void registerBuiltinSpecies() {
@@ -206,7 +231,7 @@ public final class GameData {
         putSpecies("s_fire_cat", "焰尾猫", ElementType.FIRE, null,
                 new Stats(45, 52, 43, 60, 50, 65), 45, true,
                 "s_flame_lion", 16, List.of("m_tackle", "m_ember"),
-                "8:m_flame_wheel", "10:m_sunny_day", "13:m_flamethrower");
+                "8:m_flame_wheel", "10:m_sunny_day", "11:m_will_o_wisp", "13:m_flamethrower");
         putSpecies("s_flame_lion", "烈焰狮", ElementType.FIRE, null,
                 new Stats(65, 75, 58, 90, 68, 95), 45, false,
                 null, 0, List.of("m_tackle", "m_ember", "m_flame_wheel", "m_fire_blast"));
@@ -222,7 +247,7 @@ public final class GameData {
         putSpecies("s_leaf_chick", "叶芽雀", ElementType.GRASS, ElementType.FLYING,
                 new Stats(45, 49, 49, 65, 65, 45), 45, true,
                 "s_gale_owl", 16, List.of("m_tackle", "m_vine_whip"),
-                "9:m_razor_leaf", "13:m_grassy_terrain", "15:m_wing_attack");
+                "9:m_razor_leaf", "11:m_sleep_powder", "13:m_grassy_terrain", "15:m_wing_attack");
         putSpecies("s_gale_owl", "苍翼枭", ElementType.GRASS, ElementType.FLYING,
                 new Stats(65, 75, 60, 85, 75, 90), 45, false,
                 null, 0, List.of("m_tackle", "m_vine_whip", "m_razor_leaf", "m_leaf_blade"));
@@ -230,7 +255,7 @@ public final class GameData {
         putSpecies("s_spark_rat", "电光鼠", ElementType.ELECTRIC, null,
                 new Stats(35, 55, 40, 50, 50, 90), 190, true,
                 "s_volt_mink", 22, List.of("m_tackle", "m_thunder_shock"),
-                "8:m_quick", "14:m_electric_terrain", "18:m_thunderbolt");
+                "8:m_quick", "10:m_thunder_wave", "14:m_electric_terrain", "18:m_thunderbolt");
         putSpecies("s_volt_mink", "迅雷貂", ElementType.ELECTRIC, null,
                 new Stats(60, 80, 55, 85, 65, 125), 190, false,
                 null, 0, List.of("m_tackle", "m_quick", "m_thunder_shock", "m_volt_tackle"));
@@ -239,7 +264,7 @@ public final class GameData {
         putSpecies("s_ice_fox", "冰晶狐", ElementType.ICE, null,
                 new Stats(40, 45, 40, 65, 45, 65), 120, true,
                 null, 0, List.of("m_tackle", "m_icy_wind"),
-                "7:m_quick", "10:m_hail", "12:m_ice_fang");
+                "7:m_quick", "9:m_confuse_ray", "10:m_hail", "12:m_ice_fang");
         putSpecies("s_rock_tort", "岩甲龟", ElementType.ROCK, ElementType.GROUND,
                 new Stats(44, 48, 65, 50, 64, 43), 45, true,
                 null, 0, List.of("m_tackle", "m_rock_throw"),
@@ -247,7 +272,7 @@ public final class GameData {
         putSpecies("s_wing_viper", "翼毒蛇", ElementType.POISON, ElementType.FLYING,
                 new Stats(55, 60, 44, 40, 54, 55), 90, true,
                 null, 0, List.of("m_tackle", "m_wing_attack"),
-                "7:m_quick", "12:m_cross_poison");
+                "7:m_quick", "9:m_poison_powder", "11:m_toxic", "12:m_cross_poison");
     }
 
     private void registerBuiltinItems() {
@@ -257,6 +282,14 @@ public final class GameData {
         putItem("i_great_ball", "超级球", ItemCategory.POKE_BALL, 1.5);
         putItem("i_ultra_ball", "高级球", ItemCategory.POKE_BALL, 2);
         putItem("i_master_ball", "大师球", ItemCategory.POKE_BALL, 255, true);
+
+        // ---- 异常状态解除道具：分别对应单种异常与全部主要异常（解毒药同时解除中毒与剧毒） ----
+        putItem("i_antidote", "解毒药", "POISON|BADLY_POISON");
+        putItem("i_paralyze_heal", "麻痹药", "PARALYSIS");
+        putItem("i_burn_heal", "灼伤药", "BURN");
+        putItem("i_ice_heal", "解冻药", "FREEZE");
+        putItem("i_awakening", "醒睡药", "SLEEP");
+        putItem("i_full_heal", "万灵药", "ALL");
     }
 
     private void putMove(String id, String name, ElementType type, MoveCategory category,
@@ -268,6 +301,19 @@ public final class GameData {
     private void putMove(String id, String name, ElementType type, MoveCategory category,
                          int power, int pp, MoveEffect effect) {
         moveMap.put(id, new Move(id, name, type, category, power, 100, pp, effect));
+    }
+
+    /**
+     * 带异常状态注册技能（命中后按概率使目标陷入异常）。
+     *
+     * @param accuracy 命中率（-1 表示必中）
+     * @param inflicts 命中后可能施加的异常状态
+     * @param chance   触发概率百分比（0~100）
+     */
+    private void putMove(String id, String name, ElementType type, MoveCategory category,
+                         int power, int pp, int accuracy, StatusCondition inflicts, int chance) {
+        moveMap.put(id, new Move(id, name, type, category, power, accuracy, pp, 0,
+                MoveEffect.NONE, inflicts, chance));
     }
 
     /**
@@ -307,6 +353,16 @@ public final class GameData {
         itemMap.put(id, new Item(id, name, category, effect, alwaysCatch));
     }
 
+    /**
+     * 注册解除异常状态的道具。
+     *
+     * @param curesSpec 可解除的异常状态（{@code ALL} 表示全部主要异常；也可填状态英文名，
+     *                  多项用 {@code |}/{@code ,}/空白 分隔，如 {@code POISON|BADLY_POISON}）
+     */
+    private void putItem(String id, String name, String curesSpec) {
+        itemMap.put(id, Item.cureItem(id, name, curesSpec));
+    }
+
     // ------------------------------------------------------------------
     // CSV 外部数据覆盖加载
     // ------------------------------------------------------------------
@@ -333,8 +389,10 @@ public final class GameData {
                         continue;
                     }
                     if (header) {
-                        header = false; // 跳过表头
-                        continue;
+                        header = false; // 首个非注释行：真正的表头行（首列为 id）才跳过，否则按数据行处理
+                        if ("id".equalsIgnoreCase(line.split(",", -1)[0].trim())) {
+                            continue;
+                        }
                     }
                     rowConsumer.accept(line);
                 }
@@ -346,7 +404,7 @@ public final class GameData {
 
     private void applyMoveRow(String line) {
         String[] c = line.split(",", -1);
-        if (c.length < 6) {
+        if (c.length < 8) {
             return;
         }
         ElementType type = ElementType.parse(c[2]);
@@ -357,9 +415,15 @@ public final class GameData {
             default -> MoveCategory.PHYSICAL;
         };
         int power = parseInt(c[4]);
-        int pp = parseInt(c[5]);
-        MoveEffect effect = c.length > 6 ? MoveEffect.parse(c[6]) : MoveEffect.NONE;
-        moveMap.put(c[0].trim(), new Move(c[0].trim(), c[1].trim(), type, category, power, 100, pp, effect));
+        int accuracy = parseInt(c[5]);
+        int maxPp = parseInt(c[6]);
+        int priority = parseInt(c[7]);
+        StatusCondition inflicts = c.length > 8 ? StatusCondition.parse(c[8]) : StatusCondition.NONE;
+        int chance = c.length > 9 ? parseInt(c[9]) : 0;
+        MoveEffect effect = c.length > 10 ? MoveEffect.parse(c[10]) : MoveEffect.NONE;
+        String id = c[0].trim();
+        moveMap.put(id, new Move(id, c[1].trim(), type, category, power, accuracy, maxPp, priority,
+                effect, inflicts, chance));
     }
 
     private void applySpeciesRow(String line) {
@@ -406,11 +470,16 @@ public final class GameData {
         if (c.length < 4) {
             return;
         }
-        ItemCategory category = "BALL".equalsIgnoreCase(c[2].trim())
-                ? ItemCategory.POKE_BALL : ItemCategory.HEAL;
+        ItemCategory category = switch (c[2].trim().toUpperCase(java.util.Locale.ROOT)) {
+            case "BALL", "POKE_BALL" -> ItemCategory.POKE_BALL;
+            case "CURE" -> ItemCategory.CURE;
+            default -> ItemCategory.HEAL;
+        };
         double effect = parseDouble(c[3]);
         boolean alwaysCatch = c.length > 4 && "1".equals(c[4].trim());
-        itemMap.put(c[0].trim(), new Item(c[0].trim(), c[1].trim(), category, effect, alwaysCatch));
+        String curesSpec = c.length > 5 ? c[5].trim() : "";
+        String id = c[0].trim();
+        itemMap.put(id, new Item(id, c[1].trim(), category, effect, alwaysCatch, curesSpec));
     }
 
     private static int parseInt(String s) {

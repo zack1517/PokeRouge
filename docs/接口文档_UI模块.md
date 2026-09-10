@@ -170,6 +170,12 @@ FXML 重写，要求：
 - 训练师轮战（v1.4）：敌方为一整支队伍，敌方面板取 `foeActive()`（对方换宠后自动跟随），
   可用 `getTrainer()` 显示对手名与对方剩余精灵；逃跑与投球会被引擎拒绝（仅提示日志、
   不消耗回合），按钮可置灰；仅当对方整队精灵全部倒下才展示胜利。
+- 异常状态展示（v0.1.5，参考实现已落地）：双方精灵卡片在 HP 条下方显示**状态徽章**
+  （主要异常/混乱/倒下，橙底 `#ffe6c7` + 深字 `#a35200`，无异常时不占位）；
+  技能列表的说明文字叠加异常提示（100% 为"使目标陷入X状态"，否则"可能使目标陷入X状态（n%）"）；
+  队伍列表与队伍菜单显示异常摘要，并给出计异常倍率后的**实际速度**（`effectiveSpeed()`）；
+- 道具可用性（v0.1.5）：解除类道具（`ItemCategory.CURE`）在当前出战精灵无对应异常时禁用，
+  菜单中显示其解除范围（多项用 `/` 连接，"全部异常状态"表示 `ALL`）。
 
 ### 3.4 存档对页面的约束（新增）
 
@@ -208,15 +214,16 @@ FXML 重写，要求：
 
 | 对象 | UI 用到的查询 |
 | --- | --- |
-| `Pokemon` | `getName / getLevel / getSpecies / getCurrentHp / getMaxHp / getExp / expToNextLevel / isFainted / getMoveSlots / getMoves / getStats / hasType` |
+| `Pokemon` | `getName / getLevel / getSpecies / getCurrentHp / getMaxHp / getExp / expToNextLevel / isFainted / getMoveSlots / getMoves / getStats / hasType / getStatus / isConfused / getSleepTurns / getConfusionTurns / getBadlyPoisonCounter / effectiveSpeed / effectiveAttack`（v0.1.5 增异常状态与计倍率的实际能力值） |
 | `Species` | `getId / getName / getTypes / getBaseStats / canEvolveAt(level)` |
 | `Stats` | `getHp / getAttack / getDefense / getSpAttack / getSpDefense / getSpeed` |
 | `ElementType` | `getDisplayName()`；`parse(name)` 供数据加载 |
 | `Player` | `getName / getParty / getActive / getBag / hasHealthyPokemon / healParty`（医院页） |
 | `Trainer`（v1.4 新增） | `getName / getParty / getActive / getPartySize / hasHealthyPokemon / isPartyAllFainted`（训练师轮战的对手名、对方队伍与剩余精灵展示） |
 | `Bag / ItemStack` | `availableStacks() / countOf / getAll`；`getItem() / getCount()` |
-| `Item` | `getId / getName / getCategory / getEffect / isAlwaysCatch`（`ItemCategory.HEAL / POKE_BALL`） |
-| `MoveSlot / Move` | `getMove / getPp / exhausted`；`getId / getName / getType / getCategory / getPower / getMaxPp` |
+| `Item` | `getId / getName / getCategory / getEffect / isAlwaysCatch / getCuresSpec / canCure / curedStatuses / curesAll`（`ItemCategory.HEAL / POKE_BALL / CURE`） |
+| `MoveSlot / Move` | `getMove / getPp / exhausted`；`getId / getName / getType / getCategory / getPower / getMaxPp / hasInfliction / getInflicts / getInflictionChance` |
+| `StatusCondition` | `getDisplayName / isMajor / isVolatile / immunityType`；`parse(name)` 供数据加载 |
 
 > 展示所需中文名均有现成 getter，**不要求逻辑层为展示拼装字符串**；格式拼接由 UI 负责。
 > 若宝可梦系统扩展 model（金币、性格、努力值等），保持现有 getter 风格并**同步更新本文档
@@ -369,3 +376,4 @@ public interface ScreenFactory {
 | v0.1.2 | 2026-09-08 | 按五系统分工重写：场景调度归流程&存档（§1/§6.2）、界面 FXML 化（§1.3/§2/§6.1）、缺口按系统重分配（§5）、新增存档约束-状态驱动渲染（§3.4/§6.3）、待确认清单分 A/B 组 | [待确认：UI 负责人] |
 | v0.1.3 | 2026-09-08 | 系统拆分："游戏流程&存档"拆为游戏流程系统与存档系统（同一人负责，共六系统）；修订 §1.2 边界表/§3.1-3.2/§5 归属（新增 I-02c、I-09）/§6.2-6.3/§9 A 组 | [待确认：UI 负责人] |
 | v0.1.4 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.4 训练师轮战：§3.3 增训练师轮战界面要求（敌方面板取 `foeActive()`、对手名与剩余精灵、逃跑/投球被拒提示）；§4.1 契约表补 `foeActive()/getTrainer()` 并说明 `getWild()` 在训练师战为 null；§4.2 补 `newTrainerBattle` 工厂；§4.3 补 `Trainer` 只读查询 | [待确认：UI 负责人] |
+| v0.1.5 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.5 异常状态：§3.3 增状态徽章、招式异常提示、异常摘要与实际速度、解除道具可用性要求；§4.3 契约表补 `Pokemon` 异常查询与 `effectiveSpeed/effectiveAttack`、`Item` 解除范围方法、`Move` 附带异常字段与 `ItemCategory.CURE`；新增 `StatusCondition` 只读查询 | [待确认：UI 负责人] |

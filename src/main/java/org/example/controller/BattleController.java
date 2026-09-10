@@ -8,10 +8,12 @@ import org.example.model.ItemStack;
 import org.example.model.Move;
 import org.example.model.MoveSlot;
 import org.example.model.Pokemon;
+import org.example.model.StatusCondition;
 import org.example.view.BattleView;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 战斗控制器：桥接 {@link BattleView} 与 {@link BattleService}。
@@ -153,10 +155,15 @@ public class BattleController implements BattleView.Actions {
         view.showBagMenu(buttons, this::onItemSelected, this::render);
     }
 
-    /** 道具当前是否不可用：回复道具在满血时禁用。 */
+    /** 道具当前是否不可用：回复道具在满血时禁用；解除道具在当前精灵没有对应异常时禁用。 */
     private boolean isItemDisabled(Item item) {
+        Pokemon active = engine.playerActive();
         if (item.getCategory() == ItemCategory.HEAL) {
-            return engine.playerActive().getCurrentHp() >= engine.playerActive().getMaxHp();
+            return active.getCurrentHp() >= active.getMaxHp();
+        }
+        if (item.getCategory() == ItemCategory.CURE) {
+            StatusCondition status = active.getStatus();
+            return status == StatusCondition.NONE || !item.canCure(status);
         }
         return false;
     }
@@ -165,10 +172,28 @@ public class BattleController implements BattleView.Actions {
         if (item.getCategory() == ItemCategory.HEAL) {
             return "回复 " + (int) item.getEffect() + " HP";
         }
+        if (item.getCategory() == ItemCategory.CURE) {
+            return "解除" + curesText(item);
+        }
         if (item.getCategory() == ItemCategory.POKE_BALL) {
             return item.isAlwaysCatch() ? "必定捕捉" : "捕捉率 ×" + item.getEffect();
         }
         return "";
+    }
+
+    /** 解除道具的适用范围文案：万灵药显示「全部异常状态」，其余逐一列出具体状态名。 */
+    private static String curesText(Item item) {
+        if (item.curesAll()) {
+            return "全部异常状态";
+        }
+        List<StatusCondition> conditions = item.curedStatuses();
+        if (conditions.isEmpty()) {
+            return "异常状态";
+        }
+        return conditions.stream()
+                .map(StatusCondition::getDisplayName)
+                .collect(Collectors.joining("/"))
+                + "状态";
     }
 
     private String resultText() {

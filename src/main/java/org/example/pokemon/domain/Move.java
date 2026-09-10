@@ -4,7 +4,7 @@ import java.io.Serial;
 import java.io.Serializable;
 
 /**
- * 技能，包含威力、命中率、PP 等基础数据。
+ * 技能，包含威力、命中率、PP 等基础数据，以及命中后可能施加的异常状态。
  */
 public class Move implements Serializable {
 
@@ -19,9 +19,25 @@ public class Move implements Serializable {
     private final int accuracy;
     private final int maxPp;
     private final int priority;
+    /** 命中后可能施加的异常状态名（无则为空串），如 POISON/PARALYSIS。 */
+    private final String inflicts;
+    /** 异常状态触发概率百分比（0~100）。 */
+    private final int inflictionChance;
 
     public Move(String id, String name, ElementType type, MoveCategory category,
                 int power, int accuracy, int maxPp, int priority) {
+        this(id, name, type, category, power, accuracy, maxPp, priority, "", 0);
+    }
+
+    /**
+     * 完整构造（含异常状态）。
+     *
+     * @param inflicts        命中后可能施加的异常状态名（如 POISON；无则为空串或 null）
+     * @param inflictionChance 触发概率百分比 0~100
+     */
+    public Move(String id, String name, ElementType type, MoveCategory category,
+                int power, int accuracy, int maxPp, int priority,
+                String inflicts, int inflictionChance) {
         this.id = id;
         this.name = name;
         this.type = type;
@@ -30,6 +46,8 @@ public class Move implements Serializable {
         this.accuracy = accuracy;
         this.maxPp = maxPp;
         this.priority = priority;
+        this.inflicts = inflicts == null ? "" : inflicts.trim();
+        this.inflictionChance = Math.max(0, Math.min(100, inflictionChance));
     }
 
     public String getId() {
@@ -62,6 +80,16 @@ public class Move implements Serializable {
 
     public int getPriority() {
         return priority;
+    }
+
+    /** 命中后可能施加的异常状态名（无则为空串）。 */
+    public String getInflicts() {
+        return inflicts;
+    }
+
+    /** 异常状态触发概率百分比（0~100）。 */
+    public int getInflictionChance() {
+        return inflictionChance;
     }
 
     /**
