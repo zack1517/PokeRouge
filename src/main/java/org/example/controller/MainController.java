@@ -10,6 +10,8 @@ import org.example.battle.BattleDataPort;
 import org.example.battle.BattleService;
 import org.example.battle.BattleServices;
 import org.example.config.AppConfig;
+import org.example.data.GameData;
+import org.example.model.HeldItem;
 import org.example.model.Option;
 import org.example.model.Player;
 import org.example.model.Pokemon;
@@ -20,6 +22,7 @@ import org.example.util.MusicPlayer;
 import org.example.view.CustomBattleSetupView;
 import org.example.view.CustomBattleView;
 import org.example.view.MainView;
+import org.example.view.PokemonDetailView;
 import org.example.view.RogueFloorView;
 import org.example.view.StarterSelectionView;
 import org.example.view.StartView;
@@ -166,8 +169,19 @@ public class MainController {
                     showMainMenu();
                 }
             }
+
+            @Override
+            public void onShowPokemonDetail(int index) {
+                showPokemonDetail(index);
+            }
         }, session.mapBackgroundPath(), session.getSegment());
         stage.setScene(view.createScene());
+    }
+
+    /** 精灵详情页：由主菜单点击精灵名进入；左列表切换精灵、右侧属性/技能/装备（穿戴立即生效）；「返回」重建主菜单。 */
+    public void showPokemonDetail(int initialIndex) {
+        stage.setScene(new PokemonDetailView(player, initialIndex, session.mapBackgroundPath(), this::showMainMenu)
+                .createScene());
     }
 
     // ------------------------------------------------------------------
@@ -217,7 +231,27 @@ public class MainController {
                 session.resolveRogueOptionEffect(option);
                 afterRogueStep();
             }
+            case REWARD -> {
+                resolveRogueEquipmentReward();
+                afterRogueStep();
+            }
         }
+    }
+
+    /** REWARD 事件：随机装备入库（已拥有则落空提示）。 */
+    private void resolveRogueEquipmentReward() {
+        List<HeldItem> pool = GameData.instance().allEquipment();
+        if (pool.isEmpty()) {
+            infoAlert("装备补给", "装备数据缺失，本次补给落空。");
+            return;
+        }
+        HeldItem reward = pool.get((int) (Math.random() * pool.size()));
+        if (!player.addEquipment(reward)) {
+            infoAlert("装备补给", "你已经拥有【" + reward.getName() + "】了，补给落空。");
+            return;
+        }
+        infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription()
+                + "\n可在主菜单点击精灵名，在详情页中穿戴。");
     }
 
     /** 一次楼层事件（含战斗）结束后的统一推进：已结束→主菜单；点数耗尽→BOSS；否则重绘。 */

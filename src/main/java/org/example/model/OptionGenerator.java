@@ -21,6 +21,7 @@ public class OptionGenerator {
         candidates.add(new Option("训练家挑战", OptionType.ENEMY, 3, "挑战训练家，立即进入训练家对战。"));
         candidates.add(new Option("神秘礼物", OptionType.RANDOM, 2 + floor, "获得宝贵经验值奖励，提升队伍成长。"));
         candidates.add(new Option("临时急救站", OptionType.HOSPITAL, 2 + floor, "恢复全队精灵HP，并重整作战状态。"));
+        candidates.add(new Option("装备补给", OptionType.REWARD, 2 + floor, "随机获得一件可携带装备，可穿戴给精灵。"));
         Collections.shuffle(candidates, random);
         return new ArrayList<>(candidates.subList(0, 4));
     }

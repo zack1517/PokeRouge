@@ -2,6 +2,7 @@ package org.example.view;
 
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -36,6 +37,9 @@ public class MainView {
         void onSetActive(int index);
 
         void onExit();
+
+        /** 打开 index 对应精灵的详情页（立绘/属性/技能/装备；装备穿脱后返回主菜单自动同步）。 */
+        void onShowPokemonDetail(int index);
     }
 
     private static final String YH = "-fx-font-family: 'Microsoft YaHei'; ";
@@ -149,7 +153,11 @@ public class MainView {
                 leadMark, p.getName(), p.getLevel(), typeText(p), hpText, expText));
         info.setWrapText(true);
         info.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-text-fill: #000;"
-                + (p.isFainted() ? " -fx-text-fill: #aa2222;" : ""));
+                + (p.isFainted() ? " -fx-text-fill: #aa2222;" : "")
+                + " -fx-underline: true;");
+        // 点击精灵名进入详情页（可切换查看队伍精灵、穿戴装备）
+        info.setCursor(Cursor.HAND);
+        info.setOnMouseClicked(e -> actions.onShowPokemonDetail(index));
 
         Button lead = new Button("设为先发");
         lead.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 12px;");

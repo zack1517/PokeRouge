@@ -1,6 +1,8 @@
 package org.example.battle;
 
 import org.example.model.ElementType;
+import org.example.model.HeldItem;
+import org.example.model.HeldItemEffect;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
 import org.example.model.Move;
@@ -332,14 +334,34 @@ public class BattleEngine implements BattleService {
         return slice(mark);
     }
 
-    /** 本回合先后手：按计入异常状态后的实际速度比较；速度相同则随机。 */
+    /** 本回合先后手：先制之爪概率触发；未分胜负时按计入异常状态后的实际速度比较；速度相同则随机。 */
     private boolean firstMover(Pokemon playerPokemon, Pokemon foe) {
         if (foe == null) {
             return true;
         }
+        boolean playerClaw = quickClawTriggers(playerPokemon);
+        boolean foeClaw = quickClawTriggers(foe);
+        if (playerClaw != foeClaw) {
+            // 仅一方触发先制之爪：无视速度先手
+            if (playerClaw) {
+                append(playerPokemon.getName() + " 的先制之爪抢先行动！");
+                return true;
+            }
+            append(foe.getName() + " 的先制之爪抢先行动！");
+            return false;
+        }
         int playerSpeed = playerPokemon.effectiveSpeed();
         int foeSpeed = foe.effectiveSpeed();
         return playerSpeed > foeSpeed || (playerSpeed == foeSpeed && random.nextBoolean());
+    }
+
+    /** 先制之爪判定：携带者按概率触发（0 概率视为不触发）；双方同时触发时回退到速度判定。 */
+    private boolean quickClawTriggers(Pokemon p) {
+        if (p == null || p.getHeldItem() == null
+                || p.getHeldItem().getEffectType() != HeldItemEffect.FIRST_STRIKE) {
+            return false;
+        }
+        return random.nextInt(100) < p.getHeldItem().chanceParam();
     }
 
     /** 玩家执行行动：未通过异常状态判定则不消耗 PP，通过后才播报并使用技能。 */
@@ -736,6 +758,7 @@ public class BattleEngine implements BattleService {
         int dealt = defender.takeDamage(damage);
         events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
                 move.getCategory()));
+        applyLifeSteal(attacker, dealt);
         StringBuilder sb = new StringBuilder();
         sb.append("造成 ").append(dealt).append(" 点伤害");
         if (effectiveness > 1.0) {
@@ -762,6 +785,12 @@ public class BattleEngine implements BattleService {
             atk = attacker.getStats().getSpAttack();
             def = defender.getStats().getSpDefense();
         }
+        // 进化辉石：未最终进化（仍有进化目标）的携带者双防提升
+        if (defender.getHeldItem() != null
+                && defender.getHeldItem().getEffectType() == HeldItemEffect.EVOLITE
+                && defender.getSpecies().getEvolvesToId() != null) {
+            def *= defender.getHeldItem().doubleParam();
+        }
         int level = attacker.getLevel();
         double base = (2.0 * level / 5.0 + 2.0) * move.getPower()
                 * (atk / Math.max(1.0, def)) / 50.0 + 2.0;
@@ -770,9 +799,28 @@ public class BattleEngine implements BattleService {
         // 天气与场地对招式威力的加成
         double field = weather.moveTypeMultiplier(move.getType())
                 * terrain.moveTypeMultiplier(move.getType());
+        // 携带装备加成：属性强化道具（木炭等）与达人带（效果拔群增伤）
+        double equipment = heldItemDamageMultiplier(attacker, move, effectiveness);
         double randomFactor = 0.85 + random.nextDouble() * 0.15;
-        int raw = (int) Math.floor(base * stab * effectiveness * field * randomFactor);
+        int raw = (int) Math.floor(base * stab * effectiveness * field * equipment * randomFactor);
         return Math.max(1, raw);
+    }
+
+    /** 攻击方携带装备的伤害倍率：DAMAGE_TYPE 属性匹配时生效；SUPER_EFFECTIVE 仅在克制时生效。 */
+    private static double heldItemDamageMultiplier(Pokemon attacker, Move move, double effectiveness) {
+        HeldItem item = attacker.getHeldItem();
+        if (item == null) {
+            return 1.0;
+        }
+        return switch (item.getEffectType()) {
+            case DAMAGE_TYPE -> {
+                String typeName = item.typeParam();
+                yield typeName != null && ElementType.parse(typeName) == move.getType()
+                        ? item.doubleParam() : 1.0;
+            }
+            case SUPER_EFFECTIVE -> effectiveness > 1.0 ? item.doubleParam() : 1.0;
+            default -> 1.0;
+        };
     }
 
     private boolean tryCapture(Item ball) {
@@ -874,7 +922,7 @@ public class BattleEngine implements BattleService {
         }
     }
 
-    /** 回合末天气/场地效果：沙暴/冰雹对双方扣血，青草场地对双方回复；随后结算异常状态。 */
+    /** 回合末天气/场地效果：沙暴/冰雹对双方扣血，青草场地对双方回复；随后结算携带装备与异常状态。 */
     private void applyFieldEndEffects(Pokemon pa) {
         Pokemon foe = foeActive();
         weatherChip(pa);
@@ -883,8 +931,34 @@ public class BattleEngine implements BattleService {
             grassyHeal(pa);
             grassyHeal(foe);
         }
+        leftoversHeal(pa);
+        leftoversHeal(foe);
         statusEndTurn(pa);
         statusEndTurn(foe);
+    }
+
+    /** 剩饭（END_TURN_HEAL）回合末回血：按最大 HP 比例回复，已倒下不结算。 */
+    private void leftoversHeal(Pokemon p) {
+        if (p == null || p.isFainted() || p.getHeldItem() == null
+                || p.getHeldItem().getEffectType() != HeldItemEffect.END_TURN_HEAL) {
+            return;
+        }
+        int healed = p.heal(Math.max(1, (int) (p.getMaxHp() * p.getHeldItem().doubleParam())));
+        if (healed > 0) {
+            append(p.getName() + " 的" + p.getHeldItem().getName() + " 恢复了 " + healed + " HP！");
+        }
+    }
+
+    /** 贝壳之铃（LIFE_STEAL）吸血：攻击造成伤害后按比例回复自身 HP。 */
+    private void applyLifeSteal(Pokemon attacker, int dealt) {
+        if (dealt <= 0 || attacker == null || attacker.isFainted() || attacker.getHeldItem() == null
+                || attacker.getHeldItem().getEffectType() != HeldItemEffect.LIFE_STEAL) {
+            return;
+        }
+        int healed = attacker.heal(Math.max(1, (int) (dealt * attacker.getHeldItem().doubleParam())));
+        if (healed > 0) {
+            append(attacker.getName() + " 用" + attacker.getHeldItem().getName() + " 恢复了 " + healed + " HP！");
+        }
     }
 
     /**

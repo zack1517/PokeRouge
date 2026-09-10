@@ -40,6 +40,13 @@ public class Pokemon {
     private int confusionTurns;
     /** 当前等级内累积的经验（跨级归零后进入下一级）。 */
     private long exp;
+    /**
+     * 携带装备（未穿戴为 {@code null}）。
+     * <p>装备不是战斗引擎的数据：由 UI/奖励流程从外部设置（{@link #setHeldItem}），
+     * 引擎只读取（{@link #getHeldItem}）并按 {@link HeldItemEffect} 应用效果；
+     * 同一件装备同时只能被一只精灵持有，穿戴唯一性由 {@link Player#equip} 保证。</p>
+     */
+    private HeldItem heldItem;
 
     private Pokemon(Species species, int level, Stats stats, int maxHp, List<MoveSlot> slots) {
         this.uuid = UUID.randomUUID().toString();
@@ -249,6 +256,16 @@ public class Pokemon {
 
     public long getExp() {
         return exp;
+    }
+
+    /** 当前携带的装备（未穿戴为 {@code null}）。 */
+    public HeldItem getHeldItem() {
+        return heldItem;
+    }
+
+    /** 设置携带装备（{@code null} 表示脱下）。装备数据由外部注入，本方法不做唯一性校验。 */
+    public void setHeldItem(HeldItem item) {
+        this.heldItem = item;
     }
 
     /** 从当前等级升到下一级所需经验（满级为 0）。 */

@@ -1,6 +1,8 @@
 package org.example.data;
 
 import org.example.model.ElementType;
+import org.example.model.HeldItem;
+import org.example.model.HeldItemEffect;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
 import org.example.model.Move;
@@ -57,6 +59,8 @@ public final class GameData {
     private final Map<String, Species> speciesMap = new LinkedHashMap<>();
     /** 道具 id -> 道具。 */
     private final Map<String, Item> itemMap = new LinkedHashMap<>();
+    /** 装备 id -> 可携带装备。 */
+    private final Map<String, HeldItem> equipmentMap = new LinkedHashMap<>();
     /** 可随机遭遇的野生精灵物种 id。 */
     private final List<String> wildPool = new ArrayList<>();
 
@@ -96,6 +100,16 @@ public final class GameData {
 
     public Item item(String id) {
         return itemMap.get(id);
+    }
+
+    /** 按 id 查询可携带装备（未注册返回 {@code null}）。 */
+    public HeldItem equipment(String id) {
+        return equipmentMap.get(id);
+    }
+
+    /** 全部可携带装备（不可变快照，肉鸽 REWARD 事件随机抽取用）。 */
+    public List<HeldItem> allEquipment() {
+        return List.copyOf(equipmentMap.values());
     }
 
     /** 内建全部精灵种族（不可变快照）。 */
@@ -165,6 +179,7 @@ public final class GameData {
         registerBuiltinMoves();
         registerBuiltinSpecies();
         registerBuiltinItems();
+        registerBuiltinEquipment();
     }
 
     private void registerBuiltinMoves() {
@@ -363,6 +378,21 @@ public final class GameData {
         itemMap.put(id, Item.cureItem(id, name, curesSpec));
     }
 
+    private void registerBuiltinEquipment() {
+        putEquipment("e_charcoal", "木炭", HeldItemEffect.DAMAGE_TYPE, "FIRE|1.2", "火属性招式威力提升 20%");
+        putEquipment("e_mystic_water", "神秘水滴", HeldItemEffect.DAMAGE_TYPE, "WATER|1.2", "水属性招式威力提升 20%");
+        putEquipment("e_magnet", "磁铁", HeldItemEffect.DAMAGE_TYPE, "ELECTRIC|1.2", "电属性招式威力提升 20%");
+        putEquipment("e_expert_belt", "达人带", HeldItemEffect.SUPER_EFFECTIVE, "1.2", "效果拔群时伤害提升 20%");
+        putEquipment("e_leftovers", "剩饭", HeldItemEffect.END_TURN_HEAL, "0.0625", "每回合末回复最大 HP 的 1/16");
+        putEquipment("e_shell_bell", "贝壳之铃", HeldItemEffect.LIFE_STEAL, "0.125", "攻击造成伤害的 1/8 回复自身 HP");
+        putEquipment("e_quick_claw", "先制之爪", HeldItemEffect.FIRST_STRIKE, "20", "20% 概率无视速度先手出招");
+        putEquipment("e_eviolite", "进化辉石", HeldItemEffect.EVOLITE, "1.5", "未最终进化时防御与特防提升 50%");
+    }
+
+    private void putEquipment(String id, String name, HeldItemEffect effectType, String param, String description) {
+        equipmentMap.put(id, new HeldItem(id, name, effectType, param, description));
+    }
+
     // ------------------------------------------------------------------
     // CSV 外部数据覆盖加载
     // ------------------------------------------------------------------
@@ -371,6 +401,7 @@ public final class GameData {
         loadCsv("/data/moves.csv", this::applyMoveRow);
         loadCsv("/data/species.csv", this::applySpeciesRow);
         loadCsv("/data/items.csv", this::applyItemRow);
+        loadCsv("/data/equipment.csv", this::applyEquipmentRow);
     }
 
     private void loadCsv(String resource, Consumer<String> rowConsumer) {
@@ -486,6 +517,21 @@ public final class GameData {
         String curesSpec = c.length > 5 ? c[5].trim() : "";
         String id = c[0].trim();
         itemMap.put(id, new Item(id, c[1].trim(), category, effect, alwaysCatch, curesSpec));
+    }
+
+    private void applyEquipmentRow(String line) {
+        String[] c = line.split(",", -1);
+        if (c.length < 5) {
+            return;
+        }
+        HeldItemEffect effectType;
+        try {
+            effectType = HeldItemEffect.valueOf(c[2].trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return; // 未知效果类型：跳过该行
+        }
+        String id = c[0].trim();
+        equipmentMap.put(id, new HeldItem(id, c[1].trim(), effectType, c[3].trim(), c[4].trim()));
     }
 
     private static int parseInt(String s) {

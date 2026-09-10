@@ -15,6 +15,8 @@ public class Player {
     private final String name;
     private final Bag bag = new Bag();
     private final List<Pokemon> party = new ArrayList<>();
+    /** 装备库：玩家拥有的全部可携带装备（含已穿戴的；一件装备全库唯一）。 */
+    private final List<HeldItem> equipment = new ArrayList<>();
     private int activeIndex = 0;
 
     public Player(String name) {
@@ -27,6 +29,52 @@ public class Player {
 
     public Bag getBag() {
         return bag;
+    }
+
+    /** 装备库（不可变快照，含已穿戴的装备）。 */
+    public List<HeldItem> getEquipment() {
+        return Collections.unmodifiableList(equipment);
+    }
+
+    /**
+     * 装备入库（去重）。
+     *
+     * @return 是否新增（已拥有返回 {@code false}）
+     */
+    public boolean addEquipment(HeldItem item) {
+        if (item == null || equipment.contains(item)) {
+            return false;
+        }
+        equipment.add(item);
+        return true;
+    }
+
+    /**
+     * 把装备穿到指定精灵身上：先自动从其他精灵脱下（保证全队唯一穿戴），再设置给目标。
+     *
+     * @param target 目标精灵（可为已倒下精灵，装备在局内仍生效）
+     * @return 是否穿戴成功（装备必须在装备库中）
+     */
+    public boolean equip(Pokemon target, HeldItem item) {
+        if (target == null || item == null || !equipment.contains(item)) {
+            return false;
+        }
+        for (Pokemon p : party) {
+            if (p.getHeldItem() == item) {
+                p.setHeldItem(null);
+            }
+        }
+        target.setHeldItem(item);
+        return true;
+    }
+
+    /** 从指定精灵脱下装备（装备仍在装备库中，可穿给其他精灵）。 */
+    public boolean unequip(Pokemon target) {
+        if (target == null || target.getHeldItem() == null) {
+            return false;
+        }
+        target.setHeldItem(null);
+        return true;
     }
 
     public List<Pokemon> getParty() {
