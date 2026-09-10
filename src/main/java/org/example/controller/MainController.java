@@ -206,6 +206,8 @@ public class MainController {
         boolean inProgress = data.getCurrentFloor() > 0 && !data.isGameOver() && data.getCurrentPoints() > 0;
         if (!inProgress) {
             session.startRogueRun(); // 新开一轮：从第 1 层起，队伍快照进 RogueTurnManager
+        } else {
+            session.syncRogueTeam(); // 继续当前轮：把中途新入队的精灵同步进快照
         }
         showRogueFloorScene();
     }

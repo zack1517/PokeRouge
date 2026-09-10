@@ -293,9 +293,9 @@ public final class GameData {
     private void registerBuiltinItems() {
         putItem("i_potion", "伤药", ItemCategory.HEAL, 20);
         putItem("i_super_potion", "好伤药", ItemCategory.HEAL, 50);
-        putItem("i_poke_ball", "精灵球", ItemCategory.POKE_BALL, 1);
-        putItem("i_great_ball", "超级球", ItemCategory.POKE_BALL, 1.5);
-        putItem("i_ultra_ball", "高级球", ItemCategory.POKE_BALL, 2);
+        putItem("i_poke_ball", "精灵球", ItemCategory.POKE_BALL, 3);
+        putItem("i_great_ball", "超级球", ItemCategory.POKE_BALL, 5);
+        putItem("i_ultra_ball", "高级球", ItemCategory.POKE_BALL, 8);
         putItem("i_master_ball", "大师球", ItemCategory.POKE_BALL, 255, true);
 
         // ---- 异常状态解除道具：分别对应单种异常与全部主要异常（解毒药同时解除中毒与剧毒） ----

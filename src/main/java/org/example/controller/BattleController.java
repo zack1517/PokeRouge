@@ -1,6 +1,7 @@
 package org.example.controller;
 
 import javafx.scene.Scene;
+import org.example.battle.BattleEvent;
 import org.example.battle.BattleService;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
@@ -32,6 +33,8 @@ public class BattleController implements BattleView.Actions {
     private final Runnable onExit;
     private final int segment; // 当前地图段号（流程系统接入前由会话持有，仅用于右上角段文案）
     private final BattleView view = new BattleView(this);
+    /** 演出进行中标志：动画未播完前丢弃一切行动输入，避免结算与画面错位。 */
+    private boolean playing;
 
     /** @param engine 已就绪的战斗服务实例（玩家与敌方当前出战精灵均已非倒下，通常来自
      *                {@link org.example.battle.BattleServices#newBattle} 或
@@ -47,7 +50,16 @@ public class BattleController implements BattleView.Actions {
     public Scene createScene() {
         view.setHud("第 " + segment + " 段 · " + encounterLabel(), 500); // 金币为桩值（流程系统接入后替换，TODO(dev)）
         Scene scene = view.createScene();
-        render(); // 首屏：填充双方面板/日志并展示行动按钮
+        render(); // 首屏：先填充双方面板/日志与行动区，入场动画在其上播放
+        // 开场事件（BATTLE_START）由引擎构造时压入队列；缺失时也直接播一次进场，保证观感一致
+        List<BattleEvent> opening = engine.drainEvents();
+        view.setInputLocked(true);
+        playing = true;
+        if (opening.isEmpty()) {
+            view.playEntrance(this::onPerformanceDone);
+        } else {
+            view.playEvents(opening, this::onPerformanceDone);
+        }
         return scene;
     }
 
@@ -57,12 +69,18 @@ public class BattleController implements BattleView.Actions {
 
     @Override
     public void onMoveSelected(MoveSlot slot) {
+        if (playing) {
+            return;
+        }
         engine.useMove(slot);
-        render();
+        playEventsThenRender();
     }
 
     @Override
     public void onItemSelected(int stackIndex) {
+        if (playing) {
+            return;
+        }
         List<ItemStack> stacks = engine.getBag().availableStacks();
         if (stackIndex < 0 || stackIndex >= stacks.size()) {
             render();
@@ -71,7 +89,7 @@ public class BattleController implements BattleView.Actions {
         Item item = stacks.get(stackIndex).getItem();
         if (item.getCategory() == ItemCategory.POKE_BALL) {
             engine.useItem(item); // 精灵球始终投向敌方野生精灵，与队伍目标无关
-            render();
+            playEventsThenRender();
             return;
         }
         showTargetMenu(item);
@@ -85,7 +103,7 @@ public class BattleController implements BattleView.Actions {
                 idx -> canTarget(item, party.get(idx)),
                 idx -> {
                     engine.useItem(item, idx);
-                    render();
+                    playEventsThenRender();
                 },
                 this::showBagMenu,
                 "选择使用【" + item.getName() + "】的目标");
@@ -105,19 +123,52 @@ public class BattleController implements BattleView.Actions {
 
     @Override
     public void onSwitchSelected(int partyIndex) {
+        if (playing) {
+            return;
+        }
         engine.switchActive(partyIndex);
-        render();
+        playEventsThenRender();
     }
 
     @Override
     public void onRun() {
+        if (playing) {
+            return;
+        }
         engine.tryRun();
-        render();
+        playEventsThenRender();
     }
 
     @Override
     public void onExit() {
         onExit.run();
+    }
+
+    // ------------------------------------------------------------------
+    // 演出编排
+    // ------------------------------------------------------------------
+
+    /**
+     * 播放上一条行动结算产生的演出事件，全部播完后 {@link #render()}。
+     *
+     * <p>日志与天气/场地行在动画<b>开始前</b>刷新，让本回合文本与演出同步可见；精灵立绘、HP 条等
+     * 改由演出结束后的 {@code render()} 统一刷新 —— 这样「伤害数字/HP 条在受击后才变化」，
+     * 且倒下与放出动画不会因为引擎已自动换宠而作用到新精灵身上（事件自带精灵名，动画按名切图）。</p>
+     */
+    private void playEventsThenRender() {
+        List<BattleEvent> events = engine.drainEvents();
+        view.showLog(engine.getLog());
+        view.refreshFieldStatus(engine.getWeather(), engine.getTerrain());
+        playing = true;
+        view.setInputLocked(true);
+        view.playEvents(events, this::onPerformanceDone);
+    }
+
+    /** 演出收尾：解锁输入并刷新界面（行动区按战斗状态回到主菜单/学招/结局）。 */
+    private void onPerformanceDone() {
+        playing = false;
+        view.setInputLocked(false);
+        render();
     }
 
     // ------------------------------------------------------------------
