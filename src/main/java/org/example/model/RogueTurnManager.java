@@ -103,7 +103,8 @@ public class RogueTurnManager {
         if (runData.getAvailableOptions() == null || chosen == null) {
             return;
         }
-        if (chosen.getType() != OptionType.RANDOM && chosen.getType() != OptionType.HOSPITAL) {
+        if (chosen.getType() != OptionType.RANDOM && chosen.getType() != OptionType.HOSPITAL
+                && chosen.getType() != OptionType.REWARD) {
             return;
         }
         int index = runData.getAvailableOptions().indexOf(chosen);
@@ -130,6 +131,7 @@ public class RogueTurnManager {
             case ENEMY -> resolveEnemyEvent();
             case HOSPITAL -> resolveHospitalEvent();
             case RANDOM -> resolveRandomEvent();
+            case REWARD -> System.out.println("装备补给事件：真实结算由控制器执行（随机装备入库）。");
             default -> System.out.println("未知事件：" + option.getName());
         }
     }

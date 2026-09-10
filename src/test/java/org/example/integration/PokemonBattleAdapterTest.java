@@ -78,7 +78,7 @@ class PokemonBattleAdapterTest {
         assertEquals(Math.min(Pokemon.MAX_MOVES, (int) eligible), battlePokemon.getMoves().size());
     }
 
-    /** 野生精灵应能在新系统图鉴中回查、等级在目标值 ±2 内且满足 BST 等级门槛、技能转换有效。 */
+    /** 野生精灵应能在新系统图鉴中回查、等级在目标值 ±2 内且满足 BST 等级门槛（5 级遭遇仅出 BST ≤ 350 的基础形态）、技能转换有效。 */
     @Test
     void testCreateWildPokemon_levelWithinOffsetAndMovesValid() {
         Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(5);
