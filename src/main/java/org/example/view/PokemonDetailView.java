@@ -55,6 +55,16 @@ public final class PokemonDetailView {
     /** 小按钮统一样式。 */
     private static final String SMALL_BUTTON_STYLE = YH + "-fx-font-size: 11px;";
 
+    /** 「换下」按钮质感样式：红底纵向渐变 + 深色描边 + 轻微投影（悬停变亮、阴影加深）。 */
+    private static final String SWAP_BUTTON_STYLE = YH + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: white;"
+            + " -fx-background-color: linear-gradient(to bottom, #e8746a, #c0392b);"
+            + " -fx-background-radius: 6; -fx-border-color: #8e2a1f; -fx-border-width: 1; -fx-border-radius: 6;"
+            + " -fx-padding: 2 10; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 4, 0.3, 0, 2);";
+    private static final String SWAP_BUTTON_HOVER = YH + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: white;"
+            + " -fx-background-color: linear-gradient(to bottom, #f0837a, #d04a3c);"
+            + " -fx-background-radius: 6; -fx-border-color: #8e2a1f; -fx-border-width: 1; -fx-border-radius: 6;"
+            + " -fx-padding: 2 10; -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.45), 6, 0.3, 0, 2);";
+
     private final Player player;
     private final int initialIndex;
     private final String mapBackground;
@@ -67,6 +77,8 @@ public final class PokemonDetailView {
     private HBox chipsRow;
     /** 右侧滚动内容容器（切换精灵时整体重建）。 */
     private VBox detailBox;
+    /** 待换上的技能（非 null 时处于「选择要换下的槽位」状态，出战技能行临时显示「换下」按钮）。 */
+    private org.example.model.Move pendingSwapMove;
 
     public PokemonDetailView(Player player, int initialIndex, String mapBackground, Runnable onBack) {
         this.player = player;
@@ -85,6 +97,7 @@ public final class PokemonDetailView {
 
         // 默认选中进入时点击的精灵；之后点击左侧列表即切换展示
         partyList.getSelectionModel().selectedItemProperty().addListener((o, old, selected) -> {
+            pendingSwapMove = null; // 切换精灵时退出换技能状态
             if (selected != null) {
                 renderDetail(selected);
             }
@@ -306,21 +319,100 @@ public final class PokemonDetailView {
         return card;
     }
 
-    /** 技能卡：每招一行（属性徽章 / 名称 / 分类威力命中 / PP）。 */
+    /** 技能卡：出战 4 槽 + 技能库（库中未出战的技能可一键换上 / 替换出战槽）。 */
     private VBox buildMovesCard(Pokemon pokemon) {
         VBox card = new VBox(6);
         card.setStyle(CARD_STYLE);
-        card.getChildren().add(cardTitle("技能"));
+        card.getChildren().add(cardTitle("出战技能（" + pokemon.getMoveSlots().size() + "/4）"));
+        if (pendingSwapMove != null) {
+            Label hint = new Label("即将换上【" + pendingSwapMove.getName()
+                    + "】，点击某个出战技能右侧的「换下」完成互换（或在技能库点「取消」）。");
+            hint.setWrapText(true);
+            hint.setMaxWidth(Double.MAX_VALUE);
+            hint.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #b35900;"
+                    + " -fx-background-color: rgba(255, 196, 108, 0.35); -fx-background-radius: 6; -fx-padding: 3 6;");
+            card.getChildren().add(hint);
+        }
         if (pokemon.getMoveSlots().isEmpty()) {
-            Label none = new Label("尚未学会任何技能。");
+            Label none = new Label("尚未携带任何出战技能。");
             none.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #888;");
             card.getChildren().add(none);
-            return card;
+        } else {
+            for (int i = 0; i < pokemon.getMoveSlots().size(); i++) {
+                MoveSlot slot = pokemon.getMoveSlots().get(i);
+                final int slotIndex = i;
+                Runnable onSwap = pendingSwapMove == null ? null : () -> swapWithPool(pokemon, slotIndex);
+                card.getChildren().add(moveRow(slot, onSwap));
+            }
         }
-        for (MoveSlot slot : pokemon.getMoveSlots()) {
-            card.getChildren().add(moveRow(slot));
+        card.getChildren().add(sectionDivider());
+        Label poolTitle = cardTitle("技能库（" + pokemon.getKnownMoves().size() + "）");
+        // 浅灰底横幅：与上方分隔线共同强化「技能库」分区边界
+        poolTitle.setStyle(YH + "-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #333;"
+                + " -fx-background-color: rgba(0, 0, 0, 0.07); -fx-background-radius: 6; -fx-padding: 2 8;");
+        card.getChildren().add(poolTitle);
+        for (org.example.model.Move known : pokemon.getKnownMoves()) {
+            card.getChildren().add(poolRow(pokemon, known));
         }
         return card;
+    }
+
+    /** 技能库单行：已出战标注「出战中」；未出战提供「换上」按钮。 */
+    private HBox poolRow(Pokemon pokemon, org.example.model.Move move) {
+        Label info = new Label(move.getName()
+                + " · " + move.getType().getDisplayName()
+                + " · 威力 " + (move.getPower() <= 0 ? "--" : move.getPower()));
+        info.setWrapText(true);
+        info.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(info, Priority.ALWAYS);
+        info.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
+
+        Button action = new Button();
+        action.setStyle(SMALL_BUTTON_STYLE);
+        if (pokemon.hasMove(move)) {
+            action.setText("出战中");
+            action.setDisable(true);
+        } else if (move == pendingSwapMove) {
+            action.setText("取消");
+            action.setOnAction(e -> {
+                pendingSwapMove = null;
+                renderDetail(pokemon);
+            });
+        } else {
+            action.setText("换上");
+            action.setOnAction(e -> equipFromPool(pokemon, move));
+        }
+        HBox row = new HBox(8, info, action);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    /**
+     * 把技能库中的技能装上出战槽：有空槽直接携带；满 4 招时进入「选择要换下的槽位」状态，
+     * 出战技能行临时出现「换下」按钮，点击即与该技能互换（不弹窗）。
+     */
+    private void equipFromPool(Pokemon pokemon, org.example.model.Move move) {
+        if (pokemon.hasMove(move)) {
+            return;
+        }
+        if (!pokemon.moveSlotsFull()) {
+            pokemon.learnMove(move);
+            pendingSwapMove = null;
+            renderDetail(pokemon);
+            return;
+        }
+        pendingSwapMove = move;
+        renderDetail(pokemon);
+    }
+
+    /** 用待换技能替换指定出战槽：被换下的技能仍保留在技能库中，之后可再换回。 */
+    private void swapWithPool(Pokemon pokemon, int slotIndex) {
+        if (pendingSwapMove == null) {
+            return;
+        }
+        pokemon.swapBattleMove(slotIndex, pendingSwapMove);
+        pendingSwapMove = null;
+        renderDetail(pokemon);
     }
 
     /** 装备卡：当前装备 + 玩家装备库（穿戴 / 换过来 / 脱下，立即生效）。 */
@@ -424,8 +516,11 @@ public final class PokemonDetailView {
         return row;
     }
 
-    /** 技能单行：名称 + PP（第一行），属性徽章 + 分类/威力/命中（第二行）。 */
-    private static VBox moveRow(MoveSlot slot) {
+    /**
+     * 技能单行：名称 + PP（第一行），属性徽章 + 分类/威力/命中（第二行）。
+     * {@code onSwap} 非 null 时，第二行（技能描述行）右侧出现「换下」按钮（仅换技能状态临时显示）。
+     */
+    private static VBox moveRow(MoveSlot slot, Runnable onSwap) {
         Label name = new Label(slot.getMove().getName());
         name.setStyle(YH + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #222;");
         Region spacer = new Region();
@@ -445,6 +540,17 @@ public final class PokemonDetailView {
         detail.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #666;");
         HBox line2 = new HBox(6, chip(slot.getMove().getType().getDisplayName(),
                 slot.getMove().getType().getColorCode()), detail);
+        if (onSwap != null) {
+            Region push = new Region();
+            HBox.setHgrow(push, Priority.ALWAYS); // 弹性占位：把「换下」按钮推到行最右端
+            line2.getChildren().add(push);
+            Button swap = new Button("换下");
+            swap.setStyle(SWAP_BUTTON_STYLE);
+            swap.setOnMouseEntered(e -> swap.setStyle(SWAP_BUTTON_HOVER));
+            swap.setOnMouseExited(e -> swap.setStyle(SWAP_BUTTON_STYLE));
+            swap.setOnAction(e -> onSwap.run());
+            line2.getChildren().add(swap);
+        }
         line2.setAlignment(Pos.CENTER_LEFT);
         return new VBox(2, line1, line2);
     }
@@ -454,6 +560,22 @@ public final class PokemonDetailView {
         Label title = new Label(text);
         title.setStyle(YH + "-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #000;");
         return title;
+    }
+
+    /**
+     * 区域分隔线：出战技能与技能库之间的可视界限。
+     * 两端渐隐的加粗横线（2px），颜色明显深于卡片描边，视觉上把两个区域切开。
+     */
+    private static HBox sectionDivider() {
+        Region line = new Region();
+        line.setPrefHeight(2);
+        line.setMaxHeight(2);
+        line.setMinHeight(2);
+        line.setStyle("-fx-background-color: linear-gradient(to right, transparent, #8a8a8a 12%, #8a8a8a 88%, transparent);"
+                + " -fx-background-radius: 1;");
+        HBox box = new HBox(line);
+        box.setPadding(new Insets(2, 0, 2, 0));
+        return box;
     }
 
     /** 彩色徽章（属性 / 状态 / 先发标记）。 */

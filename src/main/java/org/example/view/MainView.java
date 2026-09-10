@@ -11,6 +11,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import org.example.util.ImageBackgrounds;
 import org.example.util.UiScale;
@@ -147,6 +148,8 @@ public class MainView {
                 + "-fx-border-color: #bbb; -fx-border-radius: 6; -fx-padding: 8; -fx-background-radius: 6;");
 
         HBox content = new HBox(16, left, right);
+        // 队伍栏占满除背包外的全部宽度，行内「设为先发」按钮才能被推到行最右侧
+        HBox.setHgrow(left, Priority.ALWAYS);
         content.setAlignment(Pos.TOP_CENTER);
 
         // 放入滚动区，队伍长时也能完整查看
@@ -193,7 +196,11 @@ public class MainView {
         int idx = index;
         lead.setOnAction(e -> actions.onSetActive(idx));
 
+        // 信息文本占满剩余空间，将「设为先发」按钮推到行最右侧
+        // （Label 的 maxWidth 默认限于内容宽度，会卡死 Hgrow 拉伸，必须放开）
         HBox row = new HBox(8, info, lead);
+        info.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(info, Priority.ALWAYS);
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
     }

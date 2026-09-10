@@ -90,6 +90,8 @@ public class BattleEngine implements BattleService {
     private int weatherTurnsLeft = 0;
     /** 当前场地剩余回合数（含开启当回合；0 表示无场地）。 */
     private int terrainTurnsLeft = 0;
+    /** 满队时挂起的已捕捉精灵（队伍已满暂未入队，待玩家放生腾位或放弃；非满队捕捉为 {@code null}）。 */
+    private Pokemon pendingCaptured;
 
     public BattleEngine(Player player, Pokemon wild) {
         this(player, wild, null, new Random(), BattleDataPorts.none(), BattleGrowthPort.none());
@@ -839,7 +841,6 @@ public class BattleEngine implements BattleService {
         }
         if (caught) {
             append("咔哒…… 球停止了晃动！");
-            append("成功捕捉了野生的 " + wild.getName() + "！");
             status = Status.CAUGHT;
             // 先给参战精灵结算捕捉奖励（1.5 倍击倒经验），再把新成员加入队伍：
             // 避免被捕捉的精灵自己给自己发经验
@@ -850,12 +851,59 @@ public class BattleEngine implements BattleService {
             pendingLearns.addAll(settlement.pendingLearns());
             // 被捕捉的精灵加入玩家队伍，后续可再次派出；统一走受保护的 addPokemon 入口以维护队伍容量。
             if (!player.getParty().contains(wild)) {
-                player.addPokemon(wild);
+                if (player.addPokemon(wild)) {
+                    append("成功捕捉了野生的 " + wild.getName() + "！它加入了你的队伍！");
+                } else {
+                    // 队伍已满：挂起待玩家放生腾位（见 capturedAwaitingRelease / releaseToMakeRoom）
+                    pendingCaptured = wild;
+                    append("成功捕捉了野生的 " + wild.getName() + "！");
+                    append("但你的队伍已满，需要放生一只队内精灵才能收下它！");
+                }
             }
             return true;
         }
         append("野生的 " + wild.getName() + " 挣脱了出来！");
         return false;
+    }
+
+    @Override
+    public Pokemon capturedAwaitingRelease() {
+        return pendingCaptured;
+    }
+
+    @Override
+    public boolean releaseToMakeRoom(int partyIndex) {
+        if (pendingCaptured == null) {
+            return false;
+        }
+        List<Pokemon> party = player.getParty();
+        if (partyIndex < 0 || partyIndex >= party.size()) {
+            return false;
+        }
+        Pokemon released = party.get(partyIndex);
+        HeldItem carried = released.getHeldItem();
+        if (carried != null) {
+            player.unequip(released); // 脱下即返还：装备仍在玩家装备库中
+        }
+        if (!player.removePokemon(released)) {
+            return false;
+        }
+        player.addPokemon(pendingCaptured);
+        append("你放生了 " + released.getName() + (carried != null
+                ? "！它携带的【" + carried.getName() + "】已返还装备库。" : "！"));
+        append(pendingCaptured.getName() + " 加入了你的队伍！");
+        pendingCaptured = null;
+        return true;
+    }
+
+    @Override
+    public boolean discardCaptured() {
+        if (pendingCaptured == null) {
+            return false;
+        }
+        append("你放走了野生的 " + pendingCaptured.getName() + "……");
+        pendingCaptured = null;
+        return true;
     }
 
     /**

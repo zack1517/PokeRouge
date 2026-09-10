@@ -17,7 +17,12 @@ import org.example.model.Stats;
  *
  * <p>战斗模块每击倒一只对手就把「参战且未倒下的己方精灵」与「刚被击败的那只对手」交给本模块
  * （见 {@link BattleGrowthPort}），由本模块决定经验数值、逐级升级、到级学招与进化，
- * 并把日志文本行与「技能栏已满」的挂起学招项返回。战斗模块本身不含任何成长规则。</p>
+ * 并把日志文本行返回。战斗模块本身不含任何成长规则。</p>
+ *
+ * <p><b>到级学招的取舍规则</b>：升级学到的新技能全部保留进精灵的<b>技能库</b>（无上限，不丢招）；
+ * 出战槽有空位时自动携带新招，已带满 4 招时新招只入技能库，玩家可稍后在宝可梦详情界面
+ * 自由更换出战技能（{@link Pokemon#swapBattleMove}）。因此本模块不再产生「技能满、待抉择」的
+ * 挂起项（{@code pendingLearns} 恒为空）。</p>
  *
  * <p><b>数据来源</b>：本模块不内建数据，技能与种族一律经 {@link BattleDataPort} 查询，
  * 与战斗模块共用同一份外部数据。未注入数据端口时，到级学招与进化降级为无操作，
@@ -155,6 +160,8 @@ public final class GrowthService implements BattleGrowthPort {
             return log;
         }
         if (forgetSlotIndex >= 0 && forgetSlotIndex < p.getMoveSlots().size()) {
+            // 新招先入技能库（永久保留），再替换出战槽；被换下的招仍留在库中可再换回
+            p.learnMoveToPool(move);
             Move forgotten = p.replaceMove(forgetSlotIndex, move);
             if (forgotten == null) {
                 log.add(p.getName() + " 想学习【" + move.getName() + "】，但没有可遗忘的槽位。");
@@ -191,7 +198,7 @@ public final class GrowthService implements BattleGrowthPort {
         }
     }
 
-    /** 等级达到习得表要求时尝试学会新技能：有空槽直接学会；4 招全满则挂起等待玩家抉择。 */
+    /** 等级达到习得表要求时尝试学会新技能：全部保留进技能库；出战槽有空位则自动携带。 */
     private void learnAt(Pokemon p, int level, List<String> log,
                          List<BattleService.LearnChoice> pending) {
         String moveId = p.getSpecies().moveLearnedAt(level);
@@ -199,15 +206,17 @@ public final class GrowthService implements BattleGrowthPort {
             return;
         }
         Move move = dataPort.findMove(moveId);
-        if (move == null || p.hasMove(move)) {
+        if (move == null || p.knowsMove(move.getId())) {
             return;
         }
-        if (p.moveSlotsFull()) {
-            pending.add(new BattleService.LearnChoice(p, move));
-            return;
+        boolean full = p.moveSlotsFull();
+        p.learnMoveToPool(move);
+        if (full) {
+            log.add(p.getName() + " 学会了【" + move.getName()
+                    + "】，已收入技能库（可在宝可梦详情界面更换出战技能）。");
+        } else {
+            log.add(p.getName() + " 记住了【" + move.getName() + "】！");
         }
-        p.learnMove(move);
-        log.add(p.getName() + " 记住了【" + move.getName() + "】！");
     }
 
     /** 达到进化等级时进化为目标形态（种族由数据端口提供；重新演算属性并回满状态）。 */

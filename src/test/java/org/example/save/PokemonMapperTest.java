@@ -1,6 +1,7 @@
 package org.example.save;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -80,6 +81,51 @@ class PokemonMapperTest {
                     restored.getMoveSlots().get(0).getMove().getId());
             assertEquals(1, restored.getMoveSlots().get(0).getPp(), "技能剩余 PP 必须原样还原");
         }
+    }
+
+    /** 技能库必须随存档往返：写出方向完整保留；读回方向按数据表还原（未知技能丢弃）。 */
+    @Test
+    void 技能库随存档往返() {
+        Pokemon original = starter();
+        org.example.model.Move poolMove = new org.example.model.Move(
+                "m_pool_test", "库中招", org.example.model.ElementType.NORMAL,
+                org.example.model.MoveCategory.PHYSICAL, 50, 100, 20);
+        original.learnMoveToPool(poolMove);
+
+        SaveData.PokemonData data = PokemonMapper.toData(original);
+        assertTrue(data.knownMoves().contains("m_pool_test"), "写出方向：技能库包含未出战技能");
+
+        // 读回方向：出战技能在数据表中可还原，未出战的未知技能被丢弃、已知技能保留
+        String battleMoveId = original.getMoves().get(0).getId();
+        SaveData.PokemonData mixed = new SaveData.PokemonData(
+                original.getSpecies().getId(), original.getLevel(),
+                new SaveData.IvData(5, 5, 5, 5, 5, 5), 0L, "NONE", 0, 0, 0,
+                original.getMaxHp(),
+                List.of(new SaveData.MoveData(battleMoveId, 12)),
+                List.of(battleMoveId, "m_unknown_pool"));
+
+        Pokemon restored = PokemonMapper.toPokemon(mixed).orElseThrow();
+
+        assertTrue(restored.knowsMove(battleMoveId), "技能库中的已知技能读档后保留");
+        assertFalse(restored.knowsMove("m_unknown_pool"), "未知技能读档时丢弃");
+        assertEquals(1, restored.getKnownMoves().size(), "技能库仅保留可还原的技能");
+    }
+
+    /** 旧档没有技能库字段时，技能库按出战技能兜底（升级机制照常运行）。 */
+    @Test
+    void 旧档技能库按出战技能兜底() {
+        Pokemon original = starter();
+        SaveData.PokemonData legacy = new SaveData.PokemonData(
+                original.getSpecies().getId(), original.getLevel(),
+                new SaveData.IvData(5, 5, 5, 5, 5, 5), 0L, "NONE", 0, 0, 0,
+                original.getMaxHp(),
+                List.of(new SaveData.MoveData(
+                        original.getMoves().get(0).getId(), 12)));
+
+        Pokemon restored = PokemonMapper.toPokemon(legacy).orElseThrow();
+
+        assertEquals(1, restored.getKnownMoves().size(), "旧档技能库 = 出战技能");
+        assertTrue(restored.knowsMove(original.getMoves().get(0).getId()));
     }
 
     /** 个体值必须随存档往返 —— 成长加成提升的就是个体值，丢了等于成长机制失效。 */

@@ -6,6 +6,7 @@ import org.example.model.Item;
 import org.example.model.ItemStack;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.Stats;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,6 +46,13 @@ public final class SaveData {
      */
     public record PartyEntry(String speciesId, int level, int currentHp) {
 
+        /**
+         * 读档重建使用的固定个体值（全 0）。文本格式只记录物种 / 等级 / 当前 HP，
+         * 个体值无法还原；若重建时随机个体值，同一存档两次读档会得到不同属性（HP 上限不同，
+         * 甚至把已存的 HP 截断），破坏「采样 → 重建」回环的确定性。
+         */
+        private static final Stats RESTORE_IVS = new Stats(0, 0, 0, 0, 0, 0);
+
         public PartyEntry {
             Objects.requireNonNull(speciesId, "speciesId");
             if (speciesId.isBlank()) {
@@ -64,9 +72,12 @@ public final class SaveData {
                     Math.max(0, p.getCurrentHp()));
         }
 
-        /** 按物种注册表重建一只精灵并还原当前 HP；未知物种返回 null。 */
+        /**
+         * 按物种注册表重建一只精灵并还原当前 HP（固定全 0 个体值，结果确定可复现）；
+         * 未知物种返回 null。
+         */
         public Pokemon restore() {
-            return GameData.instance().createPokemon(speciesId, level).map(p -> {
+            return GameData.instance().createPokemon(speciesId, level, RESTORE_IVS).map(p -> {
                 int cur = Math.min(currentHp, p.getMaxHp());
                 if (cur < p.getMaxHp()) {
                     p.takeDamage(p.getMaxHp() - cur);
