@@ -222,7 +222,7 @@ public final class PokemonBattleAdapter {
     }
 
     /**
-     * 新体系种族 → 战斗模型种族（属性 / 捕获率 / 进化链 / 习得表）。供读档还原精灵时复用。
+     * 新体系种族 → 战斗模型种族（属性 / 种族经验值 / 捕获率 / 进化链 / 习得表）。供读档还原精灵时复用。
      */
     public static Species toBattleSpecies(org.example.pokemon.domain.Species source) {
         List<org.example.pokemon.domain.ElementType> types = source.getTypes();
@@ -240,6 +240,7 @@ public final class PokemonBattleAdapter {
                 ElementType.valueOf(types.get(0).name()),
                 types.size() > 1 ? ElementType.valueOf(types.get(1).name()) : null,
                 new Stats(base.getHp(), base.getAttack(), base.getDefense(), base.getSpAttack(), base.getSpDefense(), base.getSpeed()),
+                source.getBaseExpYield(),
                 (int) source.getCaptureRate(), source.getMoveIds(), source.getEvolvesToId(), source.getEvolveLevel(), learnSchedule);
         for (Map.Entry<Integer, String> extra : extras) {
             battleSpecies.addLearnableMove(new org.example.model.LearnableMove(extra.getValue(), extra.getKey()));

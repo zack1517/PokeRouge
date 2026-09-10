@@ -44,7 +44,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 主控制器：负责窗口生命周期、训练家会话，以及 主菜单 ⇄ 战斗/肉鸽楼层 的场景切换。
+ * 主控制器：负责窗口生命周期、训练家会话，以及 启动页 ⇄ 主菜单 ⇄ 战斗/肉鸽楼层 的场景切换。
  *
  * <p>玩家（队伍/背包）在应用生命周期内唯一持有，每次战斗后返回主菜单时重新构建
  * 主视图以反映最新状态。</p>
@@ -53,8 +53,12 @@ import java.util.Optional;
  * HOSPITAL/RANDOM 当场结算 → 点数耗尽与楼层 BOSS 决战 → 胜利推进下一层（地图段号同步）。</p>
  *
  * <p>存档：4 个存档位由 {@link SaveManager} 管理，每个档位各自持有一份进度快照与一份图鉴成长。
- * 存档仅在<b>未作战时</b>可用（主菜单手动保存 / 回到主菜单与推进楼层时自动保存）；
- * 战斗场景接管舞台期间 {@link #battleInProgress} 为真，手动保存会被拒绝。</p>
+ * 存档仅在<b>未作战时</b>可用（主菜单手动保存 / 读档 / 回到主菜单与推进楼层时自动保存）；
+ * 战斗场景接管舞台期间 {@link #battleInProgress} 为真，手动保存与读档都会被拒绝。</p>
+ *
+ * <p>回合边界与启动页：主菜单「返回主界面」与肉鸽一轮结束（通关 / 战败）都<b>不</b>退出程序，
+ * 而是先落盘再回到启动页 —— 玩家在启动页选择「开始游戏」（新游戏）或「继续游戏」（读档）；
+ * 真正退出仍只由窗口关闭按钮的二次确认负责。</p>
  */
 public class MainController {
 
@@ -200,13 +204,26 @@ public class MainController {
                 this::showStartScreen).createScene());
     }
 
-    /** 读档并进入主菜单；档位无存档或存档损坏时给出提示并留在选档页。 */
+    /**
+     * 读档并进入主菜单；档位无存档、存档损坏、或那一轮远征已经结束时给出提示并留在选档页。
+     *
+     * <p>「本轮已结束」的档位不载入：结束的一轮（通关 / 战败）没有可继续的内容，载进去只会
+     * 卡在楼层页。此时局内读档保持当前会话不动，从启动页进来的则回到启动页去开新游戏。</p>
+     */
     private void loadFromSlot(SaveSlot slot) {
         try {
             Optional<GameSession> loaded = saveManager.load(slot);
             if (loaded.isEmpty()) {
                 infoAlert("无法继续", slot.displayName() + " 里没有可用的存档（或队伍已全部失效）。");
                 return;
+            }
+            if (loaded.get().isRogueRunFinished()) {
+                infoAlert("本轮已结束", slot.displayName() + " 里的一轮远征已经结束，无法继续。\n"
+                        + "请选择其它存档位，或返回后开始新游戏。");
+                if (session == null || player == null) {
+                    showStartScreen(); // 启动页进来的：直接回启动页选「开始游戏」
+                }
+                return; // 局内读档：留在选档页，当前进度不受影响
             }
             this.activeSlot = slot;
             this.session = loaded.get();
@@ -242,12 +259,13 @@ public class MainController {
             }
 
             @Override
+            public void onLoadGame() {
+                showLoadSelection();
+            }
+
+            @Override
             public void onExit() {
-                if (confirmExit()) {
-                    Platform.exit();
-                } else {
-                    showMainMenu();
-                }
+                returnToStartScreen();
             }
 
             @Override
@@ -271,9 +289,46 @@ public class MainController {
                 .createScene());
     }
 
+    /**
+     * 离开当前这一局、回到初始主界面（启动页）：先落盘再释放会话，玩家可在启动页
+     * 选择「开始游戏」（新游戏）或「继续游戏」（读档）。
+     *
+     * <p>本方法<b>不</b>退出程序 —— 主菜单的「返回主界面」按钮与一轮远征结束（通关 / 战败）
+     * 都走这里；主动退出仍只由窗口关闭按钮的二次确认负责。</p>
+     */
+    private void returnToStartScreen() {
+        autoSave(); // 离开前把当前进度落盘，避免「返回主界面」被误解为丢档
+        session = null;
+        player = null;
+        activeSlot = null;
+        showStartScreen();
+    }
+
     // ------------------------------------------------------------------
-    // 存档：手动保存 / 自动保存（均仅在未作战时进行）
+    // 存档：手动保存 / 读取存档 / 自动保存（均仅在未作战时进行）
     // ------------------------------------------------------------------
+
+    /**
+     * 读取存档：先让玩家在 4 个档位里选一个再载入（由主菜单「读取存档」进入）。
+     *
+     * <p>列表只提供可解析的档位（空档与损坏档不可选）；载入前会先把当前进度自动
+     * 落盘到 {@link #activeSlot}，因此中途换档不会丢掉本局进展。载入成功后所选档位
+     * 成为当前档位，之后的自动存档都记到它名下。</p>
+     */
+    private void showLoadSelection() {
+        if (battleInProgress) {
+            infoAlert("战斗中无法读档", "请先结束当前战斗，回到主菜单后再读取存档。");
+            return;
+        }
+        if (session == null || player == null) {
+            return;
+        }
+        autoSave(); // 换档前保护当前进度：读档后内存里的这一局将被替换
+        stage.setScene(new SaveSlotView(SaveSlotView.Purpose.CONTINUE, saveManager.store().statuses(),
+                activeSlot,
+                this::loadFromSlot,
+                this::showMainMenu).createScene());
+    }
 
     /**
      * 手动保存：先让玩家在 4 个档位里选一个再写入。
@@ -471,7 +526,7 @@ public class MainController {
     /** 本轮结束时的补充说明（如「火箭队节点不可失败」）；为 null 时用默认文案。 */
     private String runEndReason;
 
-    /** 本轮远征结束（通关或战败）：弹窗反馈后回主菜单。 */
+    /** 本轮远征结束（通关或战败）：弹窗反馈后回<b>初始主界面</b>，玩家在那里选择新游戏或读档。 */
     private void finishRogueRun() {
         if (session.isRogueRunCleared()) {
             infoAlert("通关", session.isRogueAggressionTriggered()
@@ -483,8 +538,7 @@ public class MainController {
                     : runEndReason + "，肉鸽远征到此为止。");
         }
         runEndReason = null;
-        autoSave();
-        showMainMenu();
+        returnToStartScreen(); // 内含 autoSave：结束的一轮也落盘后再回启动页
     }
 
     // ------------------------------------------------------------------
@@ -538,7 +592,7 @@ public class MainController {
         if (!session.hasHealthyPokemon()) {
             session.endRogueRun();
             infoAlert("本轮结束", "队伍已全部倒下，肉鸽远征结束。");
-            showMainMenu();
+            returnToStartScreen(); // 一轮结束统一回初始主界面
             return false;
         }
         Pokemon active = session.getActive();

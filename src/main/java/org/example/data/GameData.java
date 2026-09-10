@@ -243,49 +243,50 @@ public final class GameData {
 
     private void registerBuiltinSpecies() {
         // ---- 进化链：基础形态（可遭遇/捕获），进化形态（wild=0 不进野怪池） ----
+        // baseExp 按六维种族值总和 × 0.2（基础形态）/ 0.35（进化形态）取整，与 species.csv 的口径一致
         putSpecies("s_fire_cat", "焰尾猫", ElementType.FIRE, null,
-                new Stats(45, 52, 43, 60, 50, 65), 45, true,
+                new Stats(45, 52, 43, 60, 50, 65), 64, 45, true,
                 "s_flame_lion", 16, List.of("m_tackle", "m_ember"),
                 "8:m_flame_wheel", "10:m_sunny_day", "11:m_will_o_wisp", "13:m_flamethrower");
         putSpecies("s_flame_lion", "烈焰狮", ElementType.FIRE, null,
-                new Stats(65, 75, 58, 90, 68, 95), 45, false,
+                new Stats(65, 75, 58, 90, 68, 95), 158, 45, false,
                 null, 0, List.of("m_tackle", "m_ember", "m_flame_wheel", "m_fire_blast"));
 
         putSpecies("s_water_tad", "泡泡蛙", ElementType.WATER, null,
-                new Stats(44, 48, 65, 50, 64, 43), 45, true,
+                new Stats(44, 48, 65, 50, 64, 43), 63, 45, true,
                 "s_surge_frog", 16, List.of("m_tackle", "m_bubble"),
                 "9:m_aqua_jet", "12:m_rain_dance", "15:m_hydro_pump");
         putSpecies("s_surge_frog", "涌浪蛙", ElementType.WATER, null,
-                new Stats(68, 70, 80, 85, 80, 70), 45, false,
+                new Stats(68, 70, 80, 85, 80, 70), 159, 45, false,
                 null, 0, List.of("m_tackle", "m_bubble", "m_aqua_jet", "m_muddy_water"));
 
         putSpecies("s_leaf_chick", "叶芽雀", ElementType.GRASS, ElementType.FLYING,
-                new Stats(45, 49, 49, 65, 65, 45), 45, true,
+                new Stats(45, 49, 49, 65, 65, 45), 64, 45, true,
                 "s_gale_owl", 16, List.of("m_tackle", "m_vine_whip"),
                 "9:m_razor_leaf", "11:m_sleep_powder", "13:m_grassy_terrain", "15:m_wing_attack");
         putSpecies("s_gale_owl", "苍翼枭", ElementType.GRASS, ElementType.FLYING,
-                new Stats(65, 75, 60, 85, 75, 90), 45, false,
+                new Stats(65, 75, 60, 85, 75, 90), 158, 45, false,
                 null, 0, List.of("m_tackle", "m_vine_whip", "m_razor_leaf", "m_leaf_blade"));
 
         putSpecies("s_spark_rat", "电光鼠", ElementType.ELECTRIC, null,
-                new Stats(35, 55, 40, 50, 50, 90), 190, true,
+                new Stats(35, 55, 40, 50, 50, 90), 60, 190, true,
                 "s_volt_mink", 22, List.of("m_tackle", "m_thunder_shock"),
                 "8:m_quick", "10:m_thunder_wave", "14:m_electric_terrain", "18:m_thunderbolt");
         putSpecies("s_volt_mink", "迅雷貂", ElementType.ELECTRIC, null,
-                new Stats(60, 80, 55, 85, 65, 125), 190, false,
+                new Stats(60, 80, 55, 85, 65, 125), 165, 190, false,
                 null, 0, List.of("m_tackle", "m_quick", "m_thunder_shock", "m_volt_tackle"));
 
         // ---- 无进化的独立精灵（出生只带 1~2 招，其余按等级习得，保证低等级技能较少） ----
         putSpecies("s_ice_fox", "冰晶狐", ElementType.ICE, null,
-                new Stats(40, 45, 40, 65, 45, 65), 120, true,
+                new Stats(40, 45, 40, 65, 45, 65), 60, 120, true,
                 null, 0, List.of("m_tackle", "m_icy_wind"),
                 "7:m_quick", "9:m_confuse_ray", "10:m_hail", "12:m_ice_fang");
         putSpecies("s_rock_tort", "岩甲龟", ElementType.ROCK, ElementType.GROUND,
-                new Stats(44, 48, 65, 50, 64, 43), 45, true,
+                new Stats(44, 48, 65, 50, 64, 43), 63, 45, true,
                 null, 0, List.of("m_tackle", "m_rock_throw"),
                 "6:m_mud_slap", "11:m_rock_slide", "14:m_sandstorm");
         putSpecies("s_wing_viper", "翼毒蛇", ElementType.POISON, ElementType.FLYING,
-                new Stats(55, 60, 44, 40, 54, 55), 90, true,
+                new Stats(55, 60, 44, 40, 54, 55), 62, 90, true,
                 null, 0, List.of("m_tackle", "m_wing_attack"),
                 "7:m_quick", "9:m_poison_powder", "11:m_toxic", "12:m_cross_poison");
     }
@@ -334,13 +335,14 @@ public final class GameData {
     /**
      * 注册一个物种。
      *
-     * @param evolvesTo 进化目标 id（无则 null）
-     * @param evolveLevel 进化等级（0 = 不进化）
-     * @param moves 出生即会的技能 id 列表
-     * @param learn 按等级习得技能，格式 "等级:技能id"（如 "9:m_flame_wheel"）
+     * @param baseExp      种族经验值 baseExp（击倒该族精灵时折算经验的基数，见 {@code GrowthService}）
+     * @param evolvesTo    进化目标 id（无则 null）
+     * @param evolveLevel  进化等级（0 = 不进化）
+     * @param moves        出生即会的技能 id 列表
+     * @param learn        按等级习得技能，格式 "等级:技能id"（如 "9:m_flame_wheel"）
      */
     private void putSpecies(String id, String name, ElementType t1, ElementType t2, Stats base,
-                            int catchRate, boolean wild, String evolvesTo, int evolveLevel,
+                            int baseExp, int catchRate, boolean wild, String evolvesTo, int evolveLevel,
                             List<String> moves, String... learn) {
         Map<Integer, String> learnAt = new LinkedHashMap<>();
         for (String spec : learn) {
@@ -353,7 +355,7 @@ public final class GameData {
                 }
             }
         }
-        speciesMap.put(id, new Species(id, name, t1, t2, base, catchRate, moves,
+        speciesMap.put(id, new Species(id, name, t1, t2, base, baseExp, catchRate, moves,
                 evolvesTo, evolveLevel, learnAt));
         if (wild) {
             wildPool.add(id);
@@ -457,6 +459,16 @@ public final class GameData {
                 effect, inflicts, chance));
     }
 
+    /**
+     * 覆盖一个物种。
+     *
+     * <p><b>已知问题（见《对接文档_战斗模块数据对接.md》§7 R-01）</b>：本方法期望的列序
+     * {@code ...,catchRate,wild,evolvesTo,evolveLevel,moves,learns} 与现行 {@code /data/species.csv}
+     * 的实际列序 {@code ...,evolutionLevel,evolutionTarget,baseExp,captureRate,category,description}
+     * 不一致，故此处取不到种族经验值（baseExp 保持 {@code 0}，经验折算退化为按六维种族值总和）。
+     * 游戏主流程的对手与队友都经 {@link org.example.integration.PokemonBattleAdapter#toBattleSpecies}
+     * 转换，自带 baseExp；本路径只影响内建注册表被 CSV 覆盖后的数据。</p>
+     */
     private void applySpeciesRow(String line) {
         String[] c = line.split(",", -1);
         if (c.length < 16) {
