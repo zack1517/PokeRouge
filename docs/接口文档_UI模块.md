@@ -1,10 +1,11 @@
 # UI 模块接口与界面设计文档（接口文档_UI模块）
 
-> 版本：v0.1.3（草稿） · 日期：2026-09-08 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
+> 版本：v0.1.4（草稿） · 日期：2026-09-10 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
 > 角色：UI 负责人 · 状态：**待组长评审**，评审通过前不进入编码
-> 依据：《需求文档》§7 界面与交互需求、《测试用例草稿》§D、《接口文档_战斗服务.md》v1.0、
+> 依据：《需求文档》§7 界面与交互需求、《测试用例草稿》§D、《接口文档_战斗服务.md》v1.4、
 > **本阶段六系统任务分工**（游戏流程系统 / 存档系统 / 宝可梦系统 / 战斗系统 / 肉鸽系统 / JavaFX UI；其中游戏流程与存档由同一人负责）
 > 版本说明：v0.1.3 将「游戏流程&存档」拆为游戏流程系统与存档系统（同一人负责，共六系统），并同步修订边界表、接口归属与内部设计措辞；
+> **v0.1.4 同步战斗服务 v1.4 的训练师轮战契约：§3.3 增训练师轮战界面要求，§4.1/§4.2 敌方渲染改用 `foeActive()` 并补 `getTrainer()`、`newTrainerBattle`，§4.3 补 `Trainer` 查询**；
 > 文中「[待确认]」项为需与组长 / 对应系统负责人确认后方可定稿的内容。
 
 ## 1. 概述
@@ -165,7 +166,10 @@ FXML 重写，要求：
 - 按钮可用性规则（沿用参考实现）：PP 耗尽禁用、满血回复道具禁用、倒下/当前出战
   精灵禁用；非 `ONGOING` 时清空行动区显示结果与"返回"；
 - 日志展示只读、行动后全量覆盖（与参考实现一致），胜负/升级/学招/进化等文案
-  一律来自日志行透传，UI 不自行生成业务文案。
+  一律来自日志行透传，UI 不自行生成业务文案；
+- 训练师轮战（v1.4）：敌方为一整支队伍，敌方面板取 `foeActive()`（对方换宠后自动跟随），
+  可用 `getTrainer()` 显示对手名与对方剩余精灵；逃跑与投球会被引擎拒绝（仅提示日志、
+  不消耗回合），按钮可置灰；仅当对方整队精灵全部倒下才展示胜利。
 
 ### 3.4 存档对页面的约束（新增）
 
@@ -178,15 +182,17 @@ FXML 重写，要求：
 
 ## 4. UI 依赖的外部契约（已存在，可直接引用）
 
-以下接口/类型已由 feature/battle（战斗系统）交付，版本 v1.0；契约引用以此为准。
+以下接口/类型已由 feature/battle（战斗系统）交付，版本 v1.0（v1.4 新增训练师轮战，
+见《接口文档_战斗服务.md》§3.4）；契约引用以此为准。
 
 ### 4.1 战斗服务（引用《接口文档_战斗服务.md》§3）
 
 | 需求 | 使用方页面 | 说明 |
 | --- | --- | --- |
-| `BattleService.Status` 枚举 | 战斗页、结算页 | 战斗结束分流：`PLAYER_WIN / PLAYER_LOSE / FLED / CAUGHT / ONGOING` |
-| `useMove / useItem / tryRun / switchActive` | 战斗页 | 四个行动入口；返回 `List<String>`（本回合新日志）；非 ONGOING 调用抛 `IllegalStateException`（UI 先判 `isOngoing()`） |
-| `playerActive() / getWild() / getPlayer()` | 战斗页 | 面板与队伍菜单渲染（引擎自动换宠后重新读取，可能为 null，需空态） |
+| `BattleService.Status` 枚举 | 战斗页、结算页 | 战斗结束分流：`PLAYER_WIN / PLAYER_LOSE / FLED / CAUGHT / ONGOING`；`FLED/CAUGHT` 仅野生遭遇会出现 |
+| `useMove / useItem / tryRun / switchActive` | 战斗页 | 四个行动入口；返回 `List<String>`（本回合新日志）；非 ONGOING 调用抛 `IllegalStateException`（UI 先判 `isOngoing()`）。训练师轮战中 `tryRun()` 与对训练师投球只回提示日志、不消耗回合，按钮可置灰或保留提示 |
+| `playerActive() / foeActive() / getPlayer()` | 战斗页 | 面板与队伍菜单渲染（引擎自动换宠后重新读取，可能为 null，需空态）。**敌方面板一律用 `foeActive()`**：野生为野生精灵，训练师轮战为训练师当前出战精灵（训练师换宠后自动跟随）；`getWild()` 在训练师轮战中为 `null` |
+| `getTrainer()` | 战斗页 | 训练师轮战非空：可用 `getTrainer().getName()` 显示对手名，`getTrainer().getParty()` 显示对方队伍/剩余数量 |
 | `getLog()` | 战斗页 | 完整日志只读，行动后全量覆盖展示 |
 | `getBag()` | 战斗页 | 配合 `Bag.availableStacks()` 渲染背包菜单 |
 
@@ -194,7 +200,8 @@ FXML 重写，要求：
 
 | 方法 | 归属 | 说明 |
 | --- | --- | --- |
-| `BattleServices.newBattle(Player, Pokemon[, Random])` | 战斗页创建入口（由流程系统在调度战斗页前调用并传入现场，或经页面回调创建 [待确认]） | 玩家无存活出战精灵抛异常，创建前校验 `hasHealthyPokemon()` |
+| `BattleServices.newBattle(Player, Pokemon[, Random])` | 战斗页创建入口（野生遭遇） | 玩家无存活出战精灵抛异常，创建前校验 `hasHealthyPokemon()` |
+| `BattleServices.newTrainerBattle(Player, Trainer[, Random])` | 战斗页创建入口（训练师轮战） | 敌方为一整支队伍，某一方精灵全部倒下才结束（不可逃跑/捕捉）；训练师队伍无健康精灵时抛 `IllegalArgumentException` |
 | `BattleServices.wildLevelAround / randomWild` | 肉鸽系统 | 遭遇生成属流程/肉鸽侧，UI 不直接调用；`Optional` 空值需空态提示 |
 
 ### 4.3 model 只读查询（UI 展示所需字段，归宝可梦系统维护）
@@ -206,6 +213,7 @@ FXML 重写，要求：
 | `Stats` | `getHp / getAttack / getDefense / getSpAttack / getSpDefense / getSpeed` |
 | `ElementType` | `getDisplayName()`；`parse(name)` 供数据加载 |
 | `Player` | `getName / getParty / getActive / getBag / hasHealthyPokemon / healParty`（医院页） |
+| `Trainer`（v1.4 新增） | `getName / getParty / getActive / getPartySize / hasHealthyPokemon / isPartyAllFainted`（训练师轮战的对手名、对方队伍与剩余精灵展示） |
 | `Bag / ItemStack` | `availableStacks() / countOf / getAll`；`getItem() / getCount()` |
 | `Item` | `getId / getName / getCategory / getEffect / isAlwaysCatch`（`ItemCategory.HEAL / POKE_BALL`） |
 | `MoveSlot / Move` | `getMove / getPp / exhausted`；`getId / getName / getType / getCategory / getPower / getMaxPp` |
@@ -360,3 +368,4 @@ public interface ScreenFactory {
 | v0.1.1 | 2026-09-08 | 初稿：页面清单、场景流转、外部契约引用、接口缺口、内部设计、验收映射（按 README 六人分工） | [待确认] |
 | v0.1.2 | 2026-09-08 | 按五系统分工重写：场景调度归流程&存档（§1/§6.2）、界面 FXML 化（§1.3/§2/§6.1）、缺口按系统重分配（§5）、新增存档约束-状态驱动渲染（§3.4/§6.3）、待确认清单分 A/B 组 | [待确认：UI 负责人] |
 | v0.1.3 | 2026-09-08 | 系统拆分："游戏流程&存档"拆为游戏流程系统与存档系统（同一人负责，共六系统）；修订 §1.2 边界表/§3.1-3.2/§5 归属（新增 I-02c、I-09）/§6.2-6.3/§9 A 组 | [待确认：UI 负责人] |
+| v0.1.4 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.4 训练师轮战：§3.3 增训练师轮战界面要求（敌方面板取 `foeActive()`、对手名与剩余精灵、逃跑/投球被拒提示）；§4.1 契约表补 `foeActive()/getTrainer()` 并说明 `getWild()` 在训练师战为 null；§4.2 补 `newTrainerBattle` 工厂；§4.3 补 `Trainer` 只读查询 | [待确认：UI 负责人] |
