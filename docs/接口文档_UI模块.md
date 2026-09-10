@@ -1,6 +1,6 @@
 # UI 模块接口与界面设计文档（接口文档_UI模块）
 
-> 版本：v0.1.9（草稿） · 日期：2026-09-10 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
+> 版本：v0.1.13（草稿） · 日期：2026-09-10 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
 > 角色：UI 负责人 · 状态：**待组长评审**，评审通过前不进入编码
 > 依据：《需求文档》§7 界面与交互需求、《测试用例草稿》§D、《接口文档_战斗服务.md》v1.9、
 > **本阶段六系统任务分工**（游戏流程系统 / 存档系统 / 宝可梦系统 / 战斗系统 / 肉鸽系统 / JavaFX UI；其中游戏流程与存档由同一人负责）
@@ -152,11 +152,13 @@ src/main/java/org/example/
 | 页面 | 主要功能 | 驱动/数据系统 | 对应用例 |
 | --- | --- | --- | --- |
 | 主菜单 | 新 Run / 读档 / 退出（退出确认沿用现有 MainController 文案） | 游戏流程系统（读档动作归存档系统） | — |
+| 存档位选择 | 4 个档位的摘要与可用状态，选定后新游戏 / 读档 / 保存 | 存档系统（详见《接口文档_存档系统.md》） | SAVE-01~03 |
 | 初始选队 | 多选初始宝可梦、数量上限校验、确定出发 | 游戏流程系统 + 宝可梦系统(初始池 I-01) | UI-01 |
 | 路线地图 | 段节点链、AP 显示、节点可选性（判定归服务侧）、金币/队伍摘要 | 游戏流程系统（调度 I-02a）+ 肉鸽系统（I-02b） | UI-02 |
 | 战斗 | 出招/技能/道具/换宠/逃跑、HP·EXP 条、属性面板、日志 | 战斗系统（BattleService） | UI-03 |
 | 战后奖励/强化 | 战斗胜利后奖励选择（三选一/商店形态 [待确认]） | 肉鸽系统（I-03） | FLOW-05/06 相关 |
 | 医院/回复节点 | 治疗费用与确认（濒死恢复） | 肉鸽或流程 [待确认]（I-05） | COMBAT-05 / FLOW-07 |
+| 商店 | 展示段内货架、金币余额、买不起的商品禁用、购买后即时扣款 | 肉鸽系统（货架由存档/肉鸽状态提供） | 见 §3.6 |
 | 合并/性格选择 | 同类合并（等级取高）提示、性格选择 | 宝可梦系统（I-06，范围 [待确认]） | GROW-06/07 / UI-04 |
 | 结算 | 失败原因/通关/侵略战结局 + 存档提示 | 游戏流程系统（I-07）+ 存档系统（I-09） | FLOW-10~17 |
 | 图鉴 | 收集展示 | 宝可梦系统 | [待确认] 是否首版 |
@@ -196,7 +198,70 @@ FXML 重写，要求：
   "从上一页顺序进入"的隐式前提**；
 - 页面自身不留跨页历史（返回路径由流程系统维护，UI 只响应调度）。
 
-## 4. UI 依赖的外部契约（已存在，可直接引用）
+### 3.5 存档位选择页（v0.1.11 新增，已落地）
+
+`SaveSlotView(purpose, statuses, currentSlot, onChoose, onCancel)` —— 一屏列出 4 个存档位，
+**三种用途复用同一个视图**（`Purpose.NEW_GAME / CONTINUE / SAVE`）：
+
+| Purpose | 标题 | 可选档位 | 按钮文案 |
+| --- | --- | --- | --- |
+| `NEW_GAME` | 选择存档位 | 全部（覆盖由控制器二次确认） | 空档「在此开始」/ 已占用「覆盖并开始」 |
+| `CONTINUE` | 继续游戏 | 仅 `SlotStatus#usable()`（存在且可解析） | 「继续游戏」 |
+| `SAVE` | 保存游戏 | 全部 | 当前档「保存到当前档」/ 其他档「保存并切换到此」 |
+
+- 每行展示 `SaveSlot#displayName()`、`SaveSummary#describe()` 与状态色
+  （空档灰、正常深灰、损坏红字）；
+- **视图不做任何读写**：摘要来自传入的 `SaveStore.SlotStatus`，选择结果经 `onChoose`
+  回调交回 `MainController`，覆盖确认与失败提示都由控制器负责 —— 与其他页面
+  「Controller 持有状态、View 只渲染」的约定一致；
+- 启动页「继续游戏」在 `SaveStore#hasAnySave()` 为 false 时置灰并给出 tooltip。
+
+存档相关的场景入口（`MainController`）：
+
+```
+启动页 ──开始游戏──► 选初始精灵 ──► 选档位(NEW_GAME) ──► newGame + autoSave + 主菜单
+  └──继续游戏──► 选档位(CONTINUE) ──► load ──► 主菜单
+主菜单「保存游戏」──► 选档位(SAVE) ──►（覆盖其他已有档需确认）──► save ──► 回主菜单
+                      所选档位成为当前档位，标题栏随之更新，之后自动存档写该档
+主菜单 / 通过节点后 ──► autoSave（静默）
+战斗中 ──► 手动存档被拒绝并提示「请先结束当前战斗」
+```
+
+### 3.6 路线地图页与商店页（v0.1.12 新增，已落地）
+
+跟随《需求文档》§4「路线节点 / 行动点」改版，两个页面由「事件列表」改为「**按段选节点**」：
+
+**`RogueFloorView`（路线地图）**
+
+| 区域 | 内容 |
+| --- | --- |
+| 标题 | `第 N / 5 段 · <阶段名>`，阶段名取 `RoutePhase#getDisplayName()` |
+| 副标题 | `行动点：X / Max　金币：N 🪙` |
+| 节点列表 | 每段 3~5 个路线节点；**已走过**的节点置灰且不可点；行动点不足以进入的节点禁用并给出提示 |
+| 必然节点区 | 阶段为道馆 / 四天王 / 冠军 / 首领侵略战时改为展示 `buildMandatoryBox`（必然节点不占行动点） |
+| 兜底按钮 | 本段行动点耗尽或已无节点可走时，显示「挑战道馆」按钮触发必然节点 |
+
+> **v0.1.13**：节点列表无需为火箭队剧情线新增 UI——「火箭队出没」「火箭队抓捕神兽」「神兽偶遇」
+> 都是普通路线节点（类型分别为 `ROCKET` / `ROCKET_CAPTURE` / `LEGENDARY`），沿用同一张卡片即可；
+> 火箭队线击败首领后追加的 0 点「神兽偶遇」也只是列表里多一张**不消耗行动点**的卡片，
+> 界面不必特殊处理。通关文案在首领侵略战胜利时改为「击败来袭的火箭队首领，本轮远征通关！」，
+> 由 `MainController` 依据 `GameSession#isRogueAggressionTriggered()` 判断。
+
+**`ShopView`（商店）**
+
+- 构造参数 `ShopView(stock, gold, onBuy, onLeave)`，展示本次上架的 `ShopStock.Entry` 列表
+  （名称 + 售价）、当前金币余额；买不起的条目禁用；购买成功后即时刷新余额；
+- 商品**按段解锁**、售价按段通胀，均为 `RouteConfig` 中的可调数值（见需求文档 §4.5）。
+
+**`MainView` 标题栏**
+
+新增金币显示：`第 N 段 · 地图 · 金币 N 🪙[ · 存档名]`。金币为负（本轮远征尚未开始）时**不显示**
+金币段，避免主菜单上出现「金币 -1」。
+
+> 与 §3.4 的「状态驱动渲染」一致：两个页面都不读全局状态，节点列表 / 货架 / 金币均由
+> `MainController` 在展示前传入。
+
+
 
 以下接口/类型已由 feature/battle（战斗系统）交付，版本 v1.0（v1.4 新增训练师轮战，
 见《接口文档_战斗服务.md》§3.4）；契约引用以此为准。
@@ -251,6 +316,83 @@ move(id) / item(id) / wildPool / createPokemon(speciesId, level)`。
 
 `APP_TITLE = "PokeRouge"`、窗口 640×480、退出确认文案已定；新增窗口/文案常量一律
 进 `AppConfig`（或 `config/UiText`），禁止内联散落。
+
+### 4.6 成长 / 图鉴数据接口（v0.1.10 新增，供图鉴与成长面板页使用）
+
+需求 §3.2「多次使用同族精灵 → 后续遭遇的精灵个体值提升」的**数据接口已就绪**，
+UI 侧当前**尚未接入界面**（本轮只交付模型 + 服务 + 单测）。
+
+> **进度是永久存档**：三个入口取到的都是同一份 `GrowthProgress`，由 `GrowthProgressStore`
+> 载入并**自动保存**（每次捕捉 / 对战 / 清档后立即落盘），因此**关闭程序再打开、开启新一轮远征，
+> 已获得的加成仍然生效**。UI 无需关心保存时机，也**不应**自行读写该文件。
+>
+> **v0.1.11 起，成长记录改为按存档位存放**：4 个档位各有自己的
+> `saves/slotN/growth-progress.txt`（由 `SaveStore#loadGrowth/createGrowth` 提供），
+> 换档位等于换一份个体值成长。`GrowthProgressStore` 的全局单文件路径仍可用于自定义位置
+> （`GrowthProgressStore#at(Path)`），但新档位不再使用。详见 §4.7 与《接口文档_存档系统.md》。
+
+| 取数入口 | 说明 |
+| --- | --- |
+| `GameSession#getGrowthProgress()` | 会话级成长进度，**局外（主菜单 / 图鉴页）首选入口** |
+| `PokemonService#getGrowthProgress()` | 宝可梦系统侧同一份进度的查询入口 |
+| `GrowthService#getProgress()` | 成长模块侧同一份进度（与战斗模块共用） |
+
+`GrowthProgress`（`org.example.growth`）对外查询：
+
+| 方法 | 返回 | 典型用途 |
+| --- | --- | --- |
+| `record(String speciesId)` | `SpeciesGrowthRecord` | 单族图鉴条目；**无记录时返回全零空记录且不写入** |
+| `dexEntries()` | `List<SpeciesGrowthRecord>` | 图鉴列表（按物种 id 排序，含只参战未捕捉的族） |
+| `captureCount(id)` / `battleCount(id)` | `int` | 图鉴列表的「捕捉次数 / 对战次数」列 |
+| `ivBonus(id)` | `int` | 单族个体值加成（0~31），图鉴展示用 |
+| `globalIvBonus()` | `int` | **全局加成**（各族之和，封顶 31）；即后续所有精灵获得的个体值提升量 |
+
+`SpeciesGrowthRecord` 只读字段：`getSpeciesId / getCaptureCount / getBattleCount / getIvBonus / isBlank`。
+
+> 展示注意：加成实际作用于**个体值**（六项个体值各加 `globalIvBonus()` 并截断 31），
+> **种族值不变**；面板数值变化由属性公式自动体现，UI 直接用 `Pokemon#getStats()` 即可。
+> [`GrowthProgress#clear()`] 仅供「重开存档」，UI 不应在常规流程调用 —— 它**同时清空本地存档文件**，
+> 玩家已累积的永久加成会一并丢失，务必配合二次确认。
+
+### 4.7 存档系统接口（v0.1.11 新增，已接入界面）
+
+存档系统已交付并接线，UI 只需依赖 `SaveManager`（详见《接口文档_存档系统.md》）：
+
+| 入口 | 说明 |
+| --- | --- |
+| `SaveManager#defaultManager()` / `store()` | 默认编排器 / 其仓库（根目录 `<user.home>/.pokerouge/saves`） |
+| `SaveStore#statuses()` | 4 个 `SlotStatus`，档位列表的**唯一数据源** |
+| `SlotStatus#empty() / readable() / usable() / summary()` | 空档 / 可解析 / 可继续；`summary()` 为 `null` 表示空档 |
+| `SaveSummary#describe()` | 一行式摘要（`小明 · 队伍 3 · 第 2 段 · 行动点 4 · 金币 320 · 2026-09-10 15:30`；尚未开始远征时为 `… · 未开始远征`） |
+| `SaveManager#save(slot, player, session)` | 手动保存；**失败抛异常**，UI 须提示 |
+| `SaveManager#autoSave(slot, player, session)` | 自动保存；**失败只返回 false**，UI 不得打扰玩家 |
+| `SaveManager#load(slot)` | `Optional<GameSession>`；空档返回空，损坏抛 `SaveFormatException` |
+| `SaveManager#newGame(slot, trainerName, starter)` | 清空该档后建立新会话 |
+
+> **每个档位各自独立**：进度快照与图鉴成长都存放在该档位自己的目录下，换档位等于换一份
+> 个体值成长。UI 只需持有当前 `SaveSlot`，**不应**自行读写 `growth-progress.txt`。
+>
+> 存档时机由控制器把握：**仅在未作战时**（主菜单手动保存、回到主菜单 / 通过节点后自动保存）；
+> 战斗场景接管舞台期间手动保存会被拒绝。UI 侧因此**无需**在战斗页放置存档入口。
+
+### 4.8 肉鸽路线只读查询（v0.1.12 新增，已接入界面）
+
+路线地图页 / 商店页所需的运行状态，一律经 `MainController` 从 `GameSession#getRogueRunData()`
+（`RunData`）与 `GameSession#getRogueOptions()` 取**只读快照**后传参渲染，UI 不做规则判定：
+
+| 入口 | 说明 |
+| --- | --- |
+| `RunData#getSegment() / getAp() / getApMax()` | 段号、当前行动点、本段上限（标题与副标题） |
+| `RunData#getGold()` | 金币余额（标题栏与商店页） |
+| `RunData#getPhase()` | `RoutePhase`（`EXPLORING`/`GYM`/`ELITE_FOUR`/`CHAMPION`/`CLEARED`），取 `getDisplayName()` 显示 |
+| `RunData#getRouteOptions() / getMandatoryOption()` | 本段可选节点 / 当前必然节点（`Optional`，仅必然阶段有值） |
+| `RunData#isNotStarted() / isGameOver() / isCleared()` | 「未开始远征」/ 失败 / 通关三态，决定主菜单与结算页文案 |
+| `Option#getType() / getTypeDisplayName() / getApCost() / isConsumed() / getDescription()` | 单个节点的展示与置灰依据 |
+| `RoutePhase#isMandatoryBattle() / toOptionType()` | 必然阶段与 `OptionType.GYM`/`ELITE_FOUR`/`CHAMPION`/`ROCKET_INVASION` 的映射 |
+| `GameSession#isRogueRocketLineUnlocked()` / `isRogueRocketBossDefeated()` / `isRogueLegendaryMet()` / `isRoguePendingLegendary()` / `isRogueAggressionTriggered()`（**v0.1.13 新增**） | 火箭队剧情线与神兽偶遇的**只读查询**：供 UI 展示剧情提示或决定通关文案；UI 不参与分支判定（进入节点即由 `RogueTurnManager` 打标记） |
+
+> 行动点是否足够、节点是否可点、商店能否买得起，**均以视图的禁用态表达**，
+> 真正扣点 / 扣金币发生在点击回调回来之后，由控制器与服务侧完成。
 
 ## 5. 对外部系统的接口缺口（[待确认]，需组长分派承诺）
 
@@ -393,3 +535,7 @@ public interface ScreenFactory {
 | v0.1.7 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.7 职责收敛：遭遇生成（等级浮动 / 随机挑种族）移出战斗模块，改由组装侧 `WildEncounter` 提供；§1.2 战斗系统行与外部依赖表同步 | [待确认：UI 负责人] |
 | v0.1.8 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.8 道具目标选择：§3.3 增「选道具 → 选目标精灵」两步交互与新的可用性判定；§4.1 契约表补 `useItem(item, partyIndex)` 重载说明 | [待确认：UI 负责人] |
 | v0.1.9 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.9 成长判定外移：经验/升级/学招/进化改由外部成长模块经 `BattleGrowthPort` 结算；§1.2 战斗系统行与 §4.2 组装入口补成长端口注入与 `pendingLearnChoices()/decideLearn(int)` 学习抉择弹窗，渲染无变化 | [待确认：UI 负责人] |
+| v0.1.10 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.10 个体值成长：**新增 §4.6 成长/图鉴数据接口**（`GameSession#getGrowthProgress()`、`PokemonService#getGrowthProgress()`、各族捕捉/对战次数与个体值加成查询），供后续图鉴/成长面板页接入；§3.3 战斗页无需改动（个体值影响面板数值，渲染字段不变） | [待确认：UI 负责人] |
+| v0.1.11 | 2026-09-10 | **存档系统落地并接线**：§3.2 页面总表增「存档位选择」页；**新增 §3.5 存档位选择页**（`SaveSlotView` 三用途复用、视图不做 IO、启动页「继续游戏」置灰条件、场景入口流转）；**新增 §4.7 存档系统接口**（`SaveManager`/`SaveStore#statuses()`/`SlotStatus`/`SaveSummary`，四个档位各自独立的图鉴成长，存档仅在未作战时）；§4.6 说明成长进度已改为按档位存放 | [待确认：UI 负责人] |
+| v0.1.12 | 2026-09-10 | **路线节点 / 行动点改版落地**：§3.2 页面总表增「商店」页并改写「路线地图」行；**新增 §3.6 路线地图页与商店页**（`RogueFloorView` 段 / 行动点 / 金币标题、已走过节点置灰、必然节点卡片与「挑战道馆」入口；`ShopView` 余额与买不起禁用；`MainView` 标题栏金币与负值隐藏）；**新增 §4.8 肉鸽路线只读查询**（`RunData`/`Option`/`RoutePhase`，界面只读不判规则）；§4.7 摘要示例随存档 v2 更新 | [待确认：UI 负责人] |
+| v0.1.13 | 2026-09-10 | **火箭队剧情线与神兽偶遇落地**：§3.6 补「节点列表沿用同一张卡片、0 点神兽偶遇即多一张不耗点卡片、通关文案随首领侵略战区分」说明；§4.8 补 `ROCKET_INVASION` 映射与 5 个剧情线**只读查询**入口 | [待确认：UI 负责人] |
