@@ -378,18 +378,6 @@ class RogueTurnManagerTest {
     // ------------------------------------------------------------------
 
     @Test
-    void testSpecialNodeAwardsGold() {
-        RogueTurnManager manager = newManager();
-        Option special = addOption(manager, OptionType.SPECIAL, RouteConfig.SPECIAL_AP_COST);
-        int before = manager.getRunData().getGold();
-
-        assertTrue(manager.resolveNode(special));
-
-        assertEquals(before + RouteConfig.specialGold(1), manager.getRunData().getGold(),
-                "特殊事件应发放对应金币");
-    }
-
-    @Test
     void testAwardWinGold_matchesConfigPerNodeType() {
         RogueTurnManager manager = newManager();
         RunData data = manager.getRunData();

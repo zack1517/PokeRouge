@@ -1,5 +1,6 @@
 package org.example.controller;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -466,10 +467,14 @@ public class MainController {
             case ROCKET -> startRocketBattle();
             case ROCKET_CAPTURE -> startRocketCaptureBattle();
             case LEGENDARY -> startLegendaryBattle();
-            case HOSPITAL, SPECIAL -> resolveNonBattleNode(option);
+            case HOSPITAL -> resolveNonBattleNode(option);
             case SHOP -> openShop();
             case REWARD -> {
                 resolveRogueEquipmentReward();
+                finishNodeStep(true);
+            }
+            case TRADE -> {
+                resolveTradeEvent();
                 finishNodeStep(true);
             }
             default -> showRogueFloorScene();
@@ -490,6 +495,62 @@ public class MainController {
         }
         infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription()
                 + "\n可在主菜单点击精灵名，在详情页中穿戴。");
+    }
+
+    /**
+     * TRADE 事件：宝可梦交换——系统提供一只「队伍平均等级（向下取整）+1 或 2」的宝可梦，
+     * 玩家可用队伍中的一只与其交换，也可放弃（均不返还行动点）。
+     */
+    private void resolveTradeEvent() {
+        if (player == null || player.getParty().isEmpty()) {
+            infoAlert("宝可梦交换", "队伍为空，无法进行交换。");
+            return;
+        }
+        List<Pokemon> party = player.getParty();
+        int avgLevel = party.stream().mapToInt(Pokemon::getLevel).sum() / party.size();
+        int level = avgLevel + 1 + (int) (Math.random() * 2);
+        Optional<Pokemon> offered = PokemonBattleAdapter.createWildPokemonExact(level, growthProgress());
+        if (offered.isEmpty()) {
+            infoAlert("数据异常", "宝可梦交换事件无法生成交换对象（数据缺失）。");
+            return;
+        }
+        Pokemon offer = offered.get();
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("宝可梦交换");
+        alert.setHeaderText("神秘商人带来了一只 Lv." + offer.getLevel() + " 的 " + offer.getName() + "！");
+        alert.setContentText("可用队伍中的一只宝可梦与其交换，也可以放弃（无论是否交换都不返还行动点）。");
+        ButtonType trade = new ButtonType("交换", ButtonBar.ButtonData.OK_DONE);
+        ButtonType giveUp = new ButtonType("不交换", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(trade, giveUp);
+        alert.showAndWait().ifPresent(choice -> {
+            if (choice == trade) {
+                askWhichPokemonToTrade(offer);
+            }
+        });
+    }
+
+    /** 交换对象选择：从队伍中选一只被交换离队（交换完成后同步肉鸽队伍快照）。 */
+    private void askWhichPokemonToTrade(Pokemon offered) {
+        List<Pokemon> party = player.getParty();
+        List<String> choices = new ArrayList<>();
+        for (int i = 0; i < party.size(); i++) {
+            Pokemon p = party.get(i);
+            choices.add((i == player.getActiveIndex() ? "▶ " : "   ") + p.getName()
+                    + " Lv." + p.getLevel() + (p.isFainted() ? "（濒死）" : ""));
+        }
+        ChoiceDialog<String> dialog = new ChoiceDialog<>(choices.get(0), choices);
+        dialog.setTitle("选择交换对象");
+        dialog.setHeaderText("用队伍中的哪一只交换 Lv." + offered.getLevel() + " 的 " + offered.getName() + "？");
+        dialog.setContentText("被交换的宝可梦将离开队伍：");
+        dialog.showAndWait().ifPresent(selected -> {
+            int index = choices.indexOf(selected);
+            Pokemon gone = index >= 0 ? player.swapPartyMember(index, offered) : null;
+            if (gone != null) {
+                session.syncRogueTeam();
+                infoAlert("交换完成", gone.getName() + " 离开了队伍，" + offered.getName()
+                        + "（Lv." + offered.getLevel() + "）加入了队伍！");
+            }
+        });
     }
 
     /** 非战斗节点：当场效果（医院治疗 / 特殊事件金币）结算后走节点收尾。 */

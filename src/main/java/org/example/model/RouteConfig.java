@@ -43,14 +43,11 @@ public final class RouteConfig {
     /** 商店节点出现的概率（百分比，随机节点）。 */
     public static final int SHOP_PERCENT = 55;
 
-    /** 特殊事件节点出现的概率（百分比，低概率节点）。 */
-    public static final int SPECIAL_PERCENT = 30;
-
     /** 装备补给节点出现的概率（百分比，低概率节点；与特殊事件共享同一事件槽位）。 */
     public static final int EQUIPMENT_PERCENT = 30;
 
-    /** 特殊事件节点的默认行动点消耗（神兽偶遇 1 点；火箭队线与火箭队节点在第二步接入）。 */
-    public static final int SPECIAL_AP_COST = 1;
+    /** 宝可梦交换事件出现的概率（百分比，低概率节点；与特殊事件共享同一事件槽位）。 */
+    public static final int TRADE_PERCENT = 30;
 
     /**
      * 每段最多生成的路线节点数（不含必然节点）：
@@ -70,11 +67,6 @@ public final class RouteConfig {
     /** 野外精灵战胜利的金币奖励。 */
     public static int wildWinGold(int segment) {
         return 20 + Math.max(1, segment) * 8;
-    }
-
-    /** 特殊事件的金币奖励。 */
-    public static int specialGold(int segment) {
-        return 30 + Math.max(1, segment) * 10;
     }
 
     /** 道馆战胜利的金币奖励。 */

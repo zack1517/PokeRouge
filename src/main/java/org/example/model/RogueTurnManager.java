@@ -193,7 +193,6 @@ public class RogueTurnManager {
         }
         switch (option.getType()) {
             case HOSPITAL -> healPartyFully();
-            case SPECIAL -> runData.addGold(goldRewardFor(OptionType.SPECIAL));
             default -> {
                 // 战斗节点由控制器接管；商店由控制器打开购买界面
             }
@@ -381,7 +380,6 @@ public class RogueTurnManager {
         return switch (type) {
             case TRAINER -> RouteConfig.trainerWinGold(segment);
             case WILD -> RouteConfig.wildWinGold(segment);
-            case SPECIAL -> RouteConfig.specialGold(segment);
             case ROCKET -> RouteConfig.rocketWinGold(segment);
             case ROCKET_CAPTURE -> RouteConfig.rocketCaptureWinGold(segment);
             case LEGENDARY -> RouteConfig.legendaryWinGold(segment);
@@ -389,7 +387,7 @@ public class RogueTurnManager {
             case ELITE_FOUR -> RouteConfig.eliteFourWinGold(segment);
             case CHAMPION -> RouteConfig.championWinGold(segment);
             case ROCKET_INVASION -> RouteConfig.bossAggressionWinGold(segment);
-            case HOSPITAL, SHOP, REWARD -> 0;
+            case HOSPITAL, SHOP, REWARD, TRADE -> 0;
         };
     }
 

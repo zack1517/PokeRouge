@@ -142,6 +142,21 @@ public class Player {
         return true;
     }
 
+    /**
+     * 队伍成员交换（宝可梦交换事件）：用新的精灵替换队伍中指定下标的成员，队伍数量不变。
+     * 若替换的是当前出战精灵，出战位不变、新成员直接成为出战精灵。
+     *
+     * @param index       被交换离队的成员下标（越界时失败）
+     * @param replacement 入队的新成员（{@code null} 时失败）
+     * @return 被替换离开队伍的原成员；失败返回 {@code null}
+     */
+    public Pokemon swapPartyMember(int index, Pokemon replacement) {
+        if (replacement == null || index < 0 || index >= party.size()) {
+            return null;
+        }
+        return party.set(index, replacement);
+    }
+
     /** 是否还存在未倒下的精灵。 */
     public boolean hasHealthyPokemon() {
         return party.stream().anyMatch(p -> !p.isFainted());

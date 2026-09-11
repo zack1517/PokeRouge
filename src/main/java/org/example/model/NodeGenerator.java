@@ -53,7 +53,9 @@ public class NodeGenerator {
      *       尝试放入「火箭队抓捕神兽」（玩家可自主选择是否进入）；</li>
      *   <li>后期 + 本局尚未遇到过神兽：按 {@link RouteConfig#LEGENDARY_PERCENT} 尝试放入神兽偶遇；</li>
      *   <li>按 {@link RouteConfig#ROCKET_PERCENT} 尝试放入火箭队队员节点（各时期均有概率）；</li>
-     *   <li>以上均未命中时，按 {@link RouteConfig#SPECIAL_PERCENT} 放入通用「特殊事件」占位节点。</li>
+     *   <li>按 {@link RouteConfig#TRADE_PERCENT} 尝试放入宝可梦交换；</li>
+     *   <li>按 {@link RouteConfig#EQUIPMENT_PERCENT} 尝试放入装备补给；</li>
+     *   <li>以上均未命中时，本段没有特殊事件。</li>
      * </ol>
      *
      * @param segment             段号（1 起）
@@ -110,11 +112,11 @@ public class NodeGenerator {
         if (roll(RouteConfig.ROCKET_PERCENT)) {
             return createRocket();
         }
+        if (roll(RouteConfig.TRADE_PERCENT)) {
+            return createTrade();
+        }
         if (roll(RouteConfig.EQUIPMENT_PERCENT)) {
             return createReward();
-        }
-        if (roll(RouteConfig.SPECIAL_PERCENT)) {
-            return createSpecial();
         }
         return null;
     }
@@ -147,16 +149,19 @@ public class NodeGenerator {
                 "用金币购买回复品、道具与技能机；随进度商品种类与数量增多");
     }
 
-    /** 特殊事件：随机节点，低概率出现；具体事件类型由后续剧情线决定。 */
-    public Option createSpecial() {
-        return new Option("神秘事件", OptionType.SPECIAL, RouteConfig.SPECIAL_AP_COST,
-                "旅途中遇到的低概率特殊事件，类型随剧情进展变化");
-    }
-
     /** 装备补给：随机节点，低概率出现；随机获得一件可携带装备（结算由控制器执行）。 */
     public Option createReward() {
         return new Option("装备补给", OptionType.REWARD, OptionType.REWARD.getApCost(),
                 "拾获一件随机可携带装备；获得后在主菜单的精灵详情页中穿戴");
+    }
+
+    /**
+     * 宝可梦交换：随机节点，低概率出现，行动点 2；系统提供一只「队伍平均等级（向下取整）+1 或 2」
+     * 的宝可梦，玩家可用队伍中的一只与其交换，也可放弃（均不返还行动点）。
+     */
+    public Option createTrade() {
+        return new Option("宝可梦交换", OptionType.TRADE, OptionType.TRADE.getApCost(),
+                "神秘商人带来一只宝可梦：可用队伍中的一只与其交换，也可放弃（均不返还行动点）");
     }
 
     /**

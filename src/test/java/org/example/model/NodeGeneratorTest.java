@@ -1,7 +1,5 @@
 package org.example.model;
 
-import org.junit.jupiter.api.Test;
-
 import java.util.List;
 import java.util.Random;
 
@@ -10,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * {@link NodeGenerator} 的单元测试：覆盖《需求文档》§4.2 的生成规则 ——
@@ -81,20 +80,33 @@ class NodeGeneratorTest {
 
         List<Option> miss = new NodeGenerator(alwaysMiss()).generateSegment(1).getRouteOptions();
         assertFalse(hasType(miss, OptionType.SHOP), "概率落空时不应有商店");
-        assertFalse(hasType(miss, OptionType.SPECIAL), "概率落空时不应有特殊事件");
         assertFalse(hasType(miss, OptionType.ROCKET), "概率落空时不应有火箭队节点");
         assertEquals(3, miss.size(), "概率落空时只剩 3 个常驻节点");
     }
 
-    /** 特殊事件槽位只有一个：火箭队判定落空时退回通用特殊事件。 */
+    /** 特殊事件槽位只有一个：火箭队 / 宝可梦交换依次落空时，装备补给落入链尾。 */
     @Test
     void 火箭队判定落空时特殊事件槽位退回通用特殊事件() {
-        // 段 1 的判定顺序：野外精灵免单 → 商店 → 火箭队 → 通用特殊事件
+        // 段 1 的判定顺序：野外精灵免单 → 商店 → 火箭队 → 宝可梦交换 → 装备补给
+        List<Option> options = new NodeGenerator(scripted(99, 0, 99, 99, 0))
+                .generateSegment(1).getRouteOptions();
+
+        assertTrue(hasType(options, OptionType.SHOP), "商店独立判定命中");
+        assertFalse(hasType(options, OptionType.ROCKET), "火箭队判定落空");
+        assertFalse(hasType(options, OptionType.TRADE), "宝可梦交换判定落空");
+        assertTrue(hasType(options, OptionType.REWARD), "装备补给落入特殊事件链末尾");
+    }
+
+    /** 宝可梦交换：火箭队判定落空后按 30% 概率命中，消耗 2 点行动点。 */
+    @Test
+    void 宝可梦交换按概率出现在特殊事件槽位() {
+        // 野外免单落空(99) → 商店命中(0) → 火箭队落空(99) → 宝可梦交换命中(0)
         List<Option> options = new NodeGenerator(scripted(99, 0, 99, 0)).generateSegment(1).getRouteOptions();
 
-        assertTrue(hasType(options, OptionType.SHOP), "商店判定命中");
-        assertFalse(hasType(options, OptionType.ROCKET), "火箭队判定落空");
-        assertTrue(hasType(options, OptionType.SPECIAL), "此时才轮到通用特殊事件");
+        assertTrue(hasType(options, OptionType.TRADE), "宝可梦交换概率命中时应出现在特殊事件槽位");
+        assertFalse(hasType(options, OptionType.REWARD), "宝可梦交换优先于装备补给判定");
+        Option trade = options.stream().filter(o -> o.getType() == OptionType.TRADE).findFirst().orElseThrow();
+        assertEquals(2, trade.getCost(), "宝可梦交换消耗 2 点行动点");
     }
 
     @Test
@@ -107,7 +119,6 @@ class NodeGeneratorTest {
         assertEquals(1, generator.createHospital().getCost(), "§4.1 医院消耗 1 点");
         assertEquals(OptionType.SHOP.getApCost(), generator.createShop().getCost());
         assertEquals(1, generator.createShop().getCost(), "§4.1 商店消耗 1 点");
-        assertEquals(RouteConfig.SPECIAL_AP_COST, generator.createSpecial().getCost());
     }
 
     @Test
