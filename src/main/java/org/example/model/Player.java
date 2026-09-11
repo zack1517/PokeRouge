@@ -130,6 +130,28 @@ public class Player {
         return true;
     }
 
+    /**
+     * 放生队内精灵（移除出队伍；装备由调用方先用 {@link #unequip} 脱下返还装备库）。
+     *
+     * <p>出战下标修正：放生的不是出战精灵时出战下标随前移；放生的是出战精灵时
+     * 出战下标指向其后一只（队空则为 -1，之后新精灵入队会自动成为出战）。</p>
+     *
+     * @return 是否移除成功（精灵不在队内返回 {@code false}）
+     */
+    public boolean removePokemon(Pokemon pokemon) {
+        int idx = party.indexOf(pokemon);
+        if (idx < 0) {
+            return false;
+        }
+        party.remove(idx);
+        if (activeIndex > idx) {
+            activeIndex--;
+        } else if (activeIndex == idx) {
+            activeIndex = party.isEmpty() ? -1 : Math.min(activeIndex, party.size() - 1);
+        }
+        return true;
+    }
+
     /** 契约补充：切换到指定下标的精灵（须健康且下标合法）。 */
     public boolean switchActive(int index) {
         if (index < 0 || index >= party.size()) {

@@ -9,9 +9,12 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 精灵个体（等级 + 种族 + 技能槽 + 当前/最大 HP + 经验）。
+ * 精灵个体（等级 + 种族 + 技能槽 + 技能库 + 当前/最大 HP + 经验）。
  * <p>HP 上限与六项实际属性由种族值、<b>个体值</b>与等级演算而来，演算规则集中在 {@link #computeStats}。
  * 个体可以积累经验升级（属性随之提升），达到条件时进化并更换种族。</p>
+ * <p><b>技能库</b>（{@link #knownMoves}）：升学到招时学到的所有技能全部保留进技能库（无上限），
+ * 出战只携带技能槽中的最多 {@value #MAX_MOVES} 招（{@link #getMoveSlots}）；玩家可在宝可梦详情
+ * 界面经 {@link #swapBattleMove} 自由更换出战技能，被换下的技能仍留在库中。</p>
  * <p>契约补充（接口文档 v1.0 §2.11）：提供 uuid/IV/性格/异常状态 字段与读取方法。
  * 现有个体由 {@link #create} 创建时以随机 IV + 勤奋性格初始化；个体值参与属性演算，
  * 由局外成长机制提升的个体值会真实反映到面板上（种族值不变）。异常状态（主要异常 + 混乱）
@@ -35,6 +38,8 @@ public class Pokemon {
     private Nature nature;
     private int maxHp;
     private final List<MoveSlot> moveSlots;
+    /** 已学会技能库（含出战技能，按学习顺序，无上限）；出战只携带 moveSlots 中的最多 4 招。 */
+    private final List<Move> knownMoves;
     private int currentHp;
     /** 异常状态（主要异常；混乱为挥发性状态，另见 {@link #confusionTurns}）。 */
     private StatusCondition status;
@@ -78,6 +83,13 @@ public class Pokemon {
         this.maxHp = maxHp;
         this.currentHp = maxHp;
         this.moveSlots = slots;
+        this.knownMoves = new ArrayList<>();
+        for (MoveSlot slot : slots) {
+            if (poolContains(slot.getMove().getId())) {
+                continue;
+            }
+            this.knownMoves.add(slot.getMove());
+        }
         this.status = StatusCondition.NONE;
     }
 
@@ -94,16 +106,25 @@ public class Pokemon {
      *
      * @param species  种族
      * @param level    等级
-     * @param movePool 技能池（全部装入技能槽）
+     * @param movePool 技能池（全部收入技能库，其中前 {@value #MAX_MOVES} 招装入出战技能槽）
      * @param ivs      个体值（0~31，六项）
      */
     public static Pokemon create(Species species, int level, List<Move> movePool, Stats ivs) {
         Stats actual = computeStats(species, level, ivs);
         List<MoveSlot> slots = new ArrayList<>();
         for (Move move : movePool) {
+            if (slots.size() >= MAX_MOVES) {
+                break;
+            }
             slots.add(new MoveSlot(move));
         }
-        return new Pokemon(species, level, actual, ivs, actual.getHp(), slots);
+        Pokemon pokemon = new Pokemon(species, level, actual, ivs, actual.getHp(), slots);
+        for (Move move : movePool) {
+            if (!pokemon.poolContains(move.getId())) {
+                pokemon.knownMoves.add(move);
+            }
+        }
+        return pokemon;
     }
 
     /**
@@ -128,9 +149,30 @@ public class Pokemon {
     public static Pokemon restore(Species species, int level, Stats ivs, List<MoveSlot> slots,
                                   long exp, StatusCondition status, int sleepTurns,
                                   int badlyPoisonCounter, int confusionTurns, int currentHp) {
+        return restore(species, level, ivs, slots, null, exp, status, sleepTurns,
+                badlyPoisonCounter, confusionTurns, currentHp);
+    }
+
+    /**
+     * 读档还原（含技能库）：{@code knownMoves} 为空或 {@code null} 时退化为「技能库 = 出战技能」
+     * （兼容未持久化技能库的旧档）。
+     *
+     * @param knownMoves 技能库（按学习顺序的完整技能列表，含出战技能）；{@code null}/空列表按出战技能兜底
+     */
+    public static Pokemon restore(Species species, int level, Stats ivs, List<MoveSlot> slots,
+                                  List<Move> knownMoves, long exp, StatusCondition status,
+                                  int sleepTurns, int badlyPoisonCounter, int confusionTurns,
+                                  int currentHp) {
         Stats actual = computeStats(species, level, ivs);
         Pokemon pokemon = new Pokemon(species, level, actual, ivs, actual.getHp(),
                 slots == null ? new ArrayList<>() : new ArrayList<>(slots));
+        if (knownMoves != null) {
+            for (Move move : knownMoves) {
+                if (move != null && !pokemon.poolContains(move.getId())) {
+                    pokemon.knownMoves.add(move);
+                }
+            }
+        }
         pokemon.exp = Math.max(0, exp);
         pokemon.status = status == null ? StatusCondition.NONE : status;
         pokemon.sleepTurns = Math.max(0, sleepTurns);
@@ -551,16 +593,83 @@ public class Pokemon {
     }
 
     /**
-     * 学会一个技能：仅当有空槽且尚未学过该技能时加入，绝不覆盖已有技能。
+     * 学会一个技能：仅当有空槽且尚未学过该技能时加入出战槽，绝不覆盖已有技能；
+     * 无论是否装入出战槽，学到的技能都会保留在技能库中。
      *
-     * @return 是否成功学会（空槽且未重复）
+     * @return 是否成功装入出战槽（空槽且未重复）
      */
     public boolean learnMove(Move move) {
-        if (move == null || hasMove(move) || moveSlotsFull()) {
+        if (move == null || moveSlotsFull()) {
+            return false;
+        }
+        if (!poolContains(move.getId())) {
+            knownMoves.add(move);
+        }
+        if (hasMove(move)) {
             return false;
         }
         moveSlots.add(new MoveSlot(move));
         return true;
+    }
+
+    /**
+     * 技能库中是否已学会指定技能（不限出战槽，含被换下或未出战的技能）。
+     *
+     * @param moveId 技能 id
+     */
+    public boolean knowsMove(String moveId) {
+        return moveId != null && poolContains(moveId);
+    }
+
+    /**
+     * 学会一个技能并保留进技能库：技能库无上限，学到即永久保留；
+     * 若出战槽有空位且该技能未出战，则同时自动装入出战槽。
+     *
+     * @return 技能是否已进入技能库（{@code null} 技能返回 {@code false}）
+     */
+    public boolean learnMoveToPool(Move move) {
+        if (move == null) {
+            return false;
+        }
+        if (!poolContains(move.getId())) {
+            knownMoves.add(move);
+        }
+        if (!moveSlotsFull() && !hasMove(move)) {
+            moveSlots.add(new MoveSlot(move));
+        }
+        return true;
+    }
+
+    /**
+     * 把技能库中的技能换到指定出战槽（被换下的技能仍留在技能库中）。
+     *
+     * @param slotIndex 出战槽下标（0~3）
+     * @param move      技能库中已学会的技能
+     * @return 被换下的技能；槽位越界、技能无效、技能不在库中或已在出战槽时返回 {@code null}
+     */
+    public Move swapBattleMove(int slotIndex, Move move) {
+        if (slotIndex < 0 || slotIndex >= moveSlots.size()
+                || move == null || !poolContains(move.getId()) || hasMove(move)) {
+            return null;
+        }
+        Move replaced = moveSlots.get(slotIndex).getMove();
+        moveSlots.set(slotIndex, new MoveSlot(move));
+        return replaced;
+    }
+
+    /** 已学会技能库（含出战技能，按学习顺序，不可变视图）。 */
+    public List<Move> getKnownMoves() {
+        return Collections.unmodifiableList(knownMoves);
+    }
+
+    /** 技能库中是否已包含该技能（按 id 判断，注册表每次查询返回的实例可能不同）。 */
+    private boolean poolContains(String moveId) {
+        for (Move known : knownMoves) {
+            if (known.getId().equals(moveId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

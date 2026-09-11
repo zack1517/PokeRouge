@@ -28,12 +28,39 @@ public class Trainer {
     private final List<Pokemon> party = new ArrayList<>();
     private int activeIndex = 0;
 
+    /** 击倒该训练师宝可梦时的经验倍率（分子 / 分母），默认 1/1（1 倍）。 */
+    private int expNumerator = 1;
+    private int expDenominator = 1;
+
     public Trainer(String name) {
         this.name = Objects.requireNonNull(name);
     }
 
     public String getName() {
         return name;
+    }
+
+    /**
+     * 设置击倒该训练师宝可梦时的经验倍率（分子 / 分母，如 6/5 表示 1.2 倍）。
+     * 战斗引擎在每只对手倒下时把倍率随击倒申报交给成长模块。
+     */
+    public void setExpMultiplier(int numerator, int denominator) {
+        if (numerator <= 0 || denominator <= 0) {
+            throw new IllegalArgumentException(
+                    "经验倍率必须为正：" + numerator + "/" + denominator);
+        }
+        this.expNumerator = numerator;
+        this.expDenominator = denominator;
+    }
+
+    /** 击倒经验倍率的分子（未设置时为 1）。 */
+    public int getExpNumerator() {
+        return expNumerator;
+    }
+
+    /** 击倒经验倍率的分母（未设置时为 1）。 */
+    public int getExpDenominator() {
+        return expDenominator;
     }
 
     public List<Pokemon> getParty() {

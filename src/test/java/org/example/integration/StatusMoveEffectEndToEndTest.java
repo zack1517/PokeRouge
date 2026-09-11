@@ -147,6 +147,14 @@ class StatusMoveEffectEndToEndTest {
         assertTrue(p.text().contains("速度大幅提高了"), p.text());
     }
 
+    @Test
+    @DisplayName("吐丝：对手速度 -1，实速确实变慢")
+    void stringShot() {
+        Probe p = probe("string-shot", 0);
+        assertEquals(-1, p.foe().getStatStage(Stat.SPEED));
+        assertTrue(p.text().contains("速度下降了"), p.text());
+    }
+
     // ---------------------------------------------------------------- 专属效果
 
     @Test

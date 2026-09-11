@@ -246,4 +246,35 @@ public interface BattleService {
      * @throws IllegalStateException 当前没有待抉择的学招请求时
      */
     List<String> decideLearn(int forgetSlotIndex);
+
+    // ------------------------------------------------------------------
+    // 捕捉收尾：满队放生抉择
+    // ------------------------------------------------------------------
+
+    /**
+     * 满队时挂起的已捕捉精灵：捕捉成功但队伍已满，新精灵暂未入队，
+     * 等待玩家放生队内精灵腾位（见 {@link #releaseToMakeRoom(int)}）。
+     *
+     * <p>非满队捕捉会直接入队，本方法恒返回 {@code null}；返回非 {@code null} 时
+     * 战斗已处于 {@link Status#CAUGHT}，界面应展示放生面板而非结局。</p>
+     *
+     * @return 待入队的已捕捉精灵；无需放生时为 {@code null}
+     */
+    Pokemon capturedAwaitingRelease();
+
+    /**
+     * 放生队内精灵为挂起的已捕捉精灵腾位：先脱下其装备返还装备库，再移除出队，
+     * 最后把挂起的精灵加入队伍。
+     *
+     * @param partyIndex 待放生精灵的队伍下标
+     * @return 是否放生成功（无挂起精灵或下标非法返回 {@code false}）
+     */
+    boolean releaseToMakeRoom(int partyIndex);
+
+    /**
+     * 放弃挂起的已捕捉精灵（不腾位、不改变队伍）：挂起精灵直接丢失。
+     *
+     * @return 是否放弃成功（无挂起精灵返回 {@code false}）
+     */
+    boolean discardCaptured();
 }

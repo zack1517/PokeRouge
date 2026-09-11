@@ -3,17 +3,28 @@ package org.example.view;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import javafx.animation.FadeTransition;
+import javafx.animation.ScaleTransition;
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 import org.example.pokemon.domain.Pokemon;
 import org.example.pokemon.domain.Species;
 import org.example.pokemon.infrastructure.GameData;
@@ -21,6 +32,7 @@ import org.example.pokemon.service.PokemonService;
 import org.example.pokemon.service.PokemonServiceImpl;
 import org.example.util.ImageBackgrounds;
 import org.example.util.LogUtil;
+import org.example.util.SpriteLoader;
 import org.example.util.UiScale;
 
 /**
@@ -35,7 +47,9 @@ import org.example.util.UiScale;
  * <p>「开始战斗」后由 {@code MainController} 转入真实战斗模块：与随机生成的同数量满级
  * 对手整队轮战，战斗中可通过「精灵」菜单换人。</p>
  *
- * <p>ⓘ 页面仅保证基础功能可用，美术风格由后续美工统一调整。</p>
+ * <p>视觉：与启动页 / 模式选择页同一套「宝可梦蓝黄 + 白卡悬浮」体系（卡片圆角、
+ * 柔和投影、悬停反馈），样式集中在 {@code /css/custom-battle-setup.css}，
+ * 本类只负责结构与接线。</p>
  */
 public final class CustomBattleSetupView {
 
@@ -48,13 +62,17 @@ public final class CustomBattleSetupView {
     /** 页面背景（与启动页同款主画面）。 */
     private static final String MAIN_BACKGROUND = "/images/background/bg_main.jpeg";
 
-    /** 列标题统一样式。 */
-    private static final String CAPTION_STYLE =
-            "-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 12px; -fx-text-fill: #333;";
+    /** 本页样式表（宝可梦蓝黄 + 白卡悬浮，与启动页同族）。 */
+    private static final String STYLE_SHEET = "/css/custom-battle-setup.css";
 
-    /** 按钮统一样式（基础可用即可）。 */
-    private static final String BUTTON_STYLE =
-            "-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 12px; -fx-padding: 6 14;";
+    /** 候选列表小头像尺寸。 */
+    private static final double CANDIDATE_ICON_SIZE = 24;
+
+    /** 队伍卡槽精灵图尺寸。 */
+    private static final double SLOT_ICON_SIZE = 40;
+
+    /** 卡槽统一高度（槽内容按此收拢，避免被拉伸成大块空白）。 */
+    private static final double SLOT_HEIGHT = 64;
 
     /** 页面标题（如「1 vs 1」「小队对战」「自定义数量（3）」）。 */
     private final String title;
@@ -69,12 +87,16 @@ public final class CustomBattleSetupView {
     /** 已选队伍（顺序即出战顺序，第一位为首发）。 */
     private final List<Pokemon> team = new ArrayList<>();
 
-    private ListView<Pokemon> teamList;
+    private ListView<Species> candidateList;
+    private GridPane partyGrid;
     private Button addButton;
     private Button removeButton;
     private Button leadButton;
     private Button startButton;
     private Label teamCaption;
+
+    /** 当前选中的队伍卡槽下标（-1 = 未选中）；「移除选中 / 设为首发」对其操作。 */
+    private int selectedTeamIndex = -1;
 
     public CustomBattleSetupView(String title, int requiredCount, Runnable onBack,
                                  Consumer<List<Pokemon>> onStartBattle) {
@@ -87,112 +109,36 @@ public final class CustomBattleSetupView {
     public Scene createScene() {
         BorderPane root = new BorderPane();
         ImageBackgrounds.apply(root, MAIN_BACKGROUND);
-        root.setPadding(new Insets(10));
+        root.setPadding(new Insets(11));
 
-        Label titleLabel = new Label(title + " · 队伍配置");
-        titleLabel.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 18px; -fx-font-weight: bold;");
-        Label hint = new Label(hintText());
-        hint.setWrapText(true);
-        hint.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 11px; -fx-text-fill: #444;");
-        VBox header = new VBox(2, titleLabel, hint);
-        header.setStyle("-fx-background-color: rgba(255, 255, 255, 0.6); -fx-background-radius: 10;"
-                + " -fx-border-color: #c9c9c9; -fx-border-width: 1; -fx-border-radius: 10;"
-                + " -fx-padding: 8 12;");
+        // 顶部：标题卡（主标题 + 副标题分层）
+        Region header = buildHeader();
+        BorderPane.setMargin(header, new Insets(0, 0, 8, 0));
         root.setTop(header);
 
-        // 左列：全部宝可梦候选（按 CSV 数据源加载）
-        List<Species> allSpecies = GameData.instance().getAllSpecies();
-        Label candidateCaption = new Label("全部宝可梦（" + allSpecies.size() + "）");
-        candidateCaption.setStyle(CAPTION_STYLE);
-        ListView<Species> candidateList = new ListView<>(FXCollections.observableArrayList(allSpecies));
-        candidateList.setPrefSize(268, 226);
-        candidateList.setStyle("-fx-font-family: 'Microsoft YaHei';");
-        candidateList.setCellFactory(list -> new ListCell<>() {
-            @Override
-            protected void updateItem(Species item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty || item == null ? null
-                        : item.getName() + "（" + item.getId() + "）  BST " + item.getBaseStats().getTotal());
-            }
-        });
-
-        addButton = new Button("加入队伍 >>");
-        addButton.setStyle(BUTTON_STYLE);
-        addButton.setOnAction(e -> addSelected(candidateList.getSelectionModel().getSelectedItem()));
-
-        VBox candidateBox = new VBox(6, candidateCaption, candidateList, addButton);
-        candidateBox.setAlignment(Pos.CENTER);
-
-        // 右列：我的队伍（第一位为首发）
-        teamCaption = new Label();
-        teamCaption.setStyle(CAPTION_STYLE);
-        teamList = new ListView<>();
-        teamList.setPrefSize(268, 226);
-        teamList.setStyle("-fx-font-family: 'Microsoft YaHei';");
-        teamList.setCellFactory(list -> new ListCell<>() {
-            @Override
-            protected void updateItem(Pokemon item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    return;
-                }
-                int index = getIndex();
-                setText((index == 0 ? "★首发  " : (index + 1) + ". ") + item.getName() + " Lv." + item.getLevel());
-            }
-        });
-
-        removeButton = new Button("移除选中");
-        removeButton.setStyle(BUTTON_STYLE);
-        removeButton.setOnAction(e -> {
-            int index = teamList.getSelectionModel().getSelectedIndex();
-            if (index >= 0) {
-                team.remove(index);
-                refreshTeamUi();
-            }
-        });
-
-        leadButton = new Button("设为首发");
-        leadButton.setStyle(BUTTON_STYLE);
-        leadButton.setOnAction(e -> {
-            int index = teamList.getSelectionModel().getSelectedIndex();
-            if (index > 0) {
-                team.add(0, team.remove(index)); // 移到队伍首位 = 首发
-                refreshTeamUi();
-                teamList.getSelectionModel().select(0);
-            }
-        });
-
-        HBox teamButtons = new HBox(8, removeButton, leadButton);
-        teamButtons.setAlignment(Pos.CENTER);
-        VBox teamBox = new VBox(6, teamCaption, teamList, teamButtons);
-        teamBox.setAlignment(Pos.CENTER);
-
-        HBox columns = new HBox(10, candidateBox, teamBox);
-        columns.setAlignment(Pos.CENTER);
+        // 中部：左栏候选（固定宽）+ 右栏队伍（自适应占满剩余宽度）
+        Region candidatePanel = buildCandidatePanel();
+        candidatePanel.setPrefWidth(250);
+        candidatePanel.setMinWidth(250);
+        candidatePanel.setMaxWidth(250);
+        Region teamPanel = buildTeamPanel();
+        HBox columns = new HBox(10, candidatePanel, teamPanel);
+        HBox.setHgrow(teamPanel, Priority.ALWAYS);
+        BorderPane.setMargin(columns, new Insets(0, 0, 8, 0));
         root.setCenter(columns);
 
-        // 底部：返回 + 开始战斗
-        Button back = new Button("返回");
-        back.setStyle(BUTTON_STYLE);
-        back.setOnAction(e -> onBack.run());
-
-        startButton = new Button("开始战斗");
-        startButton.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 14px;"
-                + " -fx-font-weight: bold; -fx-padding: 8 24;");
-        startButton.setOnAction(e -> {
-            if (canStart()) {
-                onStartBattle.accept(new ArrayList<>(team));
-            }
-        });
-
-        HBox bottomBar = new HBox(12, back, startButton);
-        bottomBar.setAlignment(Pos.CENTER);
-        bottomBar.setPadding(new Insets(8, 0, 0, 0));
-        root.setBottom(bottomBar);
+        // 底部：返回（次要）+ 开始战斗（主行动）
+        root.setBottom(buildBottomBar());
 
         refreshTeamUi();
-        return UiScale.scene(root);
+
+        Scene scene = UiScale.scene(root);
+        var css = CustomBattleSetupView.class.getResource(STYLE_SHEET);
+        if (css != null) {
+            scene.getStylesheets().add(css.toExternalForm());
+        }
+        playEntrance(root);
+        return scene;
     }
 
     /** 队伍成员上限：限定数量模式即该数量；小队对战模式最多 6 只。 */
@@ -205,17 +151,15 @@ public final class CustomBattleSetupView {
         return requiredCount > 0 ? team.size() == maxCount() : !team.isEmpty();
     }
 
-    /** 页面提示文案（按出战数量语义区分）。 */
+    /** 页面提示文案（按出战数量语义区分；单行短句，与标题形成层级）。 */
     private String hintText() {
         if (requiredCount == 1) {
-            return "选择 1 只宝可梦出战（Lv.100 满状态），对手由系统随机生成；战斗结束后返回模式选择页。";
+            return "选择 1 只宝可梦出战（Lv.100 满状态），对手由系统随机生成。";
         }
         if (requiredCount > 1) {
-            return "从全部宝可梦中挑选 " + maxCount() + " 只（Lv.100 满状态），对手随机生成同数量满级队伍；"
-                    + "队伍第一位为首发，战斗中可通过「精灵」菜单换人。";
+            return "从全部宝可梦中挑选 " + maxCount() + " 只（Lv.100 满状态），对手随机生成同数量满级队伍，第一位为首发。";
         }
-        return "从全部宝可梦中挑选 1~" + MAX_SQUAD + " 只（Lv.100 满状态），对手随机生成同数量满级队伍；"
-                + "队伍第一位为首发，战斗中可通过「精灵」菜单换人。";
+        return "从全部宝可梦中挑选 1~" + MAX_SQUAD + " 只（Lv.100 满状态），对手随机生成同数量满级队伍，第一位为首发。";
     }
 
     /** 把候选列表当前选中项加入队伍：新建 Lv.100 满状态个体；未选中或已达上限时忽略。 */
@@ -234,14 +178,293 @@ public final class CustomBattleSetupView {
         refreshTeamUi();
     }
 
-    /** 刷新队伍列表、标题与按钮可用状态。 */
+    /** 刷新队伍网格、标题与按钮可用状态。 */
     private void refreshTeamUi() {
-        teamList.getItems().setAll(team);
-        teamList.refresh();
+        if (selectedTeamIndex >= team.size()) {
+            selectedTeamIndex = -1;
+        }
+        rebuildPartyGrid();
         teamCaption.setText("我的队伍（" + team.size() + "/" + maxCount() + "）");
         addButton.setDisable(team.size() >= maxCount());
-        removeButton.setDisable(team.isEmpty());
-        leadButton.setDisable(team.size() < 2);
+        removeButton.setDisable(team.isEmpty() || selectedTeamIndex < 0);
+        leadButton.setDisable(team.size() < 2 || selectedTeamIndex <= 0);
         startButton.setDisable(!canStart());
+    }
+
+    // ------------------------------------------------------------------
+    // UI 构建（宝可梦蓝黄 + 白卡悬浮，样式见 /css/custom-battle-setup.css）
+    // ------------------------------------------------------------------
+
+    /** 顶部标题卡：主标题醒目 + 副标题小字（信息层级分明）。 */
+    private Region buildHeader() {
+        Label titleLabel = new Label(title + " · 队伍配置");
+        titleLabel.getStyleClass().add("cbs-title");
+        Label hint = new Label(hintText());
+        hint.getStyleClass().add("cbs-hint");
+        VBox header = new VBox(2, titleLabel, hint);
+        header.getStyleClass().add("cbs-header");
+        return header;
+    }
+
+    /** 左栏：全部宝可梦候选（小头像 + 中文名 + 英文名 + BST；双击条目可直接入队）。 */
+    private Region buildCandidatePanel() {
+        List<Species> allSpecies = GameData.instance().getAllSpecies();
+        HBox caption = panelCaption(new Label("全部宝可梦（" + allSpecies.size() + "）"));
+
+        candidateList = new ListView<>(FXCollections.observableArrayList(allSpecies));
+        candidateList.getStyleClass().add("cbs-list");
+        candidateList.setCellFactory(list -> new ListCell<>() {
+            @Override
+            protected void updateItem(Species item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                    return;
+                }
+                Label name = new Label(item.getName());
+                name.getStyleClass().add("cbs-cell-name");
+                Region spacer = new Region();
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                Label bst = new Label("BST " + item.getBaseStats().getTotal());
+                bst.getStyleClass().add("cbs-cell-bst");
+                HBox topRow = new HBox(4, name, spacer, bst);
+                topRow.setAlignment(Pos.CENTER_LEFT);
+                Label english = new Label(PokedexData.englishNameOf(item.getId()));
+                english.getStyleClass().add("cbs-cell-sub");
+                VBox text = new VBox(0, topRow, english);
+                text.setAlignment(Pos.CENTER_LEFT);
+                HBox.setHgrow(text, Priority.ALWAYS);
+                HBox row = new HBox(7, buildSpriteIcon(item.getName(), CANDIDATE_ICON_SIZE,
+                        "cbs-cell-icon", "cbs-cell-noicon"), text);
+                row.setAlignment(Pos.CENTER_LEFT);
+                setGraphic(row);
+            }
+        });
+        candidateList.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) { // 双击快捷入队（与「加入队伍」按钮同一逻辑）
+                addSelected(candidateList.getSelectionModel().getSelectedItem());
+            }
+        });
+        VBox.setVgrow(candidateList, Priority.ALWAYS);
+
+        addButton = actionButton("加入队伍", "cbs-btn-blue");
+        addButton.setMaxWidth(Double.MAX_VALUE);
+        addButton.setOnAction(e -> addSelected(candidateList.getSelectionModel().getSelectedItem()));
+
+        VBox panel = new VBox(6, caption, candidateList, addButton);
+        panel.getStyleClass().add("cbs-panel");
+        return panel;
+    }
+
+    /** 右栏：我的队伍 —— 卡槽网格（槽数 = 本模式上限；点击卡槽选中，行内按钮对其操作）。 */
+    private Region buildTeamPanel() {
+        teamCaption = new Label();
+        HBox caption = panelCaption(teamCaption);
+
+        partyGrid = new GridPane();
+        partyGrid.getStyleClass().add("cbs-party-grid");
+        partyGrid.setHgap(6);
+        partyGrid.setVgap(6);
+        partyGrid.setAlignment(Pos.CENTER);
+
+        removeButton = actionButton("移除选中", null);
+        removeButton.setOnAction(e -> {
+            int index = selectedTeamIndex;
+            if (index >= 0 && index < team.size()) {
+                team.remove(index); // 移除后无选中（与旧版 setAll 清空选中的行为一致）
+                selectedTeamIndex = -1;
+                refreshTeamUi();
+            }
+        });
+        leadButton = actionButton("设为首发", null);
+        leadButton.setOnAction(e -> {
+            int index = selectedTeamIndex;
+            if (index > 0) {
+                team.add(0, team.remove(index)); // 移到队伍首位 = 首发
+                selectedTeamIndex = 0;           // 选中项跟随（与旧版 select(0) 一致）
+                refreshTeamUi();
+            }
+        });
+        HBox buttonRow = new HBox(8, removeButton, leadButton);
+        removeButton.setMaxWidth(Double.MAX_VALUE);
+        leadButton.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(removeButton, Priority.ALWAYS);
+        HBox.setHgrow(leadButton, Priority.ALWAYS);
+
+        Region spacer = new Region();
+        VBox.setVgrow(spacer, Priority.ALWAYS); // 吸收剩余高度：卡槽区置顶、操作按钮贴底
+
+        VBox panel = new VBox(6, caption, partyGrid, spacer, buttonRow);
+        panel.getStyleClass().add("cbs-panel");
+        return panel;
+    }
+
+    /** 底部操作栏：返回（次要白胶囊）+ 开始战斗（黄色大胶囊，全页视觉重心）。 */
+    private Region buildBottomBar() {
+        Button back = actionButton("返回", null);
+        back.setOnAction(e -> onBack.run());
+
+        startButton = actionButton("开始战斗", "cbs-btn-start");
+        startButton.setOnAction(e -> {
+            if (canStart()) {
+                onStartBattle.accept(new ArrayList<>(team));
+            }
+        });
+        installHoverLift(startButton, 1.04);
+
+        HBox bar = new HBox(12, back, startButton);
+        bar.setAlignment(Pos.CENTER);
+        return bar;
+    }
+
+    /** 栏标题行：黄色装饰色条 + 深蓝粗体标题（左右两栏统一）。 */
+    private static HBox panelCaption(Label caption) {
+        caption.getStyleClass().add("cbs-panel-title");
+        Region accent = new Region();
+        accent.getStyleClass().add("cbs-accent");
+        accent.setMinSize(3.5, 14);
+        accent.setPrefSize(3.5, 14);
+        accent.setMaxSize(3.5, 14);
+        HBox box = new HBox(6, accent, caption);
+        box.setAlignment(Pos.CENTER_LEFT);
+        return box;
+    }
+
+    /** 统一样式的按钮（基础类 cbs-btn；variant 为 null 时不加变体类）。 */
+    private static Button actionButton(String text, String variantStyleClass) {
+        Button button = new Button(text);
+        button.getStyleClass().add("cbs-btn");
+        if (variantStyleClass != null) {
+            button.getStyleClass().add(variantStyleClass);
+        }
+        return button;
+    }
+
+    /** 精灵小图：有立绘用图（等比缩放居中），无图回退「?」（与图鉴同款策略）。 */
+    private static StackPane buildSpriteIcon(String pokemonName, double size,
+                                             String boxStyleClass, String fallbackStyleClass) {
+        StackPane box = new StackPane();
+        box.getStyleClass().add(boxStyleClass);
+        box.setMinSize(size, size);
+        box.setPrefSize(size, size);
+        box.setMaxSize(size, size);
+        Image image = SpriteLoader.load(pokemonName);
+        if (image == null) {
+            Label fallback = new Label("?");
+            fallback.getStyleClass().add(fallbackStyleClass);
+            box.getChildren().add(fallback);
+        } else {
+            ImageView view = new ImageView(image);
+            view.setFitWidth(size - 4);
+            view.setFitHeight(size - 4);
+            view.setPreserveRatio(true);
+            view.setSmooth(true);
+            box.getChildren().add(view);
+        }
+        return box;
+    }
+
+    /** 队伍成员卡：精灵图 + 名称 + 英文名 + 等级；首位挂「★ 首发」徽章；点击选中。 */
+    private Node buildMemberSlot(int index) {
+        Pokemon member = team.get(index);
+        Species species = member.getSpecies();
+
+        Label name = new Label(member.getName());
+        name.getStyleClass().add("cbs-slot-name");
+        HBox nameRow = new HBox(4, name);
+        nameRow.setAlignment(Pos.CENTER_LEFT);
+        if (index == 0) {
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+            Label badge = new Label("★ 首发");
+            badge.getStyleClass().add("cbs-slot-badge");
+            nameRow.getChildren().addAll(spacer, badge);
+        }
+        Label english = new Label(PokedexData.englishNameOf(species.getId()));
+        english.getStyleClass().add("cbs-slot-sub");
+        Label level = new Label("Lv." + member.getLevel());
+        level.getStyleClass().add("cbs-slot-sub");
+        VBox info = new VBox(0, nameRow, english, level);
+        info.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(info, Priority.ALWAYS);
+
+        HBox card = new HBox(7,
+                buildSpriteIcon(species.getName(), SLOT_ICON_SIZE, "cbs-slot-sprite", "cbs-slot-noicon"),
+                info);
+        card.setAlignment(Pos.CENTER_LEFT);
+        card.setMinHeight(SLOT_HEIGHT);
+        card.setPrefHeight(SLOT_HEIGHT);
+        card.setMaxHeight(SLOT_HEIGHT);
+        card.setMaxWidth(Double.MAX_VALUE);
+        card.getStyleClass().add("cbs-slot");
+        if (index == selectedTeamIndex) {
+            card.getStyleClass().add("cbs-slot-selected");
+        }
+        card.setOnMouseClicked(e -> {
+            selectedTeamIndex = index;
+            refreshTeamUi();
+        });
+        installHoverLift(card, 1.02);
+        return card;
+    }
+
+    /** 空卡槽：虚线占位；下一个空位给出引导文案，其余仅「＋」。 */
+    private Node buildEmptySlot(int index) {
+        Label placeholder = new Label(index == team.size() ? "＋ 选择宝可梦加入队伍" : "＋");
+        placeholder.getStyleClass().add(index == team.size() ? "cbs-slot-empty-hint" : "cbs-slot-plus");
+        StackPane slot = new StackPane(placeholder);
+        slot.getStyleClass().add("cbs-slot-empty");
+        slot.setMinHeight(SLOT_HEIGHT);
+        slot.setPrefHeight(SLOT_HEIGHT);
+        slot.setMaxHeight(SLOT_HEIGHT);
+        slot.setMaxWidth(Double.MAX_VALUE);
+        return slot;
+    }
+
+    /** 重建队伍网格：槽数 = 本模式上限（1 vs 1 → 1；2 vs 2 → 2；小队 / 自定义 → 6）。 */
+    private void rebuildPartyGrid() {
+        partyGrid.getChildren().clear();
+        partyGrid.getColumnConstraints().clear();
+        int slots = maxCount();
+        int cols = slots == 1 ? 1 : 2;
+        for (int c = 0; c < cols; c++) {
+            ColumnConstraints column = new ColumnConstraints();
+            if (cols == 1) {
+                column.setPrefWidth(200); // 单槽模式：居中的固定宽度展示卡
+                column.setHgrow(Priority.NEVER);
+            } else {
+                column.setHgrow(Priority.ALWAYS); // 双列平分
+            }
+            partyGrid.getColumnConstraints().add(column);
+        }
+        for (int i = 0; i < slots; i++) {
+            partyGrid.add(i < team.size() ? buildMemberSlot(i) : buildEmptySlot(i), i % cols, i / cols);
+        }
+    }
+
+    /** 轻量悬停反馈：进入轻微放大、移出还原（110ms，纯视觉效果，不改布局）。 */
+    private static void installHoverLift(Node node, double scale) {
+        ScaleTransition up = new ScaleTransition(Duration.millis(110), node);
+        up.setToX(scale);
+        up.setToY(scale);
+        ScaleTransition down = new ScaleTransition(Duration.millis(110), node);
+        down.setToX(1);
+        down.setToY(1);
+        node.setOnMouseEntered(e -> {
+            down.stop();
+            up.playFromStart();
+        });
+        node.setOnMouseExited(e -> {
+            up.stop();
+            down.playFromStart();
+        });
+    }
+
+    /** 页面入场：整体淡入（220ms，轻量不位移）。 */
+    private static void playEntrance(Region root) {
+        FadeTransition fade = new FadeTransition(Duration.millis(220), root);
+        fade.setFromValue(0);
+        fade.setToValue(1);
+        fade.play();
     }
 }

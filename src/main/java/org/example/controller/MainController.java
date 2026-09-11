@@ -1,11 +1,10 @@
 package org.example.controller;
 
-import javafx.application.Platform;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.ChoiceDialog;
-import javafx.stage.Stage;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.example.GameSession;
 import org.example.battle.BattleDataPort;
 import org.example.battle.BattleService;
@@ -14,6 +13,8 @@ import org.example.config.AppConfig;
 import org.example.data.GameData;
 import org.example.data.ShopStock;
 import org.example.growth.GrowthProgress;
+import org.example.growth.GrowthService;
+import org.example.integration.PokemonBattleAdapter;
 import org.example.model.HeldItem;
 import org.example.model.Item;
 import org.example.model.Option;
@@ -31,20 +32,23 @@ import org.example.util.MusicPlayer;
 import org.example.view.CustomBattleSetupView;
 import org.example.view.CustomBattleView;
 import org.example.view.MainView;
+import org.example.view.PokedexView;
 import org.example.view.PokemonDetailView;
 import org.example.view.RogueFloorView;
 import org.example.view.SaveSlotView;
 import org.example.view.ShopView;
-import org.example.view.StarterSelectionView;
 import org.example.view.StartView;
-import org.example.integration.PokemonBattleAdapter;
-import org.example.integration.WildEncounter;
+import org.example.view.StarterSelectionView;
 
-import java.util.List;
-import java.util.Optional;
+import javafx.application.Platform;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.ChoiceDialog;
+import javafx.stage.Stage;
 
 /**
- * 主控制器：负责窗口生命周期、训练家会话，以及 主菜单 ⇄ 战斗/肉鸽楼层 的场景切换。
+ * 主控制器：负责窗口生命周期、训练家会话，以及 启动页 ⇄ 主菜单 ⇄ 战斗/肉鸽楼层 的场景切换。
  *
  * <p>玩家（队伍/背包）在应用生命周期内唯一持有，每次战斗后返回主菜单时重新构建
  * 主视图以反映最新状态。</p>
@@ -53,8 +57,12 @@ import java.util.Optional;
  * HOSPITAL/RANDOM 当场结算 → 点数耗尽与楼层 BOSS 决战 → 胜利推进下一层（地图段号同步）。</p>
  *
  * <p>存档：4 个存档位由 {@link SaveManager} 管理，每个档位各自持有一份进度快照与一份图鉴成长。
- * 存档仅在<b>未作战时</b>可用（主菜单手动保存 / 回到主菜单与推进楼层时自动保存）；
- * 战斗场景接管舞台期间 {@link #battleInProgress} 为真，手动保存会被拒绝。</p>
+ * 存档仅在<b>未作战时</b>可用（主菜单手动保存 / 读档 / 回到主菜单与推进楼层时自动保存）；
+ * 战斗场景接管舞台期间 {@link #battleInProgress} 为真，手动保存与读档都会被拒绝。</p>
+ *
+ * <p>回合边界与启动页：主菜单「返回主界面」与肉鸽一轮结束（通关 / 战败）都<b>不</b>退出程序，
+ * 而是先落盘再回到启动页 —— 玩家在启动页选择「开始游戏」（新游戏）或「继续游戏」（读档）；
+ * 真正退出仍只由窗口关闭按钮的二次确认负责。</p>
  */
 public class MainController {
 
@@ -97,11 +105,31 @@ public class MainController {
         return session != null ? session.getGrowthProgress() : GrowthProgress.instance();
     }
 
-    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「自定义战斗」进入模式选择页）。 */
+    /** 对手等级锚点：队伍中宝可梦的最高等级（空队伍兑底 1）。 */
+    private int highestPartyLevel() {
+        return player.getParty().stream().mapToInt(Pokemon::getLevel).max().orElse(1);
+    }
+
+    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「宝可梦图鉴」进入图鉴页；「自定义战斗」进入模式选择页）。 */
     public void showStartScreen() {
         MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环；文件缺失静默降级）
         stage.setScene(new StartView(this::showStarterSelection, this::showContinueSelection,
-                saveManager.store().hasAnySave(), this::showCustomBattle).createScene());
+                saveManager.store().hasAnySave(), this::showCustomBattle, this::showPokedex).createScene());
+    }
+
+    /**
+     * 宝可梦图鉴页：由启动页「宝可梦图鉴」进入。
+     *
+     * <p>数据 = 宝可梦库（种族 / 技能）+ 局外成长进度（捕捉 / 对战记录，供「图鉴记录」标签）。
+     * 当前图鉴不启用解锁机制、直接全部展示（见 {@code PokedexData} 解锁开关）；队伍持有的种族
+     * 仍照常传入，以便恢复解锁口径时无需改动本类。「返回」回到启动页。</p>
+     */
+    public void showPokedex() {
+        Set<String> ownedSpeciesIds = session == null ? Set.of()
+                : session.getPlayer().getParty().stream()
+                        .map(pokemon -> pokemon.getSpecies().getId())
+                        .collect(Collectors.toSet());
+        stage.setScene(new PokedexView(growthProgress(), ownedSpeciesIds, this::showStartScreen).createScene());
     }
 
     /** 自定义战斗模式选择页：由启动页「自定义战斗」进入；四种模式均已接入真实战斗。 */
@@ -200,13 +228,26 @@ public class MainController {
                 this::showStartScreen).createScene());
     }
 
-    /** 读档并进入主菜单；档位无存档或存档损坏时给出提示并留在选档页。 */
+    /**
+     * 读档并进入主菜单；档位无存档、存档损坏、或那一轮远征已经结束时给出提示并留在选档页。
+     *
+     * <p>「本轮已结束」的档位不载入：结束的一轮（通关 / 战败）没有可继续的内容，载进去只会
+     * 卡在楼层页。此时局内读档保持当前会话不动，从启动页进来的则回到启动页去开新游戏。</p>
+     */
     private void loadFromSlot(SaveSlot slot) {
         try {
             Optional<GameSession> loaded = saveManager.load(slot);
             if (loaded.isEmpty()) {
                 infoAlert("无法继续", slot.displayName() + " 里没有可用的存档（或队伍已全部失效）。");
                 return;
+            }
+            if (loaded.get().isRogueRunFinished()) {
+                infoAlert("本轮已结束", slot.displayName() + " 里的一轮远征已经结束，无法继续。\n"
+                        + "请选择其它存档位，或返回后开始新游戏。");
+                if (session == null || player == null) {
+                    showStartScreen(); // 启动页进来的：直接回启动页选「开始游戏」
+                }
+                return; // 局内读档：留在选档页，当前进度不受影响
             }
             this.activeSlot = slot;
             this.session = loaded.get();
@@ -242,12 +283,13 @@ public class MainController {
             }
 
             @Override
+            public void onLoadGame() {
+                showLoadSelection();
+            }
+
+            @Override
             public void onExit() {
-                if (confirmExit()) {
-                    Platform.exit();
-                } else {
-                    showMainMenu();
-                }
+                returnToStartScreen();
             }
 
             @Override
@@ -271,9 +313,46 @@ public class MainController {
                 .createScene());
     }
 
+    /**
+     * 离开当前这一局、回到初始主界面（启动页）：先落盘再释放会话，玩家可在启动页
+     * 选择「开始游戏」（新游戏）或「继续游戏」（读档）。
+     *
+     * <p>本方法<b>不</b>退出程序 —— 主菜单的「返回主界面」按钮与一轮远征结束（通关 / 战败）
+     * 都走这里；主动退出仍只由窗口关闭按钮的二次确认负责。</p>
+     */
+    private void returnToStartScreen() {
+        autoSave(); // 离开前把当前进度落盘，避免「返回主界面」被误解为丢档
+        session = null;
+        player = null;
+        activeSlot = null;
+        showStartScreen();
+    }
+
     // ------------------------------------------------------------------
-    // 存档：手动保存 / 自动保存（均仅在未作战时进行）
+    // 存档：手动保存 / 读取存档 / 自动保存（均仅在未作战时进行）
     // ------------------------------------------------------------------
+
+    /**
+     * 读取存档：先让玩家在 4 个档位里选一个再载入（由主菜单「读取存档」进入）。
+     *
+     * <p>列表只提供可解析的档位（空档与损坏档不可选）；载入前会先把当前进度自动
+     * 落盘到 {@link #activeSlot}，因此中途换档不会丢掉本局进展。载入成功后所选档位
+     * 成为当前档位，之后的自动存档都记到它名下。</p>
+     */
+    private void showLoadSelection() {
+        if (battleInProgress) {
+            infoAlert("战斗中无法读档", "请先结束当前战斗，回到主菜单后再读取存档。");
+            return;
+        }
+        if (session == null || player == null) {
+            return;
+        }
+        autoSave(); // 换档前保护当前进度：读档后内存里的这一局将被替换
+        stage.setScene(new SaveSlotView(SaveSlotView.Purpose.CONTINUE, saveManager.store().statuses(),
+                activeSlot,
+                this::loadFromSlot,
+                this::showMainMenu).createScene());
+    }
 
     /**
      * 手动保存：先让玩家在 4 个档位里选一个再写入。
@@ -471,7 +550,7 @@ public class MainController {
     /** 本轮结束时的补充说明（如「火箭队节点不可失败」）；为 null 时用默认文案。 */
     private String runEndReason;
 
-    /** 本轮远征结束（通关或战败）：弹窗反馈后回主菜单。 */
+    /** 本轮远征结束（通关或战败）：弹窗反馈后回<b>初始主界面</b>，玩家在那里选择新游戏或读档。 */
     private void finishRogueRun() {
         if (session.isRogueRunCleared()) {
             infoAlert("通关", session.isRogueAggressionTriggered()
@@ -483,8 +562,7 @@ public class MainController {
                     : runEndReason + "，肉鸽远征到此为止。");
         }
         runEndReason = null;
-        autoSave();
-        showMainMenu();
+        returnToStartScreen(); // 内含 autoSave：结束的一轮也落盘后再回启动页
     }
 
     // ------------------------------------------------------------------
@@ -538,7 +616,7 @@ public class MainController {
         if (!session.hasHealthyPokemon()) {
             session.endRogueRun();
             infoAlert("本轮结束", "队伍已全部倒下，肉鸽远征结束。");
-            showMainMenu();
+            returnToStartScreen(); // 一轮结束统一回初始主界面
             return false;
         }
         Pokemon active = session.getActive();
@@ -628,7 +706,11 @@ public class MainController {
         }
     }
 
-    /** 路线节点战败（§4.3 / §5.2）：普通节点仅扣金币；火箭队线节点不可失败，直接结束本轮。 */
+    /**
+     * 路线节点战败（§4.3 / §5.2）：普通节点仅扣金币；火箭队线节点不可失败，直接结束本轮。
+     * 野生 / 路人训练家全灭不结束游戏：消耗 {@link RouteConfig#DEFEAT_RESCUE_AP_COST} 点行动点
+     * 恢复全队状态（不足则行动点置 0），本轮继续。
+     */
     private void handleRouteDefeat(OptionType type) {
         int lost = session.applyRogueDefeatPenalty(type);
         if (type != null && type.defeatEndsRun()) {
@@ -638,6 +720,16 @@ public class MainController {
             return;
         }
         if (!session.hasHealthyPokemon()) {
+            if (type == OptionType.WILD || type == OptionType.TRAINER) {
+                // 全灭救援：消耗行动点恢复全状态，本轮不结束
+                session.applyRogueDefeatApPenalty();
+                player.healParty();
+                session.leadWithFirstHealthy();
+                infoAlert("战败救援", "队伍全部倒下！消耗 " + RouteConfig.DEFEAT_RESCUE_AP_COST
+                        + " 点行动点恢复了全队状态（行动点不足则归零），本轮继续。");
+                finishNodeStep(true);
+                return;
+            }
             session.endRogueRun();
             finishRogueRun();
             return;
@@ -647,13 +739,12 @@ public class MainController {
         finishNodeStep(true);
     }
 
-    /** WILD 节点：生成野生精灵，进入真实遭遇战（可捕获）。 */
+    /** WILD 节点：生成野生精灵，进入真实遭遇战（可捕获）。等级锚定队伍最高等级 ±2 浮动。 */
     private void startRogueWildBattle(Option option) {
         if (!ensureRogueBattleReady()) {
             return;
         }
-        int level = WildEncounter.levelAround(
-                session.getActive().getLevel() + RouteConfig.wildLevelBonus(session.getSegment()));
+        int level = highestPartyLevel() + RouteConfig.wildLevelBonus(session.getSegment());
         Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level, growthProgress());
         if (wild.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的野生精灵（数据缺失）。");
@@ -670,15 +761,18 @@ public class MainController {
         }
     }
 
-    /** TRAINER 节点：路人训练家 1~2 只轮战（不可逃/不可捕），等级略高于先发。 */
+    /** TRAINER 节点：路人训练家轮战（不可逃/不可捕），队伍数量按段配置（1 段 1 只、2 段 1~2 只、3 段 2 只、4 段 3 只），等级锚定队伍最高等级 ±2 浮动，击倒经验 1.5 倍。 */
     private void startRogueTrainerBattle(Option option) {
         if (!ensureRogueBattleReady()) {
             return;
         }
-        int level = WildEncounter.levelAround(
-                session.getActive().getLevel() + RouteConfig.trainerLevelBonus(session.getSegment()));
+        int segment = session.getSegment();
+        int level = highestPartyLevel() + RouteConfig.trainerLevelBonus(segment);
         Trainer trainer = new Trainer("路人训练家");
-        int count = 1 + (int) (Math.random() * 2);
+        trainer.setExpMultiplier(GrowthService.TRAINER_EXP_NUMERATOR, GrowthService.TRAINER_EXP_DENOMINATOR);
+        int min = RouteConfig.trainerPartyMin(segment);
+        int max = RouteConfig.trainerPartyMax(segment);
+        int count = min + (int) (Math.random() * (max - min + 1));
         for (int i = 0; i < count; i++) {
             PokemonBattleAdapter.createWildPokemon(level, growthProgress()).ifPresent(trainer::addPokemon);
         }
@@ -697,15 +791,15 @@ public class MainController {
         }
     }
 
-    /** ROCKET 节点：火箭队队员（§5.2），不可失败；胜利有概率掉落特殊道具。 */
+    /** ROCKET 节点：火箭队队员（§5.2），不可失败；胜利有概率掉落特殊道具，等级锚定队伍最高等级 ±2 浮动，击倒经验 1.5 倍。 */
     private void startRocketBattle() {
         if (!ensureRogueBattleReady()) {
             return;
         }
         int segment = session.getSegment();
-        int level = WildEncounter.levelAround(
-                session.getActive().getLevel() + RouteConfig.rocketLevelBonus(segment));
+        int level = highestPartyLevel() + RouteConfig.rocketLevelBonus(segment);
         Trainer rocket = new Trainer("火箭队队员");
+        rocket.setExpMultiplier(GrowthService.TRAINER_EXP_NUMERATOR, GrowthService.TRAINER_EXP_DENOMINATOR);
         for (int i = 0; i < RouteConfig.rocketPartySize(segment); i++) {
             PokemonBattleAdapter.createWildPokemon(level, growthProgress()).ifPresent(rocket::addPokemon);
         }
@@ -721,9 +815,9 @@ public class MainController {
             return;
         }
         int segment = session.getSegment();
-        int level = WildEncounter.levelAround(
-                session.getActive().getLevel() + RouteConfig.rocketBossLevelBonus(segment));
+        int level = highestPartyLevel() + RouteConfig.rocketBossLevelBonus(segment);
         Trainer boss = new Trainer("火箭队首领");
+        boss.setExpMultiplier(GrowthService.TRAINER_EXP_NUMERATOR, GrowthService.TRAINER_EXP_DENOMINATOR);
         for (int i = 0; i < RouteConfig.rocketBossPartySize(segment); i++) {
             PokemonBattleAdapter.createWildPokemon(level, growthProgress()).ifPresent(boss::addPokemon);
         }
@@ -735,8 +829,7 @@ public class MainController {
         if (!ensureRogueBattleReady()) {
             return;
         }
-        int level = WildEncounter.levelAround(
-                session.getActive().getLevel() + RouteConfig.legendaryLevelBonus(session.getSegment()));
+        int level = highestPartyLevel() + RouteConfig.legendaryLevelBonus(session.getSegment());
         Optional<Pokemon> legendary = PokemonBattleAdapter.createWildPokemon(level, growthProgress());
         if (legendary.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的神兽（数据缺失）。");
@@ -772,19 +865,32 @@ public class MainController {
 
     /**
      * 必然节点战斗（道馆战 / 四天王连打 / 冠军战 / 首领侵略战）：不消耗行动点，队伍规模与等级随段数增强。
-     * 道馆与四天王战败可再挑战一次，冠军战败本轮结束。
+     * 1~4 段道馆主为固定配置（2/3/3/4 只、等级 11/17/24/32，精确无浮动）；第 5 段道馆主与
+     * 四天王 / 冠军 / 侵略战锚定队伍最高等级 ±2 浮动。道馆与四天王战败可再挑战一次，冠军战败本轮结束。
      */
     private void startMandatoryBattle(OptionType type) {
         if (type == null || !ensureRogueBattleReady()) {
             return;
         }
         int segment = session.getSegment();
-        int level = Math.max(5, session.getActive().getLevel() + mandatoryLevelBonus(type, segment));
+        // 1~4 段道馆主：固定等级（11/17/24/32）且精确无浮动；其余必然节点（含第 5 段道馆主）锚定队伍最高等级 ±2 浮动
+        boolean gymFixed = type == OptionType.GYM && segment <= 4;
+        int level = gymFixed
+                ? RouteConfig.gymFixedLevel(segment)
+                : Math.max(5, highestPartyLevel() + mandatoryLevelBonus(type, segment));
         Trainer opponent = new Trainer(mandatoryOpponentName(type, segment));
+        // 击倒经验倍率：道馆战 2.0 倍、首领侵略战（火箭队系）1.5 倍；四天王 / 冠军保持 1 倍
+        if (type == OptionType.GYM) {
+            opponent.setExpMultiplier(GrowthService.GYM_EXP_NUMERATOR, GrowthService.GYM_EXP_DENOMINATOR);
+        } else if (type == OptionType.ROCKET_INVASION) {
+            opponent.setExpMultiplier(GrowthService.TRAINER_EXP_NUMERATOR, GrowthService.TRAINER_EXP_DENOMINATOR);
+        }
         int count = mandatoryPartySize(type, segment);
         for (int i = 0; i < count; i++) {
-            PokemonBattleAdapter.createWildPokemon(WildEncounter.levelAround(level), growthProgress())
-                    .ifPresent(opponent::addPokemon);
+            Optional<Pokemon> foe = gymFixed
+                    ? PokemonBattleAdapter.createWildPokemonExact(level, growthProgress())
+                    : PokemonBattleAdapter.createWildPokemon(level, growthProgress());
+            foe.ifPresent(opponent::addPokemon);
         }
         if (opponent.getParty().isEmpty()) {
             infoAlert("数据异常", type.getDisplayName() + "对手数据缺失，无法开战。");

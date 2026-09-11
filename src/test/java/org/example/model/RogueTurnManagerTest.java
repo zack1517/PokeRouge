@@ -1,14 +1,13 @@
 package org.example.model;
 
-import org.example.integration.PokemonBattleAdapter;
-import org.junit.jupiter.api.Test;
-
 import java.util.List;
 
+import org.example.integration.PokemonBattleAdapter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * {@link RogueTurnManager} 的单元测试：覆盖《需求文档》§4 的规则判定 ——
@@ -98,6 +97,25 @@ class RogueTurnManagerTest {
 
         assertEquals(before, manager.getRunData().getAp(), "野外精灵有概率消耗 0 点");
         assertTrue(free.isConsumed());
+    }
+
+    /** 战败全灭救援：消耗 2 点行动点，不足 2 点时置 0（不产生负数）。 */
+    @Test
+    void testApplyDefeatApPenalty_deductsTwoOrClampsToZero() {
+        RogueTurnManager manager = newManager();
+        RunData data = manager.getRunData();
+
+        data.setAp(5);
+        manager.applyDefeatApPenalty();
+        assertEquals(3, data.getAp(), "救援消耗 2 点行动点");
+
+        data.setAp(1);
+        manager.applyDefeatApPenalty();
+        assertEquals(0, data.getAp(), "行动点不足 2 点时置 0");
+
+        data.setAp(0);
+        manager.applyDefeatApPenalty();
+        assertEquals(0, data.getAp(), "0 点保持 0");
     }
 
     @Test

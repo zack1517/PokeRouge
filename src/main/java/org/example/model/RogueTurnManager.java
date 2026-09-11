@@ -419,6 +419,14 @@ public class RogueTurnManager {
         return before - runData.getGold();
     }
 
+    /**
+     * 普通节点战败全灭救援的行动点代价：消耗 {@link RouteConfig#DEFEAT_RESCUE_AP_COST} 点行动点
+     * （剩余不足时置 0，{@link RunData#setAp} 已截断负数）。恢复全状态由控制器在玩家队伍上执行。
+     */
+    public void applyDefeatApPenalty() {
+        runData.setAp(runData.getAp() - RouteConfig.DEFEAT_RESCUE_AP_COST);
+    }
+
     // ------------------------------------------------------------------
     // 查询
     // ------------------------------------------------------------------
