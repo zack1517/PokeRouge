@@ -320,6 +320,11 @@ public class BattleEngine implements BattleService {
         requireOngoing();
         MoveSlot usable = usableSlot(playerActive(), slot);
         if (usable == null) {
+            // 苹野果：招式 PP 全部耗尽时先补 PP 再重试（补不上才放弃本回合，与 PP 不足同样处理）
+            healPpWithBerry(playerActive(), slot);
+            usable = usableSlot(playerActive(), slot);
+        }
+        if (usable == null) {
             return slice(mark);
         }
         // 讲究系装备的招式锁定：不合法时不消耗回合，让调用方改选（与 PP 不足同样处理）
@@ -613,6 +618,10 @@ public class BattleEngine implements BattleService {
         }
         MoveSlot usable = pickFoeMove();
         if (usable == null) {
+            // 苹野果：全部招式 PP 耗尽时先补 PP，补不上才挣扎
+            usable = healPpWithBerry(foe, null);
+        }
+        if (usable == null) {
             append(foe.getName() + " 没有可用技能了，正在挣扎！");
             events.add(BattleEvent.move(BattleEvent.Side.FOE, foe.getName(), null));
             int dmg = Math.max(1, foe.getLevel() / 4);
@@ -783,6 +792,7 @@ public class BattleEngine implements BattleService {
         };
         if (defender.tryApplyStatus(condition, turns)) {
             append(defender.getName() + " 陷入了" + condition.getDisplayName() + "状态！");
+            cureStatusWithBerry(defender, condition);
         }
     }
 
@@ -892,7 +902,16 @@ public class BattleEngine implements BattleService {
             append("这招对 " + defender.getName() + " 没有效果……");
             return;
         }
+        double resist = resistBerryMultiplier(defender, move, effectiveness);
         int damage = computeDamage(attacker, defender, move, effectiveness);
+        // 属性减伤树果：受对应属性（默认要求效果拔群）招式时减伤并消耗，必须在保命判定之前生效
+        String resistMessage = null;
+        if (resist < 1.0) {
+            HeldItem berry = defender.getHeldItem();
+            damage = Math.max(1, (int) Math.floor(damage * resist));
+            consumeHeldItem(defender);
+            resistMessage = defender.getName() + " 的" + berry.getName() + " 减轻了招式伤害！";
+        }
         String surviveMessage = survivedByHeldItem(defender, damage);
         int dealt = defender.takeDamage(surviveMessage == null ? damage : defender.getCurrentHp() - 1);
         events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
@@ -907,6 +926,9 @@ public class BattleEngine implements BattleService {
             sb.append("，效果不太理想……");
         }
         append(sb.toString());
+        if (resistMessage != null) {
+            append(resistMessage);
+        }
         if (surviveMessage != null) {
             append(surviveMessage);
         }
@@ -916,6 +938,8 @@ public class BattleEngine implements BattleService {
             return;
         }
         tryInflict(move, defender);
+        // 受击后立即结算 HP 回复树果（未倒下才触发）
+        healHpWithBerry(defender);
     }
 
     /**
@@ -1151,6 +1175,9 @@ public class BattleEngine implements BattleService {
         // 宝珠类装备在异常状态结算之后生效，因此本回合不会立即吃到新异常状态的扣血
         endTurnStatusOrb(pa);
         endTurnStatusOrb(foe);
+        // HP 回复树果放在最后结算，使回合末的天气/异常扣血也能触发果实回复
+        healHpWithBerry(pa);
+        healHpWithBerry(foe);
     }
 
     /**
@@ -1206,6 +1233,110 @@ public class BattleEngine implements BattleService {
         if (healed > 0) {
             append(p.getName() + " 的" + p.getHeldItem().getName() + " 恢复了 " + healed + " HP！");
         }
+    }
+
+    /**
+     * 属性减伤树果（{@link HeldItemEffect#RESIST_TYPE}）判定：招式属性与参数属性一致，且（默认要求）
+     * 本次结算为「效果拔群」时返回承伤倍率；否则返回 {@code 1.0}。
+     *
+     * <p>param 第 3 段为 {@code ALWAYS} 时不看克制关系（一般属性无克制对象，故灯浆果用该标记）。
+     * 本方法只判定不消耗，实际消耗由调用方在伤害打折后执行。</p>
+     */
+    private static double resistBerryMultiplier(Pokemon defender, Move move, double effectiveness) {
+        if (defender == null || !holds(defender, HeldItemEffect.RESIST_TYPE)) {
+            return 1.0;
+        }
+        HeldItem berry = defender.getHeldItem();
+        ElementType berryType = ElementType.parse(berry.resistTypeParam());
+        if (berryType == null || berryType != move.getType()) {
+            return 1.0;
+        }
+        if (!berry.resistUnconditional() && effectiveness <= 1.0) {
+            return 1.0;
+        }
+        return berry.resistMultiplier();
+    }
+
+    /**
+     * 异常治疗树果（{@link HeldItemEffect#CURE_STATUS}）判定：携带者刚陷入参数所列异常时立即治愈并消耗
+     * （樱子果治麻痹、桃桃果治中毒、木子果治全部）。
+     *
+     * <p>仅为「刚被施加」的异常触发：换人上场时已带异常、或战斗开始时已带异常都不会触发。</p>
+     */
+    private void cureStatusWithBerry(Pokemon pokemon, StatusCondition condition) {
+        if (pokemon == null || condition == null || condition == StatusCondition.NONE
+                || !holds(pokemon, HeldItemEffect.CURE_STATUS)) {
+            return;
+        }
+        HeldItem berry = pokemon.getHeldItem();
+        if (!berry.cureStatuses().contains(condition)) {
+            return;
+        }
+        if (condition == StatusCondition.CONFUSION) {
+            pokemon.clearConfusion();
+        } else {
+            pokemon.cureStatus();
+        }
+        consumeHeldItem(pokemon);
+        append(pokemon.getName() + " 因" + berry.getName() + "治愈了" + condition.getDisplayName() + "！");
+    }
+
+    /**
+     * HP 回复树果（{@link HeldItemEffect#HEAL_HP}）判定：当前 HP 不高于参数阈值比例时回复并消耗
+     * （橙橙果回复 10 HP、文柚果回复 1/4、危果树果回复 1/8）。
+     *
+     * <p>已倒下、HP 已满（回复量为 0）时不触发，因此不会白白消耗。</p>
+     */
+    private void healHpWithBerry(Pokemon p) {
+        if (p == null || p.isFainted() || !holds(p, HeldItemEffect.HEAL_HP)) {
+            return;
+        }
+        HeldItem berry = p.getHeldItem();
+        double threshold = berry.healThresholdRatio();
+        double amount = berry.healAmount();
+        if (threshold <= 0 || amount <= 0
+                || p.getCurrentHp() > p.getMaxHp() * threshold) {
+            return;
+        }
+        // 回复量小于 1 视为最大 HP 的比例，不小于 1 视为固定点数
+        int restore = amount < 1.0 ? (int) (p.getMaxHp() * amount) : (int) amount;
+        int healed = p.heal(Math.max(1, restore));
+        if (healed <= 0) {
+            return;
+        }
+        consumeHeldItem(p);
+        append(p.getName() + " 的" + berry.getName() + " 恢复了 " + healed + " HP！");
+    }
+
+    /**
+     * PP 回复树果（{@link HeldItemEffect#HEAL_PP}）判定：指定招式槽 PP 已归零时回复其 PP 并消耗（苹野果 10 PP）。
+     *
+     * @param p    携带者
+     * @param slot 已耗尽 PP 的招式槽；为 {@code null} 或该槽仍有 PP 时，改为取携带者第一个已耗尽的招式槽
+     * @return 实际完成回复的招式槽；未触发返回 {@code null}
+     */
+    private MoveSlot healPpWithBerry(Pokemon p, MoveSlot slot) {
+        if (p == null || !holds(p, HeldItemEffect.HEAL_PP)) {
+            return null;
+        }
+        MoveSlot target = slot;
+        if (target == null || !target.exhausted()) {
+            target = p.getMoveSlots().stream().filter(MoveSlot::exhausted).findFirst().orElse(null);
+        }
+        if (target == null || p.getHeldItem().ppRestoreAmount() <= 0) {
+            return null;
+        }
+        HeldItem berry = p.getHeldItem();
+        int before = target.getCurrentPp();
+        target.restore(berry.ppRestoreAmount());
+        int restored = target.getCurrentPp() - before;
+        if (restored <= 0) {
+            return null;
+        }
+        consumeHeldItem(p);
+        append(p.getName() + " 的" + berry.getName() + " 让【" + target.getMove().getName()
+                + "】回复了 " + restored + " PP！");
+        return target;
     }
 
     /** 贝壳之铃（LIFE_STEAL）吸血：攻击造成伤害后按比例回复自身 HP。 */

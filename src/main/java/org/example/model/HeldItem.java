@@ -1,6 +1,9 @@
 package org.example.model;
 
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 可携带装备（持有道具）定义。
@@ -161,6 +164,63 @@ public class HeldItem {
     /** END_TURN_STATUS 要施加的异常状态英文名（param 第 1 段）；缺失返回 {@code ""}。 */
     public String statusParam() {
         return textPart(0);
+    }
+
+    /**
+     * CURE_STATUS 树果能治愈的异常集合。param 为 {@code |} 分隔的异常英文名，填 {@code ALL}
+     * 表示全部异常（含混乱）。无法识别的名称直接跳过。
+     *
+     * @return 可治愈的异常集合；非 CURE_STATUS 或参数为空时返回空集合
+     */
+    public Set<StatusCondition> cureStatuses() {
+        if (effectType != HeldItemEffect.CURE_STATUS || param.isEmpty()) {
+            return Set.of();
+        }
+        if ("ALL".equalsIgnoreCase(param)) {
+            return EnumSet.complementOf(EnumSet.of(StatusCondition.NONE, StatusCondition.FAINTED));
+        }
+        EnumSet<StatusCondition> statuses = EnumSet.noneOf(StatusCondition.class);
+        for (String part : param.split("\\|", -1)) {
+            StatusCondition status = StatusCondition.parse(part.trim());
+            if (status != StatusCondition.NONE) {
+                statuses.add(status);
+            }
+        }
+        return Collections.unmodifiableSet(statuses);
+    }
+
+    /** HEAL_HP 的触发阈值比例（param 第 1 段，HP 不高于最大 HP 的该比例时触发）；解析失败返回 0。 */
+    public double healThresholdRatio() {
+        return doublePart(0, 0);
+    }
+
+    /**
+     * HEAL_HP 的回复量（param 第 2 段）。小于 1 视为最大 HP 的比例，不小于 1 视为固定点数。
+     *
+     * @return 回复量；解析失败返回 0
+     */
+    public double healAmount() {
+        return doublePart(1, 0);
+    }
+
+    /** HEAL_PP 的回复点数（param 整体）；解析失败返回 0。 */
+    public int ppRestoreAmount() {
+        return (int) doublePart(0, 0);
+    }
+
+    /** RESIST_TYPE 减伤属性英文名（param 第 1 段）；缺失返回 {@code ""}。 */
+    public String resistTypeParam() {
+        return textPart(0);
+    }
+
+    /** RESIST_TYPE 的承伤倍率（param 第 2 段）；解析失败返回 1.0。 */
+    public double resistMultiplier() {
+        return doublePart(1, 1.0);
+    }
+
+    /** RESIST_TYPE 是否不要求「效果拔群」（param 第 3 段为 {@code ALWAYS}）；如灯浆果对一般属性。 */
+    public boolean resistUnconditional() {
+        return "ALWAYS".equalsIgnoreCase(textPart(2));
     }
 
     @Override

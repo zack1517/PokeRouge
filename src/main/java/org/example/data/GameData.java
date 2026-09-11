@@ -437,6 +437,41 @@ public final class GameData {
                 "特殊招式伤害提升 50%，但只能使用第一个招式");
         putEquipment("e_choice_scarf", "讲究围巾", HeldItemEffect.CHOICE, "SPEED|1.5",
                 "速度提升 50%，但只能使用第一个招式");
+        // 批次②树果：异常治疗（陷入对应异常时立即治愈并消耗）
+        putEquipment("b_cheri", "樱子果", HeldItemEffect.CURE_STATUS, "PARALYSIS", "陷入麻痹时立即治愈");
+        putEquipment("b_pecha", "桃桃果", HeldItemEffect.CURE_STATUS, "POISON|BADLY_POISON", "陷入中毒时立即治愈");
+        putEquipment("b_rawst", "莓莓果", HeldItemEffect.CURE_STATUS, "BURN", "陷入灼伤时立即治愈");
+        putEquipment("b_chesto", "零余果", HeldItemEffect.CURE_STATUS, "SLEEP", "陷入睡眠时立即治愈");
+        putEquipment("b_aspear", "利木果", HeldItemEffect.CURE_STATUS, "FREEZE", "陷入冰冻时立即治愈");
+        putEquipment("b_persim", "柿仔果", HeldItemEffect.CURE_STATUS, "CONFUSION", "陷入混乱时立即治愈");
+        putEquipment("b_lum", "木子果", HeldItemEffect.CURE_STATUS, "ALL", "陷入任何异常状态时立即治愈");
+        // 批次②树果：HP 回复（HP 低于阈值时回复并消耗）
+        putEquipment("b_oran", "橙橙果", HeldItemEffect.HEAL_HP, "0.5|10", "HP 不高于 1/2 时回复 10 HP");
+        putEquipment("b_sitrus", "文柚果", HeldItemEffect.HEAL_HP, "0.5|0.25", "HP 不高于 1/2 时回复最大 HP 的 1/4");
+        putEquipment("b_figy", "勿花果", HeldItemEffect.HEAL_HP, "0.25|0.125", "HP 不高于 1/4 时回复最大 HP 的 1/8");
+        putEquipment("b_wiki", "异奇果", HeldItemEffect.HEAL_HP, "0.25|0.125", "HP 不高于 1/4 时回复最大 HP 的 1/8");
+        putEquipment("b_aguav", "乐芭果", HeldItemEffect.HEAL_HP, "0.25|0.125", "HP 不高于 1/4 时回复最大 HP 的 1/8");
+        putEquipment("b_iapapa", "芭亚果", HeldItemEffect.HEAL_HP, "0.25|0.125", "HP 不高于 1/4 时回复最大 HP 的 1/8");
+        // 批次②树果：PP 回复
+        putEquipment("b_leppa", "苹野果", HeldItemEffect.HEAL_PP, "10", "招式 PP 耗尽时回复 10 PP");
+        // 批次②树果：属性减伤（受效果拔群攻击时消耗）
+        putEquipment("b_occa", "巧可果", HeldItemEffect.RESIST_TYPE, "FIRE|0.5", "受到效果拔群的火属性招式时伤害减半");
+        putEquipment("b_passho", "千香果", HeldItemEffect.RESIST_TYPE, "WATER|0.5", "受到效果拔群的水属性招式时伤害减半");
+        putEquipment("b_wacan", "烛木果", HeldItemEffect.RESIST_TYPE, "ELECTRIC|0.5", "受到效果拔群的电属性招式时伤害减半");
+        putEquipment("b_rindo", "罗子果", HeldItemEffect.RESIST_TYPE, "GRASS|0.5", "受到效果拔群的草属性招式时伤害减半");
+        putEquipment("b_yache", "番荔果", HeldItemEffect.RESIST_TYPE, "ICE|0.5", "受到效果拔群的冰属性招式时伤害减半");
+        putEquipment("b_chople", "莲蒲果", HeldItemEffect.RESIST_TYPE, "FIGHTING|0.5", "受到效果拔群的格斗属性招式时伤害减半");
+        putEquipment("b_kebia", "通通果", HeldItemEffect.RESIST_TYPE, "POISON|0.5", "受到效果拔群的毒属性招式时伤害减半");
+        putEquipment("b_shuca", "腰木果", HeldItemEffect.RESIST_TYPE, "GROUND|0.5", "受到效果拔群的地面属性招式时伤害减半");
+        putEquipment("b_coba", "扁樱果", HeldItemEffect.RESIST_TYPE, "FLYING|0.5", "受到效果拔群的飞行属性招式时伤害减半");
+        putEquipment("b_payapa", "霹霹果", HeldItemEffect.RESIST_TYPE, "PSYCHIC|0.5", "受到效果拔群的超能力属性招式时伤害减半");
+        putEquipment("b_tanga", "莓榴果", HeldItemEffect.RESIST_TYPE, "BUG|0.5", "受到效果拔群的虫属性招式时伤害减半");
+        putEquipment("b_charti", "草蚕果", HeldItemEffect.RESIST_TYPE, "ROCK|0.5", "受到效果拔群的岩石属性招式时伤害减半");
+        putEquipment("b_kasib", "佛柑果", HeldItemEffect.RESIST_TYPE, "GHOST|0.5", "受到效果拔群的幽灵属性招式时伤害减半");
+        putEquipment("b_haban", "刺耳果", HeldItemEffect.RESIST_TYPE, "DARK|0.5", "受到效果拔群的恶属性招式时伤害减半");
+        putEquipment("b_roseli", "洛玫果", HeldItemEffect.RESIST_TYPE, "FAIRY|0.5", "受到效果拔群的妖精属性招式时伤害减半");
+        putEquipment("b_babiri", "灯浆果", HeldItemEffect.RESIST_TYPE, "NORMAL|0.5|ALWAYS",
+                "受到一般属性招式时伤害减半（一般属性无克制关系，故不看效果拔群）");
     }
 
     private void putEquipment(String id, String name, HeldItemEffect effectType, String param, String description) {

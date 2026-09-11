@@ -25,6 +25,15 @@ class HeldItemTest {
             "e_heat_rock", "e_damp_rock", "e_smooth_rock", "e_icy_rock",
             "e_focus_sash", "e_focus_band", "e_choice_specs", "e_choice_scarf");
 
+    /** 批次②新增的 30 种树果（异常治疗 7 / HP 回复 6 / PP 回复 1 / 属性减伤 16）。 */
+    private static final List<String> BATCH2_IDS = List.of(
+            "b_cheri", "b_pecha", "b_rawst", "b_chesto", "b_aspear", "b_persim", "b_lum",
+            "b_oran", "b_sitrus", "b_figy", "b_wiki", "b_aguav", "b_iapapa",
+            "b_leppa",
+            "b_occa", "b_passho", "b_wacan", "b_rindo", "b_yache", "b_chople", "b_kebia",
+            "b_shuca", "b_coba", "b_payapa", "b_tanga", "b_charti", "b_kasib", "b_haban",
+            "b_roseli", "b_babiri");
+
     // ------------------------------------------------------------------
     // equipment.csv 加载
     // ------------------------------------------------------------------
@@ -32,10 +41,11 @@ class HeldItemTest {
     @Test
     void 装备Csv全部可查询() {
         GameData data = GameData.instance();
-        assertEquals(26, data.allEquipment().size(), "equipment.csv 应注册 26 件装备");
+        assertEquals(56, data.allEquipment().size(), "equipment.csv 应注册 26 件装备 + 30 种树果");
         List<String> all = new java.util.ArrayList<>(List.of("e_charcoal", "e_mystic_water", "e_magnet",
                 "e_expert_belt", "e_leftovers", "e_shell_bell", "e_quick_claw", "e_eviolite"));
         all.addAll(BATCH1_IDS);
+        all.addAll(BATCH2_IDS);
         for (String id : all) {
             HeldItem item = data.equipment(id);
             assertNotNull(item, "缺少装备 " + id);
@@ -43,6 +53,7 @@ class HeldItemTest {
             assertFalse(item.getDescription().isBlank(), id + " 效果说明不应为空");
         }
         assertNull(data.equipment("e_not_exist"), "未注册的装备应返回 null");
+        assertNull(data.equipment("b_not_exist"), "未注册的树果应返回 null");
     }
 
     @Test
@@ -151,6 +162,111 @@ class HeldItemTest {
         assertEquals("FIRE", bad.typeParam());
         assertEquals(1.0, bad.doubleParam(), 1e-9);
         assertEquals(0, new HeldItem("e_bad2", "坏爪", HeldItemEffect.FIRST_STRIKE, "oops", "").chanceParam(), 1e-9);
+    }
+
+    // ------------------------------------------------------------------
+    // 批次② 树果参数解析
+    // ------------------------------------------------------------------
+
+    @Test
+    void 批次二树果效果类型与参数正确() {
+        GameData data = GameData.instance();
+
+        assertEquals(HeldItemEffect.CURE_STATUS, data.equipment("b_cheri").getEffectType());
+        assertEquals(HeldItemEffect.CURE_STATUS, data.equipment("b_lum").getEffectType());
+        assertEquals(HeldItemEffect.HEAL_HP, data.equipment("b_oran").getEffectType());
+        assertEquals(HeldItemEffect.HEAL_PP, data.equipment("b_leppa").getEffectType());
+        assertEquals(HeldItemEffect.RESIST_TYPE, data.equipment("b_occa").getEffectType());
+        assertEquals(HeldItemEffect.RESIST_TYPE, data.equipment("b_babiri").getEffectType());
+
+        HeldItem oran = data.equipment("b_oran");
+        assertEquals(0.5, oran.healThresholdRatio(), 1e-9);
+        assertEquals(10, oran.healAmount(), 1e-9, "橙橙果为固定点数额度（10 HP）");
+
+        HeldItem sitrus = data.equipment("b_sitrus");
+        assertEquals(0.5, sitrus.healThresholdRatio(), 1e-9);
+        assertEquals(0.25, sitrus.healAmount(), 1e-9, "文柚果为最大 HP 比例额度");
+
+        for (String id : List.of("b_figy", "b_wiki", "b_aguav", "b_iapapa")) {
+            HeldItem danger = data.equipment(id);
+            assertEquals(0.25, danger.healThresholdRatio(), 1e-9, id + " 阈值应为 1/4");
+            assertEquals(0.125, danger.healAmount(), 1e-9, id + " 回复量应为 1/8");
+        }
+
+        assertEquals(10, data.equipment("b_leppa").ppRestoreAmount());
+
+        HeldItem occa = data.equipment("b_occa");
+        assertEquals("FIRE", occa.resistTypeParam());
+        assertEquals(0.5, occa.resistMultiplier(), 1e-9);
+        assertFalse(occa.resistUnconditional(), "巧可果仍需效果拔群才生效");
+
+        HeldItem babiri = data.equipment("b_babiri");
+        assertEquals("NORMAL", babiri.resistTypeParam());
+        assertEquals(0.5, babiri.resistMultiplier(), 1e-9);
+        assertTrue(babiri.resistUnconditional(), "灯浆果对一般属性招式无条件减伤");
+    }
+
+    @Test
+    void 异常治疗树果解析出对应状态集合() {
+        GameData data = GameData.instance();
+
+        var cheri = data.equipment("b_cheri").cureStatuses();
+        assertEquals(1, cheri.size());
+        assertTrue(cheri.contains(StatusCondition.PARALYSIS));
+
+        var pecha = data.equipment("b_pecha").cureStatuses();
+        assertEquals(2, pecha.size(), "桃桃果应同时治疗中毒与剧毒");
+        assertTrue(pecha.contains(StatusCondition.POISON));
+        assertTrue(pecha.contains(StatusCondition.BADLY_POISON));
+        assertFalse(pecha.contains(StatusCondition.BURN), "未列出的异常不应被治疗");
+
+        assertEquals(java.util.Set.of(StatusCondition.BURN), data.equipment("b_rawst").cureStatuses());
+        assertEquals(java.util.Set.of(StatusCondition.SLEEP), data.equipment("b_chesto").cureStatuses());
+        assertEquals(java.util.Set.of(StatusCondition.FREEZE), data.equipment("b_aspear").cureStatuses());
+        assertEquals(java.util.Set.of(StatusCondition.CONFUSION), data.equipment("b_persim").cureStatuses());
+
+        var lum = data.equipment("b_lum").cureStatuses();
+        assertTrue(lum.contains(StatusCondition.POISON));
+        assertTrue(lum.contains(StatusCondition.PARALYSIS));
+        assertTrue(lum.contains(StatusCondition.BURN));
+        assertTrue(lum.contains(StatusCondition.SLEEP));
+        assertTrue(lum.contains(StatusCondition.FREEZE));
+        assertTrue(lum.contains(StatusCondition.CONFUSION), "木子果按需求表描述治疗所有异常（含混乱）");
+        assertFalse(lum.contains(StatusCondition.NONE), "NONE 不是可治疗的异常");
+        assertFalse(lum.contains(StatusCondition.FAINTED), "濒死不是可治疗的异常");
+    }
+
+    @Test
+    void 非异常治疗树果的治疗集合为空() {
+        GameData data = GameData.instance();
+        for (String id : List.of("b_oran", "b_sitrus", "b_leppa", "b_occa", "b_babiri")) {
+            assertTrue(data.equipment(id).cureStatuses().isEmpty(), id + " 不应解析出治疗状态");
+        }
+    }
+
+    @Test
+    void 异常治疗树果解析容错() {
+        HeldItem blank = new HeldItem("b_x", "空参数果", HeldItemEffect.CURE_STATUS, "", "");
+        assertTrue(blank.cureStatuses().isEmpty(), "空参数不应抛异常");
+
+        HeldItem unknown = new HeldItem("b_y", "未知状态果", HeldItemEffect.CURE_STATUS,
+                "oops|BURN|also_oops", "");
+        assertEquals(java.util.Set.of(StatusCondition.BURN), unknown.cureStatuses(),
+                "无法识别的状态名应被跳过，其余仍生效");
+    }
+
+    @Test
+    void 树果参数解析越界安全回退() {
+        HeldItem leaf = new HeldItem("b_z", "缺额度果", HeldItemEffect.HEAL_PP, "", "");
+        assertEquals(0, leaf.ppRestoreAmount(), "缺失额度应以 0 回退");
+
+        HeldItem noParam = new HeldItem("b_w", "无参减伤果", HeldItemEffect.RESIST_TYPE, "", "");
+        assertEquals("", noParam.resistTypeParam());
+        assertEquals(1.0, noParam.resistMultiplier(), 1e-9, "缺失倍率应回退 1.0（不减伤）");
+        assertFalse(noParam.resistUnconditional());
+
+        HeldItem bad = new HeldItem("b_v", "坏倍率果", HeldItemEffect.RESIST_TYPE, "FIRE|oops", "");
+        assertEquals(1.0, bad.resistMultiplier(), 1e-9, "倍率解析失败应回退 1.0");
     }
 
     // ------------------------------------------------------------------

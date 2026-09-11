@@ -61,6 +61,21 @@ package org.example.model;
  * <ul>
  *     <li>{@link #EVOLITE}：未最终进化时防御/特防提升（param 为倍率）</li>
  * </ul>
+ *
+ * <p><b>树果类</b>（均为一次性消耗品，触发即从携带栏移除）</p>
+ * <ul>
+ *     <li>{@link #CURE_STATUS}：携带者陷入参数所列异常时立即治愈。param 为
+ *         {@code 状态英文名[|状态英文名…]}，填 {@code ALL} 表示全部异常（含混乱）——
+ *         樱子果 {@code PARALYSIS}、桃桃果 {@code POISON|BADLY_POISON}、莓莓果 {@code BURN}、
+ *         零余果 {@code SLEEP}、利木果 {@code FREEZE}、柿仔果 {@code CONFUSION}、木子果 {@code ALL}</li>
+ *     <li>{@link #HEAL_HP}：HP 不高于「阈值比例」时回复。param 为 {@code 阈值比例|回复量}，
+ *         回复量小于 1 视为最大 HP 比例、不小于 1 视为固定点数——橙橙果 {@code 0.5|10}、
+ *         文柚果 {@code 0.5|0.25}、勿花果等 {@code 0.25|0.125}</li>
+ *     <li>{@link #HEAL_PP}：携带者招式 PP 归零时回复该招式 PP（param 为回复点数，苹野果 {@code 10}）</li>
+ *     <li>{@link #RESIST_TYPE}：受到参数所指属性且「效果拔群」的招式时伤害乘倍率
+ *         （param 为 {@code 属性|倍率[|ALWAYS]}，属性减伤树果统一 {@code 0.5}；
+ *         第 3 段填 {@code ALWAYS} 时不看克制关系，用于一般属性的灯浆果）</li>
+ * </ul>
  */
 public enum HeldItemEffect {
     DAMAGE_TYPE,
@@ -82,5 +97,10 @@ public enum HeldItemEffect {
     WEATHER_DURATION,
     FOCUS_SASH,
     FOCUS_BAND,
-    CHOICE
+    CHOICE,
+
+    CURE_STATUS,
+    HEAL_HP,
+    HEAL_PP,
+    RESIST_TYPE
 }

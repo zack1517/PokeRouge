@@ -663,4 +663,241 @@ class BattleEngineHeldItemTest {
         }
         return engine.getWeather();
     }
+
+    // ------------------------------------------------------------------
+    // 批次②：树果（异常治疗 / HP 回复 / PP 回复 / 属性减伤）
+    // ------------------------------------------------------------------
+
+    /** 必定施加中毒的物理招：用于异常治疗树果测试。 */
+    private static final Move POISON_MOVE = new Move("m_bpoison", "毒针", ElementType.POISON,
+            MoveCategory.PHYSICAL, 1, 100, 40, 0, MoveEffect.NONE, StatusCondition.POISON, 100);
+    /** 必定施加灼伤的变化招：用于异常治疗树果的「参数不匹配」用例。 */
+    private static final Move BURN_MOVE = new Move("m_bburn", "鬼火", ElementType.FIRE,
+            MoveCategory.STATUS, 0, 100, 40, 0, MoveEffect.NONE, StatusCondition.BURN, 100);
+    /** 必定施加混乱的变化招：用于木子果。 */
+    private static final Move CONFUSE_MOVE = new Move("m_bconfuse", "奇异光线", ElementType.NORMAL,
+            MoveCategory.STATUS, 0, 100, 40, 0, MoveEffect.NONE, StatusCondition.CONFUSION, 100);
+    /** PP 上限 20 的微威力招：用于苹野果「回补 10 PP」的精确断言。 */
+    private static final Move DRAINABLE_MOVE = new Move("m_bdrain", "练手", ElementType.NORMAL,
+            MoveCategory.PHYSICAL, 1, 100, 20);
+
+    private static final HeldItem PECHA = item("b_pecha", "桃桃果", HeldItemEffect.CURE_STATUS, "POISON|BADLY_POISON");
+    private static final HeldItem LUM = item("b_lum", "木子果", HeldItemEffect.CURE_STATUS, "ALL");
+    private static final HeldItem ORAN = item("b_oran", "橙橙果", HeldItemEffect.HEAL_HP, "0.5|10");
+    private static final HeldItem SITRUS = item("b_sitrus", "文柚果", HeldItemEffect.HEAL_HP, "0.5|0.25");
+    private static final HeldItem FIGY = item("b_figy", "勿花果", HeldItemEffect.HEAL_HP, "0.25|0.125");
+    private static final HeldItem LEPPA = item("b_leppa", "苹野果", HeldItemEffect.HEAL_PP, "10");
+    private static final HeldItem OCCA = item("b_occa", "巧可果", HeldItemEffect.RESIST_TYPE, "FIRE|0.5");
+    private static final HeldItem BABIRI = item("b_babiri", "灯浆果", HeldItemEffect.RESIST_TYPE, "NORMAL|0.5|ALWAYS");
+
+    /**
+     * 打一场并返回防守方：攻击方高速先手、用必定生效的变化招施加异常；防守方血厚不死、按需携带树果。
+     * 两场配置除防守方装备外完全一致，且注入相同种子。
+     */
+    private static Pokemon statusInflictedDefender(Move inflictingMove, HeldItem defenderItem) {
+        Pokemon attacker = poke(species("atk_sp", ElementType.NORMAL, 1000, 100, 100, 200, null), 50,
+                List.of(inflictingMove));
+        Pokemon defender = poke(species("def_sp", ElementType.NORMAL, 5000, 10, 50, 10, null), 50,
+                List.of(WEAK_HIT));
+        if (defenderItem != null) {
+            defender.setHeldItem(defenderItem);
+        }
+        Player player = new Player("玩家");
+        player.addPokemon(attacker);
+        BattleEngine engine = new BattleEngine(player, defender, new Random(42));
+        engine.useMove(attacker.getMoveSlots().get(0));
+        return defender;
+    }
+
+    /**
+     * 打一场并返回防守方（野怪）：攻击方高速先手、用指定属性招式攻击指定属性的防守方，
+     * 防守方按需携带树果。用于属性减伤树果的「是否被消耗」断言。
+     */
+    private static Pokemon attackedDefender(Move move, HeldItem defenderItem,
+                                            ElementType moveType, ElementType defenderType) {
+        Pokemon attacker = poke(species("atk_sp", moveType, 1000, 100, 100, 200, null), 50, List.of(move));
+        Pokemon defender = poke(species("def_sp", defenderType, 5000, 10, 50, 10, null), 50,
+                List.of(WEAK_HIT));
+        if (defenderItem != null) {
+            defender.setHeldItem(defenderItem);
+        }
+        Player player = new Player("玩家");
+        player.addPokemon(attacker);
+        BattleEngine engine = new BattleEngine(player, defender, new Random(42));
+        engine.useMove(attacker.getMoveSlots().get(0));
+        return defender;
+    }
+
+    /**
+     * 把玩家精灵预先打到指定 HP 后打一个回合，返回引擎。用于 HP 回复树果测试。
+     *
+     * @param mineItem 玩家携带的树果（可为 {@code null}）
+     * @param mineHp   玩家进入本回合时的 HP；{@code <= 0} 表示不预先扣血（保持满 HP）
+     * @param foeMove  敌方招式，决定玩家本回合是否会受击（{@link #WEAK_HIT} 会受击、{@link #IDLE_MOVE} 不会）
+     */
+    private static BattleEngine runOneRoundAtHp(HeldItem mineItem, int mineHp, Move foeMove) {
+        Pokemon mine = poke(
+                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(BIG_HIT));
+        if (mineItem != null) {
+            mine.setHeldItem(mineItem);
+        }
+        Pokemon foe = poke(
+                species("f_sp", ElementType.NORMAL, 5000, 100, 50, 200, null), 50, List.of(foeMove));
+        Player player = new Player("玩家");
+        player.addPokemon(mine);
+        BattleEngine engine = new BattleEngine(player, foe, new Random(42));
+        if (mineHp > 0) {
+            mine.takeDamage(mine.getCurrentHp() - mineHp);
+        }
+        engine.useMove(mine.getMoveSlots().get(0));
+        return engine;
+    }
+
+    @Test
+    void 异常治疗树果治愈携带者刚陷入的异常并消耗() {
+        assertEquals(StatusCondition.POISON, statusInflictedDefender(POISON_MOVE, null).getStatus(),
+                "前置条件：无树果时应正常中毒");
+        Pokemon cured = statusInflictedDefender(POISON_MOVE, PECHA);
+        assertEquals(StatusCondition.NONE, cured.getStatus(), "桃桃果应治愈刚陷入的中毒");
+        assertNull(cured.getHeldItem(), "触发后应消耗树果");
+    }
+
+    @Test
+    void 异常治疗树果只对参数所列异常生效() {
+        Pokemon untouched = statusInflictedDefender(BURN_MOVE, PECHA);
+        assertEquals(StatusCondition.BURN, untouched.getStatus(), "桃桃果不治灼伤");
+        assertEquals(PECHA, untouched.getHeldItem(), "未触发不应消耗树果");
+    }
+
+    @Test
+    void 木子果治愈全部异常含混乱() {
+        assertEquals(StatusCondition.NONE, statusInflictedDefender(BURN_MOVE, LUM).getStatus(),
+                "木子果应治愈灼伤");
+        assertEquals(StatusCondition.NONE, statusInflictedDefender(POISON_MOVE, LUM).getStatus(),
+                "木子果应治愈中毒");
+        Pokemon confused = statusInflictedDefender(CONFUSE_MOVE, LUM);
+        assertFalse(confused.isConfused(), "木子果应治愈混乱");
+        assertNull(confused.getHeldItem(), "触发后应消耗树果");
+    }
+
+    @Test
+    void HP回复树果在受击低于阈值时立即回复() {
+        int low = 100;
+        BattleEngine without = runOneRoundAtHp(null, low, WEAK_HIT);
+        BattleEngine with = runOneRoundAtHp(ORAN, low, WEAK_HIT);
+        assertEquals(10, with.playerActive().getCurrentHp() - without.playerActive().getCurrentHp(),
+                "橙橙果应在受击后立即回复 10 HP");
+        assertNull(with.playerActive().getHeldItem(), "触发后应消耗树果");
+        assertTrue(with.getLog().stream().anyMatch(line -> line.contains("橙橙果")),
+                "日志应包含橙橙果触发提示");
+    }
+
+    @Test
+    void HP回复树果在回合末结算() {
+        int low = 100;
+        BattleEngine without = runOneRoundAtHp(null, low, IDLE_MOVE);
+        BattleEngine with = runOneRoundAtHp(ORAN, low, IDLE_MOVE);
+        assertEquals(10, with.playerActive().getCurrentHp() - without.playerActive().getCurrentHp(),
+                "敌方未造成伤害时橙橙果应在回合末结算");
+    }
+
+    @Test
+    void HP回复树果在满HP时不触发() {
+        BattleEngine engine = runOneRoundAtHp(ORAN, 0, IDLE_MOVE);
+        assertEquals(ORAN, engine.playerActive().getHeldItem(), "满 HP 时不应消耗树果");
+        assertEquals(engine.playerActive().getMaxHp(), engine.playerActive().getCurrentHp(),
+                "满 HP 未受损");
+    }
+
+    @Test
+    void 文柚果回复最大HP的四分之一() {
+        BattleEngine without = runOneRoundAtHp(null, 100, IDLE_MOVE);
+        BattleEngine with = runOneRoundAtHp(SITRUS, 100, IDLE_MOVE);
+        int maxHp = with.playerActive().getMaxHp();
+        assertEquals((int) (maxHp * 0.25),
+                with.playerActive().getCurrentHp() - without.playerActive().getCurrentHp(),
+                "文柚果应回复最大 HP 的 1/4");
+    }
+
+    @Test
+    void 危果树果仅在HP低于四分之一时触发() {
+        BattleEngine without = runOneRoundAtHp(null, 100, IDLE_MOVE);
+        BattleEngine with = runOneRoundAtHp(FIGY, 100, IDLE_MOVE);
+        int maxHp = with.playerActive().getMaxHp();
+        assertEquals((int) (maxHp * 0.125),
+                with.playerActive().getCurrentHp() - without.playerActive().getCurrentHp(),
+                "勿花果应回复最大 HP 的 1/8");
+        BattleEngine above = runOneRoundAtHp(FIGY, maxHp / 2, IDLE_MOVE);
+        assertEquals(FIGY, above.playerActive().getHeldItem(), "HP 高于 1/4 时勿花果不应触发");
+    }
+
+    @Test
+    void 苹野果在招式PP耗尽时回补PP并消耗() {
+        Pokemon mine = poke(
+                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(DRAINABLE_MOVE));
+        MoveSlot slot = mine.getMoveSlots().get(0);
+        for (int i = 0; i < DRAINABLE_MOVE.getMaxPp(); i++) {
+            slot.usePp();
+        }
+        assertTrue(slot.exhausted(), "前置条件：招式 PP 已归零");
+        mine.setHeldItem(LEPPA);
+        Pokemon foe = poke(
+                species("f_sp", ElementType.NORMAL, 5000, 100, 50, 200, null), 50, List.of(WEAK_HIT));
+        Player player = new Player("玩家");
+        player.addPokemon(mine);
+        BattleEngine engine = new BattleEngine(player, foe, new Random(42));
+        engine.useMove(slot);
+        assertEquals(9, slot.getCurrentPp(), "补 10 PP 后消耗 1 PP，应剩 9");
+        assertNull(mine.getHeldItem(), "触发后应消耗树果");
+        assertTrue(engine.getLog().stream().anyMatch(line -> line.contains("苹野果")),
+                "日志应包含苹野果触发提示");
+    }
+
+    @Test
+    void 苹野果在PP未耗尽时不触发() {
+        Pokemon mine = poke(
+                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(DRAINABLE_MOVE));
+        MoveSlot slot = mine.getMoveSlots().get(0);
+        mine.setHeldItem(LEPPA);
+        Pokemon foe = poke(
+                species("f_sp", ElementType.NORMAL, 5000, 100, 50, 200, null), 50, List.of(WEAK_HIT));
+        Player player = new Player("玩家");
+        player.addPokemon(mine);
+        BattleEngine engine = new BattleEngine(player, foe, new Random(42));
+        engine.useMove(slot);
+        assertEquals(DRAINABLE_MOVE.getMaxPp() - 1, slot.getCurrentPp(), "正常消耗 1 PP");
+        assertEquals(LEPPA, mine.getHeldItem(), "PP 未耗尽时不应消耗树果");
+    }
+
+    @Test
+    void 属性减伤树果使效果拔群招式伤害减半并消耗() {
+        int without = damageDealt(FIRE_MOVE, null, null, ElementType.FIRE, ElementType.GRASS, null);
+        int with = damageDealt(FIRE_MOVE, null, OCCA, ElementType.FIRE, ElementType.GRASS, null);
+        assertEquals(0.5, (double) with / without, 0.05, "巧可果应把效果拔群的火系招式伤害减半");
+        assertNull(attackedDefender(FIRE_MOVE, OCCA, ElementType.FIRE, ElementType.GRASS).getHeldItem(),
+                "触发后应消耗树果");
+    }
+
+    @Test
+    void 属性减伤树果属性不匹配时不触发() {
+        int without = damageDealt(WATER_MOVE, null, null, ElementType.WATER, ElementType.GRASS, null);
+        int with = damageDealt(WATER_MOVE, null, OCCA, ElementType.WATER, ElementType.GRASS, null);
+        assertEquals(without, with, "水属性招式不应触发巧可果");
+        assertEquals(OCCA, attackedDefender(WATER_MOVE, OCCA, ElementType.WATER, ElementType.GRASS).getHeldItem(),
+                "未触发不应消耗树果");
+    }
+
+    @Test
+    void 属性减伤树果对非效果拔群招式不触发() {
+        // 火打水：效果不理想（0.5），故属性匹配但不应触发
+        assertEquals(OCCA, attackedDefender(FIRE_MOVE, OCCA, ElementType.FIRE, ElementType.WATER).getHeldItem(),
+                "非效果拔群时巧可果不应触发");
+    }
+
+    @Test
+    void 灯浆果对一般属性招式无条件减伤() {
+        int without = damageDealt(BIG_HIT, null, null, ElementType.NORMAL, ElementType.NORMAL, null);
+        int with = damageDealt(BIG_HIT, null, BABIRI, ElementType.NORMAL, ElementType.NORMAL, null);
+        assertEquals(0.5, (double) with / without, 0.05, "灯浆果减伤不要求效果拔群");
+    }
 }

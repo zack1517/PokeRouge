@@ -18,6 +18,10 @@
 #   / FOCUS_SASH(满HP时受致死伤害保留1HP,触发后消耗,param 忽略)
 #   / FOCUS_BAND(概率保留1HP,param 为概率百分比)
 #   / CHOICE(讲究系:param 为 SPECIAL|倍率 或 SPEED|倍率,并把携带者锁在第一个用过的招式上)
+#   / CURE_STATUS(树果:异常治疗,param 为 状态英文名[|状态英文名...] 或 ALL,如 PARALYSIS / POISON|BADLY_POISON)
+#   / HEAL_HP(树果:HP 不高于阈值比例时回血,param 为 阈值比例|回复量,回复量<1 视为最大HP比例,>=1 视为固定点数)
+#   / HEAL_PP(树果:招式 PP 归零时回补,param 为回复点数)
+#   / RESIST_TYPE(树果:属性减伤,param 为 属性|承伤倍率[|ALWAYS],默认仅在效果拔群时触发,ALWAYS 时不看克制关系)
 id,name,effectType,param,description
 e_charcoal,木炭,DAMAGE_TYPE,FIRE|1.2,火属性招式威力提升 20%
 e_mystic_water,神秘水滴,DAMAGE_TYPE,WATER|1.2,水属性招式威力提升 20%
@@ -45,3 +49,37 @@ e_focus_sash,气势披带,FOCUS_SASH,,满 HP 时受到致死伤害保留 1 HP，
 e_focus_band,气势头带,FOCUS_BAND,10,HP 归零时 10% 概率保留 1 HP
 e_choice_specs,讲究眼镜,CHOICE,SPECIAL|1.5,特殊招式伤害提升 50%，但只能使用第一个招式
 e_choice_scarf,讲究围巾,CHOICE,SPEED|1.5,速度提升 50%，但只能使用第一个招式
+# 批次②树果：异常治疗（触发即消耗）
+b_cheri,樱子果,CURE_STATUS,PARALYSIS,陷入麻痹时立即治愈
+b_pecha,桃桃果,CURE_STATUS,POISON|BADLY_POISON,陷入中毒时立即治愈
+b_rawst,莓莓果,CURE_STATUS,BURN,陷入灼伤时立即治愈
+b_chesto,零余果,CURE_STATUS,SLEEP,陷入睡眠时立即治愈
+b_aspear,利木果,CURE_STATUS,FREEZE,陷入冰冻时立即治愈
+b_persim,柿仔果,CURE_STATUS,CONFUSION,陷入混乱时立即治愈
+b_lum,木子果,CURE_STATUS,ALL,陷入任何异常状态时立即治愈
+# 批次②树果：HP 回复（触发即消耗）
+b_oran,橙橙果,HEAL_HP,0.5|10,HP 不高于 1/2 时回复 10 HP
+b_sitrus,文柚果,HEAL_HP,0.5|0.25,HP 不高于 1/2 时回复最大 HP 的 1/4
+b_figy,勿花果,HEAL_HP,0.25|0.125,HP 不高于 1/4 时回复最大 HP 的 1/8
+b_wiki,异奇果,HEAL_HP,0.25|0.125,HP 不高于 1/4 时回复最大 HP 的 1/8
+b_aguav,乐芭果,HEAL_HP,0.25|0.125,HP 不高于 1/4 时回复最大 HP 的 1/8
+b_iapapa,芭亚果,HEAL_HP,0.25|0.125,HP 不高于 1/4 时回复最大 HP 的 1/8
+# 批次②树果：PP 回复（触发即消耗）
+b_leppa,苹野果,HEAL_PP,10,招式 PP 耗尽时回复 10 PP
+# 批次②树果：属性减伤（受效果拔群攻击时消耗）
+b_occa,巧可果,RESIST_TYPE,FIRE|0.5,受到效果拔群的火属性招式时伤害减半
+b_passho,千香果,RESIST_TYPE,WATER|0.5,受到效果拔群的水属性招式时伤害减半
+b_wacan,烛木果,RESIST_TYPE,ELECTRIC|0.5,受到效果拔群的电属性招式时伤害减半
+b_rindo,罗子果,RESIST_TYPE,GRASS|0.5,受到效果拔群的草属性招式时伤害减半
+b_yache,番荔果,RESIST_TYPE,ICE|0.5,受到效果拔群的冰属性招式时伤害减半
+b_chople,莲蒲果,RESIST_TYPE,FIGHTING|0.5,受到效果拔群的格斗属性招式时伤害减半
+b_kebia,通通果,RESIST_TYPE,POISON|0.5,受到效果拔群的毒属性招式时伤害减半
+b_shuca,腰木果,RESIST_TYPE,GROUND|0.5,受到效果拔群的地面属性招式时伤害减半
+b_coba,扁樱果,RESIST_TYPE,FLYING|0.5,受到效果拔群的飞行属性招式时伤害减半
+b_payapa,霹霹果,RESIST_TYPE,PSYCHIC|0.5,受到效果拔群的超能力属性招式时伤害减半
+b_tanga,莓榴果,RESIST_TYPE,BUG|0.5,受到效果拔群的虫属性招式时伤害减半
+b_charti,草蚕果,RESIST_TYPE,ROCK|0.5,受到效果拔群的岩石属性招式时伤害减半
+b_kasib,佛柑果,RESIST_TYPE,GHOST|0.5,受到效果拔群的幽灵属性招式时伤害减半
+b_haban,刺耳果,RESIST_TYPE,DARK|0.5,受到效果拔群的恶属性招式时伤害减半
+b_roseli,洛玫果,RESIST_TYPE,FAIRY|0.5,受到效果拔群的妖精属性招式时伤害减半
+b_babiri,灯浆果,RESIST_TYPE,NORMAL|0.5|ALWAYS,受到一般属性招式时伤害减半（一般属性无克制关系，故不看效果拔群）
