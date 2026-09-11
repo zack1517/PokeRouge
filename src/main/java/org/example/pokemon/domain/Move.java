@@ -2,9 +2,11 @@ package org.example.pokemon.domain;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.List;
 
 /**
- * 技能，包含威力、命中率、PP 等基础数据，以及命中后可能施加的异常状态。
+ * 技能，包含威力、命中率、PP 等基础数据，以及命中后可能施加的异常状态、附带的专属效果
+ * （天气/场地/守住/寄生种子/睡觉）与能力等级变化。
  */
 public class Move implements Serializable {
 
@@ -23,6 +25,10 @@ public class Move implements Serializable {
     private final String inflicts;
     /** 异常状态触发概率百分比（0~100）。 */
     private final int inflictionChance;
+    /** 招式附带效果（天气/场地/守住等）；无特殊效果为 {@link MoveEffect#NONE}。 */
+    private final MoveEffect effect;
+    /** 招式附带的能力等级变化（自身/对方、多项）；无则为空列表。 */
+    private final List<StatChange> statChanges;
 
     public Move(String id, String name, ElementType type, MoveCategory category,
                 int power, int accuracy, int maxPp, int priority) {
@@ -38,6 +44,20 @@ public class Move implements Serializable {
     public Move(String id, String name, ElementType type, MoveCategory category,
                 int power, int accuracy, int maxPp, int priority,
                 String inflicts, int inflictionChance) {
+        this(id, name, type, category, power, accuracy, maxPp, priority,
+                inflicts, inflictionChance, MoveEffect.NONE, List.of());
+    }
+
+    /**
+     * 最完整构造（含效果与能力等级变化）。
+     *
+     * @param effect      招式附带效果（无则传 {@code null} 或 {@link MoveEffect#NONE}）
+     * @param statChanges 招式附带的能力等级变化（无则传 {@code null} 或空列表）
+     */
+    public Move(String id, String name, ElementType type, MoveCategory category,
+                int power, int accuracy, int maxPp, int priority,
+                String inflicts, int inflictionChance,
+                MoveEffect effect, List<StatChange> statChanges) {
         this.id = id;
         this.name = name;
         this.type = type;
@@ -48,6 +68,8 @@ public class Move implements Serializable {
         this.priority = priority;
         this.inflicts = inflicts == null ? "" : inflicts.trim();
         this.inflictionChance = Math.max(0, Math.min(100, inflictionChance));
+        this.effect = effect == null ? MoveEffect.NONE : effect;
+        this.statChanges = statChanges == null ? List.of() : List.copyOf(statChanges);
     }
 
     public String getId() {
@@ -87,9 +109,29 @@ public class Move implements Serializable {
         return inflicts;
     }
 
+    /** 是否附带异常状态。 */
+    public boolean hasInfliction() {
+        return inflicts != null && !inflicts.isEmpty();
+    }
+
     /** 异常状态触发概率百分比（0~100）。 */
     public int getInflictionChance() {
         return inflictionChance;
+    }
+
+    /** 招式附带效果（无则为 {@link MoveEffect#NONE}）。 */
+    public MoveEffect getEffect() {
+        return effect;
+    }
+
+    /** 招式附带的能力等级变化（多项，顺序即施加顺序）；无则为空列表。 */
+    public List<StatChange> getStatChanges() {
+        return statChanges;
+    }
+
+    /** 是否附带能力等级变化。 */
+    public boolean hasStatChanges() {
+        return !statChanges.isEmpty();
     }
 
     /**

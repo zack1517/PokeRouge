@@ -11,7 +11,13 @@ public enum MoveEffect {
     ELECTRIC_TERRAIN,
     GRASSY_TERRAIN,
     MISTY_TERRAIN,
-    PSYCHIC_TERRAIN;
+    PSYCHIC_TERRAIN,
+    /** 守住：当回合挡下对方一切招式（专属效果，由战斗引擎结算）。 */
+    PROTECT,
+    /** 寄生种子：每回合末吸取目标最大 HP 的 1/8（专属效果，由战斗引擎结算）。 */
+    LEECH_SEED,
+    /** 睡觉：回满 HP 并陷入睡眠（专属效果，由战斗引擎结算）。 */
+    REST;
 
     public static MoveEffect parse(String name) {
         if (name == null || name.trim().isEmpty()) return NONE;

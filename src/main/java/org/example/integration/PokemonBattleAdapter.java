@@ -247,11 +247,42 @@ public final class PokemonBattleAdapter {
         return battleSpecies;
     }
 
-    /** 新体系技能 → 战斗模型技能。供读档还原精灵技能时复用。 */
+    /**
+     * 新体系技能 → 战斗模型技能。供读档还原精灵技能时复用。
+     *
+     * <p>除基础数值与异常状态外，还必须搬运<b>专属效果</b>（守住/寄生种子/睡觉/天气场地）与
+     * <b>能力等级变化</b>：这两项是变化类技能的全部效果来源，漏搬会让招式在战斗引擎里
+     * 变成「空变化招」而播报「但是什么也没有发生……」。</p>
+     */
     public static Move toBattleMove(org.example.pokemon.domain.Move source) {
         return new Move(source.getId(), source.getName(), ElementType.valueOf(source.getType().name()),
                 MoveCategory.valueOf(source.getCategory().name()), source.getPower(), source.getAccuracy(),
-                source.getMaxPp(), source.getPriority(), MoveEffect.NONE,
-                StatusCondition.parse(source.getInflicts()), source.getInflictionChance());
+                source.getMaxPp(), source.getPriority(), toBattleEffect(source.getEffect()),
+                StatusCondition.parse(source.getInflicts()), source.getInflictionChance(),
+                toBattleStatChanges(source.getStatChanges()));
+    }
+
+    /** 招式效果跨系统映射：按枚举名对齐（新体系 {@link org.example.pokemon.domain.MoveEffect} 必须与战斗模型一一对应）。 */
+    private static MoveEffect toBattleEffect(org.example.pokemon.domain.MoveEffect source) {
+        return source == null ? MoveEffect.NONE : MoveEffect.parse(source.name());
+    }
+
+    /** 能力等级变化跨系统映射：按枚举名对齐，战斗模型不支持的能力项（如 HP）被忽略。 */
+    private static List<org.example.model.StatChange> toBattleStatChanges(
+            List<org.example.pokemon.domain.StatChange> source) {
+        if (source == null || source.isEmpty()) {
+            return List.of();
+        }
+        List<org.example.model.StatChange> mapped = new ArrayList<>();
+        for (org.example.pokemon.domain.StatChange change : source) {
+            org.example.model.Stat stat = org.example.model.Stat.parse(change.stat().name());
+            if (stat == null) {
+                continue;
+            }
+            mapped.add(new org.example.model.StatChange(
+                    org.example.model.StatChange.Recipient.valueOf(change.recipient().name()),
+                    stat, change.delta()));
+        }
+        return List.copyOf(mapped);
     }
 }
