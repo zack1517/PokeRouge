@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
+import org.example.growth.GrowthProgress;
+import org.example.growth.GrowthService;
 import org.example.model.ElementType;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
@@ -290,6 +292,27 @@ class BattleEngineTrainerTest {
 
         assertEquals(BattleService.Status.PLAYER_WIN, battle.getStatus());
         assertEquals(List.of(1), growth.expNumerators, "野生遭遇击倒申报应为 1 倍");
+    }
+
+    /**
+     * 击倒路人训练家的一只精灵后，战斗日志必须出现「获得了 N 点经验」的可见反馈，
+     * 且经验确实写回己方精灵 —— 这是「击倒一只也能看到经验入账」的直接保障。
+     */
+    @Test
+    void 击倒一只对手后日志出现获得经验反馈且经验入账() {
+        Player player = playerWith(strong("mine", 20));
+        Trainer trainer = trainerWith("路人训练家", weak("foe_a", 20), weak("foe_b", 20));
+        BattleService battle = BattleServices.newTrainerBattle(player, trainer, new Random(7),
+                BattleDataPorts.none(),
+                new GrowthService(BattleDataPorts.none(), new GrowthProgress()));
+        Pokemon mine = player.getActive();
+
+        battle.useMove(mine.getMoveSlots().get(0));
+
+        assertEquals(BattleService.Status.ONGOING, battle.getStatus(), "对方还有健康精灵，战斗应继续");
+        assertTrue(mine.getExp() > 0 || mine.getLevel() > 20, "击倒一只对手后经验应已写回己方精灵");
+        assertTrue(battle.getLog().stream().anyMatch(line -> line.startsWith(mine.getName() + " 获得了 ")),
+                "击倒一只对手后应能看到获得经验的日志：" + battle.getLog());
     }
 
     /** 野生遭遇仍是单只倒下即获胜，同时完成一次击倒申报与一次获胜申报。 */
