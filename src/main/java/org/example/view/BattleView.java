@@ -69,7 +69,8 @@ import java.util.function.IntPredicate;
  * 悬停技能格实时联动右块）。
  * 双方信息卡同款同尺寸（名称/属性/等级 + HP 条，EXP 行随「卡样式一致」要求移除，待确认后另寻展示位）；
  * 立绘显示精灵图片（classpath /images/pokemon/，文件名与精灵中文名一致；内建精灵无图时回退「精灵名+立绘」占位文本）；
- * 战斗背景从 bg_battle1/3/4 随机取一、允许重复（2026-09-11 素材替换；道馆/Boss 专属图待流程接入后按节点切换）。</p>
+ * 战斗背景由流程按战斗类型传入（2026-09-11 素材按类型分类：野怪 / 路人 / 道馆 / Boss，
+ * 见 {@link org.example.GameSession#battleBackgroundFor(org.example.model.OptionType)}）；未指定时默认野外图。</p>
  *
  * <p>全局等比缩放由 {@link org.example.util.UiScale} 统一施加（本类布局按 640×426.67 设计，3:2）。</p>
  */
@@ -93,11 +94,8 @@ public class BattleView {
         void onExit();
     }
 
-    /** 战斗背景候选（classpath；每次进入战斗随机取一、允许重复；素材即 bg_battle 的 1/3/4 三张）。 */
-    private static final String[] BATTLE_BACKGROUNDS = {
-            "/images/background/bg_battle1.jpeg",
-            "/images/background/bg_battle3.jpeg",
-            "/images/background/bg_battle4.jpeg"};
+    /** 默认战斗背景（未指定类型时的兜底：野外图，对应流程「其余特殊情况一律默认 bg_battle_wild」）。 */
+    private static final String DEFAULT_BACKGROUND = "/images/background/bg_battle_wild.jpeg";
 
     // ---- 双方立绘（精灵图片；无图时回退占位文本）----
     private final ImageView playerSprite = new ImageView();
@@ -190,15 +188,29 @@ public class BattleView {
 
     private final Actions actions;
 
+    /** 本次战斗的背景 classpath（由流程按战斗类型决定；{@code null} = 用 {@link #DEFAULT_BACKGROUND}）。 */
+    private final String battleBackground;
+
+    /** 未指定背景（测试/自定义战等）：使用默认野外图。 */
     public BattleView(Actions actions) {
+        this(actions, null);
+    }
+
+    /**
+     * @param battleBackground 战斗背景 classpath（由流程按战斗类型决定，见
+     *                         {@link org.example.GameSession#battleBackgroundFor(org.example.model.OptionType)}）；
+     *                         {@code null} 时使用默认野外图
+     */
+    public BattleView(Actions actions, String battleBackground) {
         this.actions = actions;
+        this.battleBackground = battleBackground;
     }
 
     /** 构建战斗场景（等比缩放由 {@link UiScale} 统一施加）。 */
     public Scene createScene() {
         BorderPane root = new BorderPane();
         root.setPadding(new Insets(10));
-        ImageBackgrounds.apply(root, BATTLE_BACKGROUNDS[(int) (Math.random() * BATTLE_BACKGROUNDS.length)]); // 背景随机铺满；卡片/色块/面板其上叠加
+        ImageBackgrounds.apply(root, battleBackground != null ? battleBackground : DEFAULT_BACKGROUND); // 背景按战斗类型铺满；卡片/色块/面板其上叠加
         root.setTop(buildTop());
         root.setCenter(buildCenter());
         root.setBottom(buildBottom());

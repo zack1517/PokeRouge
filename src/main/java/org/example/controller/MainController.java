@@ -716,7 +716,7 @@ public class MainController {
         }
         try {
             BattleService engine = newWildBattle(player, wild.get());
-            enterBattle(engine, rogueBattleFinished(engine, OptionType.WILD));
+            enterBattle(engine, rogueBattleFinished(engine, OptionType.WILD), OptionType.WILD);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -743,7 +743,7 @@ public class MainController {
         }
         try {
             BattleService engine = newTrainerBattle(player, trainer);
-            enterBattle(engine, rogueBattleFinished(engine, OptionType.TRAINER));
+            enterBattle(engine, rogueBattleFinished(engine, OptionType.TRAINER), OptionType.TRAINER);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -799,7 +799,7 @@ public class MainController {
         }
         try {
             BattleService engine = newWildBattle(player, legendary.get());
-            enterBattle(engine, rogueBattleFinished(engine, OptionType.LEGENDARY));
+            enterBattle(engine, rogueBattleFinished(engine, OptionType.LEGENDARY), OptionType.LEGENDARY);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -816,7 +816,7 @@ public class MainController {
         }
         try {
             BattleService engine = newTrainerBattle(player, opponent);
-            enterBattle(engine, rogueBattleFinished(engine, type));
+            enterBattle(engine, rogueBattleFinished(engine, type), type);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -847,7 +847,7 @@ public class MainController {
         }
         try {
             BattleService engine = newTrainerBattle(player, opponent);
-            enterBattle(engine, rogueBattleFinished(engine, type));
+            enterBattle(engine, rogueBattleFinished(engine, type), type);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -888,13 +888,16 @@ public class MainController {
     /**
      * 进入战斗场景：战斗期间 {@link #battleInProgress} 为真（存档被拒），
      * 战斗结束后回调前先复位，保证「未作战时才可存档」这一约束成立。
+     *
+     * @param type 本次战斗的节点类型，用于按类型取战斗背景（道馆随机不重复 / 路人 / Boss / 其余默认野外图，
+     *             见 {@link GameSession#battleBackgroundFor(OptionType)}）
      */
-    private void enterBattle(BattleService engine, Runnable onFinished) {
+    private void enterBattle(BattleService engine, Runnable onFinished, OptionType type) {
         battleInProgress = true;
         stage.setScene(new BattleController(engine, () -> {
             battleInProgress = false;
             onFinished.run();
-        }, session.getSegment()).createScene());
+        }, session.getSegment(), session.battleBackgroundFor(type)).createScene());
     }
 
     /** 绑定窗口事件：关闭确认与生命周期日志。 */

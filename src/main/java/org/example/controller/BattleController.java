@@ -32,19 +32,29 @@ public class BattleController implements BattleView.Actions {
     private final BattleService engine;
     private final Runnable onExit;
     private final int segment; // 当前地图段号（流程系统接入前由会话持有，仅用于右上角段文案）
-    private final BattleView view = new BattleView(this);
+    private final BattleView view;
     /** 演出进行中标志：动画未播完前丢弃一切行动输入，避免结算与画面错位。 */
     private boolean playing;
 
-    /** @param engine 已就绪的战斗服务实例（玩家与敌方当前出战精灵均已非倒下，通常来自
+    /** 不指定战斗背景（测试 / 自定义战等）：使用默认野外图。
+     *
+     *  @param engine 已就绪的战斗服务实例（玩家与敌方当前出战精灵均已非倒下，通常来自
      *                {@link org.example.battle.BattleServices#newBattle} 或
      *                {@link org.example.battle.BattleServices#newTrainerBattle}）
      *  @param onExit 战斗结束（含逃跑/捕捉/胜负）后返回主菜单的回调
      *  @param segment 当前地图段号（与主菜单/会话一致，用于战斗页右上角段展示） */
     public BattleController(BattleService engine, Runnable onExit, int segment) {
+        this(engine, onExit, segment, null);
+    }
+
+    /** @param battleBackground 战斗背景 classpath（由流程按战斗类型决定，见
+     *                         {@link org.example.GameSession#battleBackgroundFor(org.example.model.OptionType)}）；
+     *                         {@code null} 时使用默认野外图 */
+    public BattleController(BattleService engine, Runnable onExit, int segment, String battleBackground) {
         this.engine = engine;
         this.onExit = onExit;
         this.segment = segment;
+        this.view = new BattleView(this, battleBackground);
     }
 
     public Scene createScene() {
