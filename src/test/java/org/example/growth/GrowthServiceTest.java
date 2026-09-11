@@ -205,6 +205,47 @@ class GrowthServiceTest {
     }
 
     @Test
+    void 未升级时返回带进度的经验日志() {
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        Pokemon active = pokemon(mine, 50, SLAM);
+        // 50 级升到下一级需 7651 点，70 点经验远不足以升级，但必须能从日志中看到经验入账
+        Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()),
+                7, SLAM);
+
+        BattleGrowthPort.Settlement settlement =
+                new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe));
+
+        assertEquals(50, active.getLevel(), "70 点经验不足以让 50 级精灵升级");
+        assertEquals(70L, active.getExp(), "经验应已累计到精灵身上");
+        assertEquals(1, settlement.log().size(), "未升级时也应返回一行经验反馈日志");
+        String line = settlement.log().get(0);
+        assertTrue(line.contains(active.getName() + " 获得了 70 点经验！"),
+                "应写明获得经验的具体数值，实际：" + line);
+        assertTrue(line.contains("（70/" + active.expToNextLevel() + "）"),
+                "应附带「当前 / 升级所需」进度，实际：" + line);
+    }
+
+    @Test
+    void 升级时先返回经验日志再逐级返回升级日志() {
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        Pokemon active = pokemon(mine, 1, SLAM);
+        Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()),
+                7, SLAM);
+
+        BattleGrowthPort.Settlement settlement =
+                new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe));
+
+        assertEquals(4, active.getLevel(), "70 点经验应把 1 级精灵升到 4 级");
+        assertEquals(active.getName() + " 获得了 70 点经验！", settlement.log().get(0),
+                "升级时经验反馈日志应排在最前");
+        assertEquals(List.of("Lv.2", "Lv.3", "Lv.4"),
+                settlement.log().subList(1, settlement.log().size()).stream()
+                        .map(l -> l.replaceAll(".*升到了 (Lv\\.\\d+)！", "$1"))
+                        .toList(),
+                "升级日志应逐级返回且排在经验日志之后");
+    }
+
+    @Test
     void 已倒下的精灵不结算成长() {
         Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
         Pokemon fainted = pokemon(mine, 1, SLAM);
