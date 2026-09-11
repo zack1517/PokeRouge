@@ -1,5 +1,5 @@
 /*
- * PokeRouge · 启动页（主菜单）样式。
+ * PokeRouge · 启动页与悬浮式子页共享样式（胶囊按钮、图标、暗角、标题）。
  *
  * 改编自 临时/主界面设计代码（Web/React 版主界面）：
  * 无卡片悬浮式布局 —— 背景插画铺满，彩色 Logo 与胶囊按钮直接悬浮其上，
@@ -164,4 +164,13 @@
 
 .menu-pill:disabled .menu-icon {
     -fx-stroke: #7d8794;
+}
+
+/* ---------- 悬浮子页标题（自定义战斗等悬浮式子页复用；与启动页同字体体系） ---------- */
+.subpage-title {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.60), 12, 0.25, 0, 4);
 }
