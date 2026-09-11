@@ -1035,6 +1035,10 @@ public class BattleView {
      *
      * <p>事件为空时立即回调；单步动画被跳过（无立绘）时该步耗时为零。播放前后各复位一次立绘变换与特效层，
      * 保证上一段演出的残留位移/缩放不会叠加到下一段。</p>
+     *
+     * <p>每一步动画开始前先按事件携带的 HP 快照刷新对应一方的血条（见 {@link #applyEventHp}），
+     * 因此「一方出手 → 对方扣血并抖动 → 另一方出手 → 这边扣血并抖动」按事件顺序逐步呈现，
+     * 不会等双方都演完才结算血量。</p>
      */
     public void playEvents(List<BattleEvent> events, Runnable onFinished) {
         resetPerformance();
@@ -1051,14 +1055,59 @@ public class BattleView {
         Runnable next = () -> playAt(events, index + 1, onFinished);
         switch (event.kind()) {
             case BATTLE_START -> playEntrance(next);
-            case SEND_OUT -> playSendOut(event.side(), event.actor(), next);
+            case SEND_OUT -> {
+                applyEventHp(event);
+                playSendOut(event.side(), event.actor(), next);
+            }
             case RECALL -> playRecall(event.side(), event.actor(), next);
             case MOVE -> playMoveCast(event.side(), event.element(), event.category(), next);
-            case HIT -> playHit(event.side(), event.element(), next);
-            case FAINT -> playFaint(event.side(), event.actor(), next);
+            case HIT -> {
+                applyEventHp(event);
+                playHit(event.side(), event.element(), next);
+            }
+            case FAINT -> {
+                applyEventHp(event);
+                playFaint(event.side(), event.actor(), next);
+            }
             case CAPTURE -> playCapture(event.success(), next);
-            case ITEM -> playItem(next);
+            case ITEM -> {
+                applyEventHp(event);
+                playItem(next);
+            }
             case RUN -> playRun(event.success(), next);
+        }
+    }
+
+    /**
+     * 播放该步动画前先把受影响一方的血条刷成事件携带的 HP 快照，实现「招式命中先扣血、再播受击动画」。
+     *
+     * <p>{@link BattleEvent.Kind#HIT} / {@link BattleEvent.Kind#FAINT} 的 {@code actor} 是精灵名：
+     * 仅当状态卡片当前显示的正是这只精灵时才刷新，避免把已倒下精灵的 HP 写到刚换上场的新精灵身上。
+     * {@link BattleEvent.Kind#SEND_OUT} 是新精灵上场，名字与血条一起切换；
+     * {@link BattleEvent.Kind#ITEM} 的 {@code actor} 是道具名、携带的恒为场上精灵的 HP，故不比对名字。
+     * 快照缺失（{@link BattleEvent.Hp#present()} 为 {@code false}）时不动血条。</p>
+     */
+    private void applyEventHp(BattleEvent event) {
+        BattleEvent.Hp hp = event.hp();
+        if (event.side() == null || hp == null || !hp.present()) {
+            return;
+        }
+        boolean playerSide = event.side() == BattleEvent.Side.PLAYER;
+        Label name = playerSide ? playerName : wildName;
+        ProgressBar bar = playerSide ? playerHpBar : wildHpBar;
+        Label text = playerSide ? playerHpText : wildHpText;
+        switch (event.kind()) {
+            case ITEM -> refreshHp(bar, text, hp);
+            case SEND_OUT -> {
+                // 新精灵上场：等级/属性等文案留到本轮演出结束后由 refreshPokemon 统一刷新
+                name.setText(event.actor());
+                refreshHp(bar, text, hp);
+            }
+            default -> {
+                if (name.getText().equals(event.actor())) {
+                    refreshHp(bar, text, hp);
+                }
+            }
         }
     }
 
@@ -1499,9 +1548,18 @@ public class BattleView {
     }
 
     private static void refreshHp(ProgressBar bar, Label text, Pokemon p) {
-        double ratio = p.getMaxHp() <= 0 ? 0 : (double) p.getCurrentHp() / p.getMaxHp();
+        refreshHp(bar, text, p.getCurrentHp(), p.getMaxHp());
+    }
+
+    /** 按事件携带的 HP 快照刷新血条（演出过程中使用，不重建状态卡片）。 */
+    private static void refreshHp(ProgressBar bar, Label text, BattleEvent.Hp hp) {
+        refreshHp(bar, text, hp.current(), hp.max());
+    }
+
+    private static void refreshHp(ProgressBar bar, Label text, int current, int max) {
+        double ratio = max <= 0 ? 0 : (double) current / max;
         bar.setProgress(Math.max(0, ratio));
-        text.setText("HP " + p.getCurrentHp() + " / " + p.getMaxHp());
+        text.setText("HP " + current + " / " + max);
         String color;
         if (ratio > 0.5) {
             color = "limegreen";

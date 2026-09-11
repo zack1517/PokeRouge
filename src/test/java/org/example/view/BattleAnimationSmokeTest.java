@@ -1,7 +1,10 @@
 package org.example.view;
 
 import javafx.application.Platform;
+import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.Label;
 import javafx.stage.Stage;
 import org.example.battle.BattleEvent;
 import org.example.battle.BattleService;
@@ -20,12 +23,15 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,10 +40,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <pre>mvn -o test -Dtest=BattleAnimationSmokeTest -Dbattle.smoke=true -DfailIfNoSpecifiedTests=false</pre>
  *
- * <p>验证两件无法靠纯逻辑单测保证的事：① 全部事件类型的动画都能在真实 JavaFX 工具包中
+ * <p>验证三件无法靠纯逻辑单测保证的事：① 全部事件类型的动画都能在真实 JavaFX 工具包中
  * 播完并触发完成回调（串联的 {@code setOnFinished} 不会断链）；② 控制器在动画结束后会解锁
- * 行动输入，不会把界面永久锁死。同时真实走一遍布局，确保特效层的坐标换算（{@code sceneToLocal}）
- * 在场景被放进 {@link Stage} 并完成布局后不会抛异常。</p>
+ * 行动输入，不会把界面永久锁死；③ 事件携带的 HP 快照在该步动画<b>开始前</b>就已写入血条，
+ * 即「一方出手 → 对方先掉血 → 再播受击动画」。同时真实走一遍布局，确保特效层的坐标换算
+ * （{@code sceneToLocal}）在场景被放进 {@link Stage} 并完成布局后不会抛异常。</p>
  */
 @EnabledIfSystemProperty(named = "battle.smoke", matches = "true")
 class BattleAnimationSmokeTest {
@@ -158,6 +165,76 @@ class BattleAnimationSmokeTest {
 
         assertTrue(engine.getLog().size() > afterFirst,
                 "上一回合演出播完后应能再次行动: " + engine.getLog());
+    }
+
+    /**
+     * 时序收益：受击事件携带的 HP 快照必须在该步受击动画<b>开始前</b>就写进血条，
+     * 即「技能打到对方身上先扣血、再播对方动画」。
+     *
+     * <p>断言方式：{@code playEvents} 对单条事件是同步进入动画的，因此在该方法返回的同一个
+     * FX 任务里血条就应已是快照值 —— 此刻受击抖动才刚开始（共 {@code MS_HIT} 毫秒），
+     * 与「等全部演出结束才刷新」的旧行为有明确的先后差别。</p>
+     */
+    @Test
+    void 受击事件在动画开始前就按HP快照刷新血条() throws Exception {
+        Player player = new Player("玩家");
+        Pokemon mine = Pokemon.create(species("mine_sp", 400, 200, 300), 20, List.of(TACKLE, EMBER));
+        player.addPokemon(mine);
+        Pokemon wild = Pokemon.create(species("wild_sp", 900, 20, 10), 20, List.of(TACKLE));
+        BattleService engine = BattleServices.newBattle(player, wild, new Random(7));
+        engine.drainEvents();
+
+        final BattleView[] holder = new BattleView[1];
+        onFx(() -> holder[0] = new BattleView(new NoopActions()));
+        Scene scene = holder[0].createScene();
+        showOnStage(scene);
+        onFx(() -> holder[0].refreshPokemon(engine.playerActive(), engine.foeActive()));
+
+        int mineMax = mine.getMaxHp();
+        String mineFullText = "HP " + mineMax + " / " + mineMax;
+        assertTrue(labelsIn(scene).contains(mineFullText),
+                "前置条件：开场双方满血: " + labelsIn(scene));
+
+        engine.useMove(mine.getMoveSlots().get(0));
+        BattleEvent foeHit = engine.drainEvents().get(1);
+        assertEquals(BattleEvent.Kind.HIT, foeHit.kind());
+        assertEquals(BattleEvent.Side.FOE, foeHit.side());
+        assertTrue(foeHit.hp().present(), "受击事件应携带 HP 快照");
+        String foeHitText = "HP " + foeHit.hp().current() + " / " + foeHit.hp().max();
+        assertNotEquals(mineFullText, foeHitText, "前置条件：这一下应真的掉血");
+
+        final List<String>[] during = new List[1];
+        CountDownLatch finished = new CountDownLatch(1);
+        onFx(() -> {
+            holder[0].playEvents(List.of(foeHit), finished::countDown);
+            during[0] = labelsIn(scene); // 抖动动画刚开始，血条应已刷新
+        });
+
+        assertNotNull(during[0], "播放事件不应抛异常");
+        assertTrue(during[0].contains(foeHitText),
+                "受击动画开始时血条就该是扣血后的数值（先扣血、再播动画）: " + during[0]);
+        assertTrue(during[0].contains(mineFullText),
+                "只刷新受击一方，出手方血条不应被顺手改掉: " + during[0]);
+
+        assertTrue(finished.await(60, TimeUnit.SECONDS), "受击动画应在超时内播完并回调");
+    }
+
+    /** 收集场景中全部标签文本（断言血条文案用，无需为节点额外加 id）。 */
+    private static List<String> labelsIn(Scene scene) {
+        List<String> texts = new ArrayList<>();
+        collectLabels(scene.getRoot(), texts);
+        return texts;
+    }
+
+    private static void collectLabels(Node node, List<String> out) {
+        if (node instanceof Label label) {
+            out.add(label.getText());
+        }
+        if (node instanceof Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                collectLabels(child, out);
+            }
+        }
     }
 
     /** 冒烟测试只关心渲染与动画，不触发任何业务动作。 */

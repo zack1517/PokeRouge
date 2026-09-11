@@ -314,7 +314,7 @@ FXML 重写，要求：
 | `playerActive() / foeActive() / getPlayer()` | 战斗页 | 面板与队伍菜单渲染（引擎自动换宠后重新读取，可能为 null，需空态）。**敌方面板一律用 `foeActive()`**：野生为野生精灵，训练师轮战为训练师当前出战精灵（训练师换宠后自动跟随）；`getWild()` 在训练师轮战中为 `null` |
 | `getTrainer()` | 战斗页 | 训练师轮战非空：可用 `getTrainer().getName()` 显示对手名，`getTrainer().getParty()` 显示对方队伍/剩余数量 |
 | `getLog()` | 战斗页 | 完整日志只读，行动后全量覆盖展示 |
-| `drainEvents()` | 战斗页 | **取走**本回合演出事件（`List<BattleEvent>`，取走即清空）驱动战斗动画；为纯演出数据，不参与结算，界面可按需忽略。**v1.11**：推荐顺序「行动 → 取事件 → 播动画 → 播完再刷新界面」（见《接口文档_战斗服务.md》§16） |
+| `drainEvents()` | 战斗页 | **取走**本回合演出事件（`List<BattleEvent>`，取走即清空）驱动战斗动画；为纯演出数据，不参与结算，界面可按需忽略。**v1.11**：推荐顺序「行动 → 取事件 → 播动画 → 播完再刷新界面」（见《接口文档_战斗服务.md》§16）。**v1.12**：HP 条改由每个事件自带的 `hp` 快照在**该步动画开始前**刷新（先扣血、再播动画），立绘/等级/异常状态等仍在全部播完后统一刷新 |
 | `getBag()` | 战斗页 | 配合 `Bag.availableStacks()` 渲染背包菜单 |
 
 ### 4.2 工厂与遭遇环境（引用《接口文档_战斗服务.md》§4）
@@ -340,7 +340,7 @@ FXML 重写，要求：
 | `Bag / ItemStack` | `availableStacks() / countOf / getAll`；`getItem() / getCount()` |
 | `Item` | `getId / getName / getCategory / getEffect / isAlwaysCatch / getCuresSpec / canCure / curedStatuses / curesAll`（`ItemCategory.HEAL / POKE_BALL / CURE`） |
 | `MoveSlot / Move` | `getMove / getPp / exhausted`；`getId / getName / getType / getCategory / getPower / getMaxPp / hasInfliction / getInflicts / getInflictionChance` |
-| `BattleEvent`（v1.11 新增） | `kind / side / actor / moveName / element / category / success / opponent()`；嵌套枚举 `Kind`（`BATTLE_START / SEND_OUT / RECALL / MOVE / HIT / FAINT / CAPTURE / ITEM / RUN`）与 `Side`（`PLAYER / FOE`）；`ElementType.getColorCode()` 供动画配色，`MoveCategory` 供动画形态 |
+| `BattleEvent`（v1.11 新增） | `kind / side / actor / moveName / element / category / success / hp / opponent()`；嵌套枚举 `Kind`（`BATTLE_START / SEND_OUT / RECALL / MOVE / HIT / FAINT / CAPTURE / ITEM / RUN`）与 `Side`（`PLAYER / FOE`）；`ElementType.getColorCode()` 供动画配色，`MoveCategory` 供动画形态。**v1.12**：`hp` 为 `Hp(current, max)` 快照（无 HP 变化时为 `Hp.NONE`，先判 `present()`），界面在播该步动画前据此刷新血条 |
 | `StatusCondition` | `getDisplayName / isMajor / isVolatile / immunityType`；`parse(name)` 供数据加载 |
 
 > 展示所需中文名均有现成 getter，**不要求逻辑层为展示拼装字符串**；格式拼接由 UI 负责。

@@ -428,7 +428,7 @@ public class BattleEngine implements BattleService {
             }
             player.getBag().consume(item);
             append("使用了【" + item.getName() + "】，" + target.getName() + " 回复了 " + healed + " HP");
-            events.add(BattleEvent.item(item.getName()));
+            events.add(BattleEvent.item(item.getName(), BattleEvent.hpOf(playerActive())));
         } else if (item.getCategory() == ItemCategory.CURE) {
             if (!cureWithItem(target, item)) {
                 append(target.getName() + " 没有可解除的异常状态，【" + item.getName() + "】没有使用。");
@@ -436,7 +436,7 @@ public class BattleEngine implements BattleService {
             }
             player.getBag().consume(item);
             append("使用了【" + item.getName() + "】");
-            events.add(BattleEvent.item(item.getName()));
+            events.add(BattleEvent.item(item.getName(), BattleEvent.hpOf(playerActive())));
         } else {
             append("该道具暂时无法使用");
             return slice(mark);
@@ -538,10 +538,11 @@ public class BattleEngine implements BattleService {
             int dealt = playerActive().takeDamage(dmg);
             append("对 " + playerActive().getName() + " 造成了 " + dealt + " 点伤害");
             events.add(BattleEvent.hit(BattleEvent.Side.PLAYER, playerActive().getName(),
-                    ElementType.NORMAL, MoveCategory.PHYSICAL));
+                    ElementType.NORMAL, MoveCategory.PHYSICAL, BattleEvent.hpOf(playerActive())));
             if (playerActive().isFainted()) {
                 append(playerActive().getName() + " 倒下了！");
-                events.add(BattleEvent.faint(BattleEvent.Side.PLAYER, playerActive().getName()));
+                events.add(BattleEvent.faint(BattleEvent.Side.PLAYER, playerActive().getName(),
+                        BattleEvent.hpOf(playerActive())));
             }
         } else {
             usable.use();
@@ -593,7 +594,7 @@ public class BattleEngine implements BattleService {
             }
             tryInflict(move, defender);
             events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
-                    MoveCategory.STATUS));
+                    MoveCategory.STATUS, BattleEvent.hpOf(defender)));
             return;
         }
         performAttack(attacker, defender, move);
@@ -646,13 +647,14 @@ public class BattleEngine implements BattleService {
     /** 混乱自伤：按威力 {@value StatusCondition#CONFUSION_SELF_HIT_POWER} 的无属性物理招式对自身结算。 */
     private void selfHit(Pokemon p) {
         append(p.getName() + " 因混乱攻击了自己！");
-        events.add(BattleEvent.hit(sideOf(p), nameOf(p), ElementType.NORMAL, MoveCategory.PHYSICAL));
         double base = (2.0 * p.getLevel() / 5.0 + 2.0) * StatusCondition.CONFUSION_SELF_HIT_POWER
                 * ((double) p.effectiveAttack() / Math.max(1, p.getStats().getDefense())) / 50.0 + 2.0;
         int dealt = p.takeDamage(Math.max(1, (int) base));
+        events.add(BattleEvent.hit(sideOf(p), nameOf(p), ElementType.NORMAL, MoveCategory.PHYSICAL,
+                BattleEvent.hpOf(p)));
         append("自伤了 " + dealt + " 点伤害");
         if (p.isFainted()) {
-            events.add(BattleEvent.faint(sideOf(p), nameOf(p)));
+            events.add(BattleEvent.faint(sideOf(p), nameOf(p), BattleEvent.hpOf(p)));
             append(p.getName() + " 倒下了！");
         }
     }
@@ -757,7 +759,7 @@ public class BattleEngine implements BattleService {
         int damage = computeDamage(attacker, defender, move);
         int dealt = defender.takeDamage(damage);
         events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
-                move.getCategory()));
+                move.getCategory(), BattleEvent.hpOf(defender)));
         applyLifeSteal(attacker, dealt);
         StringBuilder sb = new StringBuilder();
         sb.append("造成 ").append(dealt).append(" 点伤害");
@@ -768,7 +770,7 @@ public class BattleEngine implements BattleService {
         }
         append(sb.toString());
         if (defender.isFainted()) {
-            events.add(BattleEvent.faint(sideOf(defender), nameOf(defender)));
+            events.add(BattleEvent.faint(sideOf(defender), nameOf(defender), BattleEvent.hpOf(defender)));
             append(defender.getName() + " 倒下了！");
             return;
         }
@@ -889,14 +891,16 @@ public class BattleEngine implements BattleService {
                 return;
             }
             append(trainer.getName() + " 派出了 " + next.getName() + "！");
-            events.add(BattleEvent.sendOut(BattleEvent.Side.FOE, next.getName()));
+            events.add(BattleEvent.sendOut(BattleEvent.Side.FOE, next.getName(),
+                    BattleEvent.hpOf(next)));
         }
 
         if (playerDown) {
             append(pa.getName() + " 倒下了……");
             if (player.switchToNextHealthy() != null) {
                 append("你派出了 " + playerActive().getName() + "！");
-                events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, playerActive().getName()));
+                events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, playerActive().getName(),
+                        BattleEvent.hpOf(playerActive())));
             } else {
                 status = Status.PLAYER_LOSE;
                 append("你已没有能战斗的精灵，战败了……");
@@ -981,7 +985,7 @@ public class BattleEngine implements BattleService {
                 p.increaseBadlyPoisonCounter();
             }
             if (p.isFainted()) {
-                events.add(BattleEvent.faint(sideOf(p), nameOf(p)));
+                events.add(BattleEvent.faint(sideOf(p), nameOf(p), BattleEvent.hpOf(p)));
                 append(p.getName() + " 倒下了！");
                 return;
             }
@@ -1007,7 +1011,7 @@ public class BattleEngine implements BattleService {
         int dealt = p.takeDamage(Math.max(1, (int) (p.getMaxHp() * weather.chipRatio())));
         append(weather.getDisplayName() + " 侵蚀着 " + p.getName() + "，造成了 " + dealt + " 点伤害！");
         if (p.isFainted()) {
-            events.add(BattleEvent.faint(sideOf(p), nameOf(p)));
+            events.add(BattleEvent.faint(sideOf(p), nameOf(p), BattleEvent.hpOf(p)));
             append(p.getName() + " 倒下了！");
         }
     }

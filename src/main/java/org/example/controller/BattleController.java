@@ -151,9 +151,11 @@ public class BattleController implements BattleView.Actions {
     /**
      * 播放上一条行动结算产生的演出事件，全部播完后 {@link #render()}。
      *
-     * <p>日志与天气/场地行在动画<b>开始前</b>刷新，让本回合文本与演出同步可见；精灵立绘、HP 条等
-     * 改由演出结束后的 {@code render()} 统一刷新 —— 这样「伤害数字/HP 条在受击后才变化」，
-     * 且倒下与放出动画不会因为引擎已自动换宠而作用到新精灵身上（事件自带精灵名，动画按名切图）。</p>
+     * <p>日志与天气/场地行在动画<b>开始前</b>刷新，让本回合文本与演出同步可见。事件本身按「一方动作 →
+     * 另一方受击 → 另一方的动作 → 这边受击」的顺序投递（见 {@code BattleEventTest}），界面在播放每一步
+     * 动画前先按事件携带的 HP 快照刷新对应血条（{@code BattleView.applyEventHp}），因此血量按先后手
+     * 逐段结算、不会等双方都演完才变化。精灵名、等级、异常状态等仍在演出结束后的 {@code render()}
+     * 统一刷新，保证倒下与放出动画不会因为引擎已自动换宠而作用到新精灵身上（事件自带精灵名，动画按名切图）。</p>
      */
     private void playEventsThenRender() {
         List<BattleEvent> events = engine.drainEvents();
