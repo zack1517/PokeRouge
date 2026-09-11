@@ -1,0 +1,135 @@
+/*
+ * PokeRouge · 启动页（主菜单）样式。
+ *
+ * 改编自 临时/主界面设计代码（Web/React 版主界面）：
+ * 无卡片悬浮式布局 —— 背景插画铺满，彩色 Logo 与胶囊按钮直接悬浮其上，
+ * 可读性由元素自身的描边、投影与底色承担。
+ *
+ * 尺寸约定：全部数值均为「设计画布 640×426.67」内的逻辑像素，
+ * 由 UiScale 统一放大 1.5 倍渲染（无需在此换算）。
+ *
+ * JavaFX CSS 限制备忘：
+ * - 多层背景「先写的在底层」（如 白边 → 深蓝描边 → 渐变芯 按此顺序书写）；
+ * - 无 CSS transition，位移动画由 StartView 用 Transition 实现；
+ * - 不使用文本描边（stroke），避免中文光栅化卡顿（项目已知陷阱）。
+ */
+
+/* ---------- 整页暗角遮罩（叠在背景图上、内容层之下） ---------- */
+.start-vignette {
+    -fx-background-color: linear-gradient(to bottom,
+        rgba(6, 22, 42, 0.12) 0%,
+        rgba(6, 22, 42, 0.0) 30%,
+        rgba(6, 22, 42, 0.10) 55%,
+        rgba(6, 22, 42, 0.55) 100%);
+}
+
+/* ---------- 彩色 Logo（替换原文字标题） ---------- */
+.start-logo {
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.55), 16, 0.10, 0, 7);
+}
+
+/* ---------- 胶囊菜单按钮 ---------- */
+/* 正常态：白圈(0~2.5) → 深蓝内描边(2.5~5) → 黄→金渐变芯(5+) */
+.menu-pill,
+.menu-pill:hover,
+.menu-pill:focused,
+.menu-pill:armed {
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #123c63,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.92) 0%,
+            #ffcb05 18%,
+            #eea800 78%,
+            #ffcb05 100%);
+    -fx-background-insets: 0, 2.5, 5;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.50), 12, 0.08, 0, 4);
+    -fx-padding: 6 12;
+    -fx-cursor: hand;
+    /* 屏蔽 modena 默认的聚焦环与按下变色（本项目全自定义背景） */
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+/* 选中态：白圈 → 黄描边 → 蓝渐变芯（无顶部白色高光）+ 黄色光晕 */
+.menu-pill:selected {
+    -fx-background-color:
+        rgba(255, 255, 255, 1.0),
+        #ffcb05,
+        linear-gradient(to bottom, #2a75bb 0%, #123c63 100%);
+    -fx-background-insets: 0, 2.5, 5;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-effect: dropshadow(gaussian, rgba(255, 203, 5, 0.55), 16, 0.35, 0, 3);
+}
+
+/* ---------- 按钮内文字 ---------- */
+.menu-title {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+}
+
+.menu-sub {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 7px;
+    -fx-font-weight: bold;
+    -fx-text-fill: rgba(42, 117, 187, 0.85);
+}
+
+.menu-caret {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 8px;
+    -fx-font-weight: bold;
+    -fx-text-fill: rgba(18, 60, 99, 0.85);
+    -fx-opacity: 0;
+}
+
+.menu-pill:selected .menu-title {
+    -fx-text-fill: white;
+}
+
+.menu-pill:selected .menu-sub {
+    -fx-text-fill: #ffcb05;
+}
+
+.menu-pill:selected .menu-caret {
+    -fx-text-fill: #ffcb05;
+    -fx-opacity: 1;
+}
+
+/* ---------- 按钮左侧图标圆底（未选中统一为按钮同款黄色，不再按入口区分色调） ---------- */
+.menu-icon-wrap {
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-border-width: 1.5;
+    -fx-border-color: rgba(255, 255, 255, 0.85);
+}
+
+.menu-tone-yellow,
+.menu-tone-blue,
+.menu-tone-crimson,
+.menu-tone-violet,
+.menu-tone-slate {
+    -fx-background-color: rgba(255, 203, 5, 0.28);
+}
+
+.menu-pill:selected .menu-icon-wrap {
+    -fx-background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ---------- 图标本体（24 单位视口的单色描边图形，缩放到圆底内） ---------- */
+.menu-icon {
+    -fx-fill: transparent;
+    -fx-stroke: #123c63;
+    -fx-stroke-width: 2.4;
+    -fx-stroke-line-cap: round;
+    -fx-stroke-line-join: round;
+    -fx-scale-x: 0.62;
+    -fx-scale-y: 0.62;
+}
+
+.menu-pill:selected .menu-icon {
+    -fx-stroke: white;
+}
