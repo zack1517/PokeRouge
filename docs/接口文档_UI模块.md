@@ -1,6 +1,6 @@
 # UI 模块接口与界面设计文档（接口文档_UI模块）
 
-> 版本：v0.1.15（草稿） · 日期：2026-09-11 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
+> 版本：v0.1.16（草稿） · 日期：2026-09-11 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
 > 角色：UI 负责人 · 状态：**待组长评审**，评审通过前不进入编码
 > 依据：《需求文档》§7 界面与交互需求、《测试用例草稿》§D、《接口文档_战斗服务.md》v1.9、
 > **本阶段六系统任务分工**（游戏流程系统 / 存档系统 / 宝可梦系统 / 战斗系统 / 肉鸽系统 / JavaFX UI；其中游戏流程与存档由同一人负责）
@@ -13,6 +13,7 @@
 > **v0.1.9 同步战斗服务 v1.9 的成长判定外移：经验 / 升级 / 学招 / 进化由外部成长模块结算，战斗页只渲染日志、学习抉择仍走 `pendingLearnChoices()` / `decideLearn(int)` 弹窗，UI 侧仅组装入口多注入一个成长端口，渲染无变化**；
 > **v0.1.14 常驻节点可重复进入：路线地图页对已走过的一次性节点仍置灰，对常驻节点（路人 / 野外精灵 / 医院）改为可点并标注「已走过 N 次 · 可再次进入」，卡片消耗改取 `Option#apCostForNextEntry()`；「挑战道馆」兜底入口的触发条件不变**；
 > **v0.1.15 节点列表刷新 + 道馆胜利推进修复：每走完一个路线节点由 `MainController#finishNodeStep(boolean)` 调 `GameSession#refreshRogueRoute()` 整批重抽本段节点（AP / 段号 / 金币不变，故界面上的「已走过」标记在新一批节点里不再出现）；必然节点（道馆 / 四天王 / 冠军 / 首领侵略战）胜利改走 `GameSession#resolveRogueMandatoryVictory()`——此前该入口漏接导致打赢道馆后阶段停在 `GYM` 反复重开道馆战，现已在控制器接线**；
+> **v0.1.16 同步战斗服务 v1.14 己方倒下后的玩家补位：战斗页新增「必须选出替补」面板（`showReplacementMenu`，不可返回），`isOngoing()` 为真但 `isAwaitingReplacement()` 为真时必须先 `chooseReplacement(int)` 才能继续；`playerActive()` 不再出现 null（补位前为刚倒下的那只），§4.1 / §6.4 / §6.6 相应修订**；
 > 文中「[待确认]」项为需与组长 / 对应系统负责人确认后方可定稿的内容。
 
 ## 1. 概述
@@ -194,10 +195,21 @@ FXML 重写，要求：
 - 战斗动画（v0.1.11，参考实现已落地）：行动结算后由引擎演出事件驱动**进场 / 放出 / 收回 /
   技能释放 / 受击 / 倒下 / 投球 / 道具 / 逃跑**动画（见《接口文档_战斗服务.md》§16）。
   界面要求：① 事件序列播放期间**锁死行动输入**（按钮置灰），播完才解锁；② 精灵立绘、HP 条等
-  在**动画结束后**才刷新（避免「还没挨打 HP 就掉了」，也避免引擎已自动换宠导致动画作用到新精灵）；
+  在**动画结束后**才刷新（避免「还没挨打 HP 就掉了」，也避免引擎已换宠导致动画作用到新精灵）；
   ③ 日志与天气/场地行可在动画开始前刷新，让本回合文本与演出同步可见；④ 动画只用几何/纹理特效，
   **禁止对动态中文文本使用描边或特效**（实测每字约 50ms 且不缓存，会导致数秒卡顿）；
   ⑤ 整场景等比缩放（`UiScale`），动画按 640×427.6 设计单位书写。
+- **己方倒下后的补位面板（v0.1.16，参考实现已落地）**：己方出战精灵倒下后**不再自动换宠**，
+  引擎挂起等待玩家选择（`isAwaitingReplacement()`，见《接口文档_战斗服务.md》§3.3a）。界面要求：
+  ① `render()` 在 `isOngoing()` 为真时**优先**判断 `isAwaitingReplacement()`，是则展示队伍选择
+  面板并 `return`，**不得进入主菜单**（此时任何行动按钮都会被引擎拒绝）；
+  ② 面板复用队伍列表的 3×2 六格布局与灰度规则（可点：健康且非当前出战），提示文案为
+  「请选择接下来上场的精灵！」，**不提供「返回」按钮**（必须选出替补才能继续）；
+  ③ 选中后调用 `chooseReplacement(idx)`，按通常流程取演出事件、播动画、刷新界面；
+  ④ 选择已倒下精灵等非法目标不会退出等待状态，面板需保持可见并允许重试；
+  ⑤ 参考实现：`BattleView.showReplacementMenu(party, activeIndex, onPick)` +
+  `BattleView.Actions#onReplacementSelected(int)` + `BattleController#showReplacementMenu()`，
+  控制台 demo 对应 `BattleConsole#doReplacement(BattleService)`。
 
 ### 3.4 存档对页面的约束（新增）
 
@@ -310,8 +322,9 @@ FXML 重写，要求：
 | 需求 | 使用方页面 | 说明 |
 | --- | --- | --- |
 | `BattleService.Status` 枚举 | 战斗页、结算页 | 战斗结束分流：`PLAYER_WIN / PLAYER_LOSE / FLED / CAUGHT / ONGOING`；`FLED/CAUGHT` 仅野生遭遇会出现 |
-| `useMove / useItem(item, partyIndex) / useItem(item) / tryRun / switchActive` | 战斗页 | 行动入口；返回 `List<String>`（本回合新日志）；非 ONGOING 调用抛 `IllegalStateException`（UI 先判 `isOngoing()`）。**v1.8**：`useItem(item, partyIndex)` 对队伍任意精灵（含替补）使用回复/解除道具，`useItem(item)` 为作用于出战精灵的便捷重载；精灵球忽略 `partyIndex`。训练师轮战中 `tryRun()` 与对训练师投球只回提示日志、不消耗回合，按钮可置灰或保留提示 |
-| `playerActive() / foeActive() / getPlayer()` | 战斗页 | 面板与队伍菜单渲染（引擎自动换宠后重新读取，可能为 null，需空态）。**敌方面板一律用 `foeActive()`**：野生为野生精灵，训练师轮战为训练师当前出战精灵（训练师换宠后自动跟随）；`getWild()` 在训练师轮战中为 `null` |
+| `useMove / useItem(item, partyIndex) / useItem(item) / tryRun / switchActive` | 战斗页 | 行动入口；返回 `List<String>`（本回合新日志）；非 ONGOING **或补位等待中**（`isAwaitingReplacement()`）调用抛 `IllegalStateException`（UI 先判 `isOngoing()` 与 `isAwaitingReplacement()`）。**v1.8**：`useItem(item, partyIndex)` 对队伍任意精灵（含替补）使用回复/解除道具，`useItem(item)` 为作用于出战精灵的便捷重载；精灵球忽略 `partyIndex`。训练师轮战中 `tryRun()` 与对训练师投球只回提示日志、不消耗回合，按钮可置灰或保留提示。**v0.1.16**：等待补位期间本行全部方法都会被引擎拒绝，界面不应展示主菜单（见 §3.3 补位面板） |
+| `playerActive() / foeActive() / getPlayer()` | 战斗页 | 面板与队伍菜单渲染。**敌方面板一律用 `foeActive()`**：野生为野生精灵，训练师轮战为训练师当前出战精灵（训练师换宠后自动跟随）；`getWild()` 在训练师轮战中为 `null`。**v0.1.16**：己方不再由引擎自动换宠（见 §3.3），因此 `playerActive()` **始终非 null** —— 补位等待期间返回刚倒下的那只，补位后返回新上场精灵 |
+| `isAwaitingReplacement() / chooseReplacement(int)` | 战斗页 | **v0.1.16**：己方出战精灵倒下且队伍仍有健康精灵时为 `true`，此时 `isOngoing()` 仍为 `true` 但一切行动被拒；界面应改为展示**补位面板**（复用队伍列表的 3×2 六格，不可返回），玩家选中后调用 `chooseReplacement(idx)`，然后照常取事件 / 播动画 / 刷新 |
 | `getTrainer()` | 战斗页 | 训练师轮战非空：可用 `getTrainer().getName()` 显示对手名，`getTrainer().getParty()` 显示对方队伍/剩余数量 |
 | `getLog()` | 战斗页 | 完整日志只读，行动后全量覆盖展示 |
 | `drainEvents()` | 战斗页 | **取走**本回合演出事件（`List<BattleEvent>`，取走即清空）驱动战斗动画；为纯演出数据，不参与结算，界面可按需忽略。**v1.11**：推荐顺序「行动 → 取事件 → 播动画 → 播完再刷新界面」（见《接口文档_战斗服务.md》§16）。**v1.12**：HP 条改由每个事件自带的 `hp` 快照在**该步动画开始前**刷新（先扣血、再播动画），立绘/等级/异常状态等仍在全部播完后统一刷新 |
@@ -512,8 +525,9 @@ public interface ScreenFactory {
 
 ### 6.4 刷新策略
 
-- 战斗页：行动后全量刷新（面板/日志/按钮区），与 battle 参考实现一致；自动换宠后
-  `playerActive()` 可能为 null，需空态防御；
+- 战斗页：行动后全量刷新（面板/日志/按钮区），与 battle 参考实现一致；**v0.1.16**：己方
+  不再由引擎自动换宠，刷新时若 `isAwaitingReplacement()` 为真则改渲补位面板（不可返回），
+  补位前 `playerActive()` 为刚倒下的那只（非 null）；
 - 非战斗页：进入时构建 + 操作后局部刷新（金币/AP/货架文本）；
 - 战斗过程更新（HP 动画等）**v0.1.11 已落地**：由 `drainEvents()` 的演出事件驱动动画，
   见 §6.6；动画一律在 JavaFX 主线程用 `Animation`/`setOnFinished` 串联，无需自建定时器。
@@ -528,7 +542,7 @@ public interface ScreenFactory {
 | 编排 | 控制器持有 `playing` 标志：结算后取事件 → 锁输入 → 逐条播动画 → 播完解锁并 `render()` |
 | 播放 | `playEvents(events, onFinished)` 逐条串行播放（每条动画用 `setOnFinished` 触发下一条），事件为空立即回调 |
 | 特效层 | 与内容根同尺寸的透明 `Pane` 叠放（`StackPane`），`setMouseTransparent(true)`；飞行道具/闪光/光点挂此层，落位用 `sceneToLocal` 换算（不受全局缩放与内边距影响） |
-| 立绘定位 | 事件只携带**精灵名**：放出/收回/倒下动画先按名切图再演，避免引擎已自动换宠时作用到错误精灵 |
+| 立绘定位 | 事件只携带**精灵名**：放出/收回/倒下动画先按名切图再演，避免引擎已换宠（训练师派出 / 玩家补位）时作用到错误精灵 |
 | 刷新时机 | 动画开始前只刷日志 + 天气/场地；立绘、HP 条在动画**结束后**刷新 |
 | 输入防护 | 播放期间 `setInputLocked(true)` 禁用行动区，控制器各行动处理器再加 `if (playing) return;` 二次防护 |
 | 性能红线 | **禁止**对动态中文文本使用描边（`Stroke`）或 `Effect`：实测每字约 50ms 且不缓存，会造成数秒卡顿。动画只用形状/图片特效 |
@@ -594,3 +608,4 @@ public interface ScreenFactory {
 | v0.1.7 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.7 职责收敛：遭遇生成（等级浮动 / 随机挑种族）移出战斗模块，改由组装侧 `WildEncounter` 提供；§1.2 战斗系统行与外部依赖表同步 | [待确认：UI 负责人] |
 | v0.1.8 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.8 道具目标选择：§3.3 增「选道具 → 选目标精灵」两步交互与新的可用性判定；§4.1 契约表补 `useItem(item, partyIndex)` 重载说明 | [待确认：UI 负责人] |
 | v0.1.9 | 2026-09-10 | 同步《接口文档_战斗服务.md》v1.9 成长判定外移：经验/升级/学招/进化改由外部成长模块经 `BattleGrowthPort` 结算；§1.2 战斗系统行与 §4.2 组装入口补成长端口注入与 `pendingLearnChoices()/decideLearn(int)` 学习抉择弹窗，渲染无变化 | [待确认：UI 负责人] |
+| v0.1.16 | 2026-09-11 | 同步《接口文档_战斗服务.md》v1.14 己方倒下后的玩家补位：§3.3 新增「补位面板」界面要求（优先于主菜单渲染、复用队伍 3×2 六格、无返回键、选中后 `chooseReplacement`）；§4.1 契约表补 `isAwaitingReplacement()/chooseReplacement(int)` 并修订行动方法与 `playerActive()` 说明（不再为 null）；§6.4 / §6.6 去除「自动换宠」旧描述 | [待确认：UI 负责人] |

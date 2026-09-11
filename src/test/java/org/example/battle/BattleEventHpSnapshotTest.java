@@ -204,7 +204,7 @@ class BattleEventHpSnapshotTest {
     }
 
     @Test
-    void 自动换宠的放出事件携带新上场精灵的HP快照() {
+    void 补位的放出事件携带新上场精灵的HP快照() {
         Pokemon frontline = Pokemon.create(species("mine_sp", 40, 10, 10), 20, List.of(TAP));
         Pokemon backup = Pokemon.create(species("backup_sp", 300, 10, 10), 20, List.of(TAP));
         Trainer trainer = new Trainer("强敌");
@@ -214,10 +214,14 @@ class BattleEventHpSnapshotTest {
         battle.drainEvents();
 
         battle.useMove(battle.playerActive().getMoveSlots().get(0));
+        battle.drainEvents();
+        assertTrue(battle.isAwaitingReplacement(), "倒下后应等待玩家选择替补");
+
+        battle.chooseReplacement(1);
 
         List<BattleEvent> events = battle.drainEvents();
         BattleEvent last = events.get(events.size() - 1);
-        assertEquals(BattleEvent.Kind.SEND_OUT, last.kind(), "倒下后应自动放出下一只");
+        assertEquals(BattleEvent.Kind.SEND_OUT, last.kind(), "补位后应放出玩家选中的精灵");
         assertEquals(BattleEvent.Side.PLAYER, last.side());
         assertEquals("backup_sp", last.actor());
         assertTrue(last.hp().present(), "放出事件必须携带 HP 快照，新精灵的血条要随放出动画一起切换");

@@ -44,6 +44,11 @@ import java.util.Random;
  * 不可逃跑、不可捕捉训练师的精灵；敌方当前出战精灵倒下后自动派出下一只健康的（敌方不会主动
  * 换宠），天气/场地与技能 PP 跨整场持续。胜利时经验按整队被击败对手一次性结算。</p>
  *
+ * <p><b>己方倒下后的补位</b>：玩家出战精灵倒下且队伍仍有健康精灵时，引擎<b>不自动补位</b>，
+ * 而是进入「等待玩家选择替补」状态（{@link #isAwaitingReplacement()}）：此时所有回合行动方法
+ * 都抛 {@link IllegalStateException}，必须先调用 {@link #chooseReplacement(int)} 选出一只接着
+ * 上场（不消耗回合、敌方不会行动）。队伍已无健康精灵时直接判 {@link Status#PLAYER_LOSE}。</p>
+ *
  * <p><b>职责边界</b>：本引擎只做战斗演算与胜负结算，<b>不负责经验增加、升级、学招与进化</b>。
  * 结算出胜利后把「参战且未倒下的己方精灵」与「被击败的对手」交给外部成长模块
  * （{@link BattleGrowthPort}）判定；成长模块返回的日志文本行原样进入战斗日志，返回的
@@ -94,6 +99,8 @@ public class BattleEngine implements BattleService {
     private final List<LearnChoice> pendingLearns = new ArrayList<>();
 
     private Status status = Status.ONGOING;
+    /** 是否正等待玩家为倒下的出战精灵选择替补（战斗仍未结束，但一切回合行动都被挂起）。 */
+    private boolean awaitingReplacement = false;
     /** 当前天气（无天气为 {@link Weather#NONE}）。 */
     private Weather weather = Weather.NONE;
     /** 当前场地（无场地为 {@link Terrain#NONE}）。 */
@@ -255,6 +262,35 @@ public class BattleEngine implements BattleService {
     }
 
     @Override
+    public boolean isAwaitingReplacement() {
+        return awaitingReplacement;
+    }
+
+    /**
+     * 己方出战精灵倒下后由玩家选择下一只上场精灵：不消耗回合，敌方不会行动。
+     *
+     * <p>上场精灵从中立状态开始（清除能力等级、守住、寄生种子等挥发性状态），并压入一条
+     * 「放出」演出事件供界面播放换宠动画。</p>
+     */
+    @Override
+    public List<String> chooseReplacement(int partyIndex) {
+        int mark = log.size();
+        if (!awaitingReplacement) {
+            throw new IllegalStateException("当前不需要选择上场的精灵");
+        }
+        Pokemon target = player.switchTo(partyIndex);
+        if (target == null) {
+            append("倒下的精灵不能上场，请选择其他精灵。");
+            return slice(mark);
+        }
+        awaitingReplacement = false;
+        append("你派出了 " + target.getName() + "！");
+        target.clearVolatileState(); // 上场即从中立状态开始
+        events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, target.getName(), BattleEvent.hpOf(target)));
+        return slice(mark);
+    }
+
+    @Override
     public Weather getWeather() {
         return weather;
     }
@@ -327,7 +363,7 @@ public class BattleEngine implements BattleService {
     @Override
     public List<String> useMove(MoveSlot slot) {
         int mark = log.size();
-        requireOngoing();
+        requirePlayerAction();
         MoveSlot usable = usableSlot(playerActive(), slot);
         if (usable == null) {
             return slice(mark);
@@ -473,7 +509,7 @@ public class BattleEngine implements BattleService {
     @Override
     public List<String> useItem(Item item, int partyIndex) {
         int mark = log.size();
-        requireOngoing();
+        requirePlayerAction();
         if (item == null || player.getBag().countOf(item) <= 0) {
             return slice(mark);
         }
@@ -545,7 +581,7 @@ public class BattleEngine implements BattleService {
     @Override
     public List<String> tryRun() {
         int mark = log.size();
-        requireOngoing();
+        requirePlayerAction();
         if (trainer != null) {
             append("与训练师的对战中无法逃跑！");
             return slice(mark);
@@ -577,7 +613,7 @@ public class BattleEngine implements BattleService {
     @Override
     public List<String> switchActive(int partyIndex) {
         int mark = log.size();
-        requireOngoing();
+        requirePlayerAction();
         Pokemon current = playerActive();
         Pokemon target = player.switchTo(partyIndex);
         if (current == null || target == null || target == current) {
@@ -1103,7 +1139,7 @@ public class BattleEngine implements BattleService {
                 ? CAPTURE_STATUS_BONUS : 1.0;
     }
 
-    /** 回合结束结算：胜负判定、敌方出战倒下后的自动替换/续战、玩家精灵倒下后的自动换宠。 */
+    /** 回合结束结算：胜负判定、敌方出战倒下后的自动替换/续战、玩家精灵倒下后的补位挂起。 */
     private void resolveRoundEnd() {
         if (status != Status.ONGOING) {
             return;
@@ -1137,11 +1173,10 @@ public class BattleEngine implements BattleService {
 
         if (playerDown) {
             append(pa.getName() + " 倒下了……");
-            if (player.switchToNextHealthy() != null) {
-                append("你派出了 " + playerActive().getName() + "！");
-                playerActive().clearVolatileState(); // 上场即从中立状态开始
-                events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, playerActive().getName(),
-                        BattleEvent.hpOf(playerActive())));
+            if (player.hasHealthyPokemon()) {
+                // 不自动补位：挂起等待玩家选择下一只上场精灵（见 chooseReplacement）
+                awaitingReplacement = true;
+                append("请选择接下来上场的精灵！");
             } else {
                 status = Status.PLAYER_LOSE;
                 append("你已没有能战斗的精灵，战败了……");
@@ -1363,9 +1398,16 @@ public class BattleEngine implements BattleService {
         return result;
     }
 
-    private void requireOngoing() {
+    /**
+     * 校验当前可以发起回合行动：战斗未结束，且没有等待玩家选择的替补精灵
+     * （己方出战精灵倒下后必须先调用 {@link #chooseReplacement(int)}）。
+     */
+    private void requirePlayerAction() {
         if (status != Status.ONGOING) {
             throw new IllegalStateException("战斗已结束，状态: " + status);
+        }
+        if (awaitingReplacement) {
+            throw new IllegalStateException("需要先选择上场的精灵");
         }
     }
 

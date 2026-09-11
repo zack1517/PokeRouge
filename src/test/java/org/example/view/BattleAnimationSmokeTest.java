@@ -253,6 +253,10 @@ class BattleAnimationSmokeTest {
         }
 
         @Override
+        public void onReplacementSelected(int partyIndex) {
+        }
+
+        @Override
         public void onRun() {
         }
 

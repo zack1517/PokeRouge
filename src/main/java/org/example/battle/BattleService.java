@@ -28,6 +28,11 @@ import java.util.List;
  * 精灵<b>全部倒下</b>才结束战斗；天气/场地与技能 PP 跨整场持续；胜利时经验按整队被击败对手
  * 一次性结算。</p>
  *
+ * <p><b>己方倒下后的补位</b>（野生遭遇与训练师轮战一致）：玩家出战精灵倒下且队伍仍有健康精灵时
+ * <b>不会自动补位</b>，战斗进入「等待玩家选择替补」状态（{@link #isAwaitingReplacement()}）；
+ * 此时所有行动方法都抛 {@link IllegalStateException}，须先调用 {@link #chooseReplacement(int)}
+ * 选出一只接着上场（不消耗回合，敌方不会行动）。队伍已无健康精灵时判 {@link Status#PLAYER_LOSE}。</p>
+ *
  * <p>战斗行为契约见 {@link BattleService}，实例统一由 {@link BattleServices} 工厂创建，
  * 调用方不应直接持有本实现类。</p>
  *
@@ -36,11 +41,13 @@ import java.util.List;
  * 倍率调整招式威力；沙暴/冰雹每回合末对非免疫精灵扣血，青草场地每回合末回复场上精灵。</p>
  *
  * <p><b>使用方式</b>：通过 {@link BattleServices} 工厂获得实例；每回合在
- * {@link #isOngoing()} 为 {@code true} 时调用任意一个行动方法，行动结束后依据返回的日志行
- * 与 {@link #getStatus()} 驱动界面刷新。</p>
+ * {@link #isOngoing()} 为 {@code true} 且 {@link #isAwaitingReplacement()} 为 {@code false}
+ * 时调用任意一个行动方法，行动结束后依据返回的日志行与 {@link #getStatus()} 驱动界面刷新；
+ * 己方出战精灵倒下后先经 {@link #chooseReplacement(int)} 补位再继续。</p>
  *
  * <p><b>约定</b>：所有行动方法执行后返回<b>本回合新增</b>的日志行（调用前已产生的日志不含在内）；
- * 当战斗已结束时（非 {@link Status#ONGOING}）调用行动方法将抛出 {@link IllegalStateException}。
+ * 当战斗已结束（非 {@link Status#ONGOING}）或正等待玩家选择上场精灵时调用行动方法将抛出
+ * {@link IllegalStateException}。
  * 返回的状态与方法内 {@link Player}/{@link Pokemon}/{@link Trainer} 对象引用均不应被修改。</p>
  */
 public interface BattleService {
@@ -80,7 +87,7 @@ public interface BattleService {
      * @param slot 玩家当前出战精灵的某个技能槽；为 {@code null} 或 PP 耗尽时会自动退回
      *             第一个可用技能，无可技能则本回合不行动
      * @return 本回合产生的新日志（每行一条消息）
-     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）时
+     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）或正等待选择上场精灵时
      */
     List<String> useMove(MoveSlot slot);
 
@@ -97,7 +104,7 @@ public interface BattleService {
      * @param item       要使用的道具；为 {@code null} 或背包中数量不足时本回合不行动
      * @param partyIndex 目标精灵在玩家队伍中的下标
      * @return 本回合产生的新日志
-     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）时
+     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）或正等待选择上场精灵时
      */
     List<String> useItem(Item item, int partyIndex);
 
@@ -106,7 +113,7 @@ public interface BattleService {
      *
      * @param item 要使用的道具；为 {@code null} 或背包中数量不足时本回合不行动
      * @return 本回合产生的新日志
-     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）时
+     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）或正等待选择上场精灵时
      */
     default List<String> useItem(Item item) {
         return useItem(item, getPlayer().getParty().indexOf(playerActive()));
@@ -118,17 +125,20 @@ public interface BattleService {
      * <p><b>仅野生遭遇可用</b>：训练师轮战中调用不消耗回合，仅追加「无法逃跑」提示日志。</p>
      *
      * @return 本回合产生的新日志
-     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）时
+     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）或正等待选择上场精灵时
      */
     List<String> tryRun();
 
     /**
      * 玩家回合切换出战精灵：消耗本回合行动，收换完成后敌方行动一次。
      *
+     * <p>注意：己方出战精灵倒下后本方法会被拒绝（{@link #isAwaitingReplacement()} 为 {@code true}
+     * 时抛 {@link IllegalStateException}），补位请改用 {@link #chooseReplacement(int)}。</p>
+     *
      * @param partyIndex 玩家队伍中目标精灵下标；目标为 {@code null}、下标非法或与当前
      *                   出战精灵相同则不行动
      * @return 本回合产生的新日志
-     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）时
+     * @throws IllegalStateException 战斗已结束（非 {@link Status#ONGOING}）或正等待选择上场精灵时
      */
     List<String> switchActive(int partyIndex);
 
@@ -151,8 +161,34 @@ public interface BattleService {
     /** @return 当前敌方出战精灵：野生遭遇为野生精灵，训练师轮战为训练师当前出战精灵 */
     Pokemon foeActive();
 
-    /** @return 玩家当前出战精灵（引擎会在倒下后自动切换，可能为 {@code null}） */
+    /** @return 玩家当前出战精灵（可能为已倒下精灵：倒下后须经 {@link #chooseReplacement(int)} 补位） */
     Pokemon playerActive();
+
+    /**
+     * 是否需要玩家为倒下的出战精灵选择替补。
+     *
+     * <p>己方出战精灵倒下而队伍仍有健康精灵时为 {@code true}：此时战斗仍未结束
+     * （{@link #isOngoing()} 仍为 {@code true}），但所有行动方法都会抛
+     * {@link IllegalStateException}，界面应改为展示队伍选择面板并调用
+     * {@link #chooseReplacement(int)}。选完即恢复为 {@code false}。</p>
+     *
+     * @return 是否正等待玩家选择上场精灵
+     */
+    boolean isAwaitingReplacement();
+
+    /**
+     * 己方出战精灵倒下后，由玩家选择下一只上场精灵。
+     *
+     * <p><b>不消耗回合</b>：补位只是把新精灵派上场，敌方不会因此行动（区别于
+     * {@link #switchActive(int)}）。上场精灵从中立状态开始，并产生一条「放出」演出事件。</p>
+     *
+     * @param partyIndex 玩家队伍中目标精灵下标；目标为已倒下精灵或下标非法时只追加提示日志、
+     *                   保持等待状态不变
+     * @return 本次补位产生的新日志行
+     * @throws IllegalStateException 当前并不需要选择上场精灵时（{@link #isAwaitingReplacement()}
+     *                               为 {@code false}）
+     */
+    List<String> chooseReplacement(int partyIndex);
 
     /** @return 当前战斗状态 */
     Status getStatus();

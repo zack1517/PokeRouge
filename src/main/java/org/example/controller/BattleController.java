@@ -20,8 +20,9 @@ import java.util.stream.Collectors;
  * 战斗控制器：桥接 {@link BattleView} 与 {@link BattleService}。
  *
  * <p>流程：刷新精灵面板与日志 → 展示主菜单（技能/背包/精灵/逃跑）→ 引擎结算 → 依据状态
- * 继续或展示结局。战斗中精灵倒下会被引擎自动切换，玩家也可在行动回合主动切换，每次渲染都
- * 重新读取当前出战精灵。</p>
+ * 继续或展示结局。己方出战精灵倒下而队伍仍有健康精灵时，引擎会挂起等待补位
+ * （{@link BattleService#isAwaitingReplacement()}），此时界面强制展示队伍选择面板，玩家选出
+ * 下一只上场精灵后战斗继续；行动回合中玩家也可主动切换，每次渲染都重新读取当前出战精灵。</p>
  *
  * <p>敌方面板统一取 {@link BattleService#foeActive()}：野生遭遇为野生精灵，训练师轮战为训练师
  * 当前出战精灵（{@link BattleService#getWild()} 为 {@code null}），因此训练师换宠后界面会自动
@@ -130,6 +131,16 @@ public class BattleController implements BattleView.Actions {
         playEventsThenRender();
     }
 
+    /** 补位选择（己方出战精灵倒下后强制弹出）：选出下一只上场精灵，不消耗回合。 */
+    @Override
+    public void onReplacementSelected(int partyIndex) {
+        if (playing) {
+            return;
+        }
+        engine.chooseReplacement(partyIndex);
+        playEventsThenRender();
+    }
+
     @Override
     public void onRun() {
         if (playing) {
@@ -189,7 +200,18 @@ public class BattleController implements BattleView.Actions {
             }
             return;
         }
+        if (engine.isAwaitingReplacement()) {
+            showReplacementMenu(); // 出战精灵倒下：必须选出替补才能继续
+            return;
+        }
         view.showMainMenu(this::showMoveMenu, this::showBagMenu, this::showPartyMenu);
+    }
+
+    /** 补位面板：列出玩家队伍，选出下一只上场精灵（倒下的精灵灰显不可点，不可返回主菜单）。 */
+    private void showReplacementMenu() {
+        List<Pokemon> party = engine.getPlayer().getParty();
+        int activeIndex = party.indexOf(engine.playerActive());
+        view.showReplacementMenu(party, activeIndex, this::onReplacementSelected);
     }
 
     /** 展示队首一项「技能满、想学新招」的抉择菜单。 */

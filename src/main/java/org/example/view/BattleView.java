@@ -86,6 +86,9 @@ public class BattleView {
         /** 切换到队伍中第 partyIndex 只精灵（消耗本回合行动）。 */
         void onSwitchSelected(int partyIndex);
 
+        /** 己方出战精灵倒下后选择第 partyIndex 只精灵补位上场（不消耗回合）。 */
+        void onReplacementSelected(int partyIndex);
+
         /** 逃跑。 */
         void onRun();
 
@@ -840,6 +843,21 @@ public class BattleView {
     }
 
     /**
+     * 补位选择面板（己方出战精灵倒下后强制弹出）：与精灵面板同构，但没有「返回」按钮 ——
+     * 必须选出一只健康精灵才能继续战斗（倒下的精灵与已倒下的出战位灰显不可点）。
+     *
+     * @param party       玩家队伍
+     * @param activeIndex 刚倒下的出战精灵下标（灰格呈现）
+     * @param onPick      选中替补时的回调（参数为队伍下标）
+     */
+    public void showReplacementMenu(List<Pokemon> party, int activeIndex, IntConsumer onPick) {
+        renderPartyGrid(party, activeIndex,
+                idx -> !party.get(idx).isFainted() && idx != activeIndex, // 可点：健康且非当前出战
+                idx -> party.get(idx).isFainted(),                        // 灰格：倒下
+                onPick, null, "请选择接下来上场的精灵！");
+    }
+
+    /**
      * 目标选择面板（背包用药后）：与精灵面板同构的 3×2 六格，格子可否点击由 {@code selectable} 决定
      * （如伤药只能选未满血且未倒下的精灵），不可选格以灰格呈现（仍可悬停查看详情）。
      * 点中合法目标即回调其队伍下标（由控制器转交 {@code useItem(item, partyIndex)}）。
@@ -862,16 +880,22 @@ public class BattleView {
      *
      * @param selectable 某下标是否可点击选中
      * @param grey       某下标是否灰格呈现（不可点但可查看详情）
+     * @param onBack     返回回调；为 {@code null} 时不显示「返回」按钮（补位面板等不可返回的场景）
      */
     private void renderPartyGrid(List<Pokemon> party, int activeIndex,
                                  IntPredicate selectable, IntPredicate grey,
                                  IntConsumer onPick, Runnable onBack, String hint) {
         leftPanel.setStyle("");
-        Button back = compactButton("返回");
-        back.setOnAction(e -> onBack.run());
-        Region gap = new Region();
-        HBox.setHgrow(gap, Priority.ALWAYS);
-        HBox statusRow = new HBox(8, fieldStatus, gap, back);
+        HBox statusRow;
+        if (onBack == null) {
+            statusRow = new HBox(8, fieldStatus);
+        } else {
+            Button back = compactButton("返回");
+            back.setOnAction(e -> onBack.run());
+            Region gap = new Region();
+            HBox.setHgrow(gap, Priority.ALWAYS);
+            statusRow = new HBox(8, fieldStatus, gap, back);
+        }
         statusRow.setAlignment(Pos.CENTER_LEFT);
         VBox head = new VBox(2, statusRow);
         if (hint != null && !hint.isEmpty()) {
