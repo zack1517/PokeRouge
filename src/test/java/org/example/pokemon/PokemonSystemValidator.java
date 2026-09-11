@@ -3,6 +3,7 @@ package org.example.pokemon;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.example.growth.GrowthProgress;
 import org.example.pokemon.domain.BaseStats;
 import org.example.pokemon.domain.ElementType;
 import org.example.pokemon.domain.LearnableMove;
@@ -87,7 +88,7 @@ class PokemonSystemValidator {
         pokemon = new Pokemon(species, 5, ivs, Nature.HARDY);
         player = new Player("测试训练师");
         gameData = GameData.instance();
-        service = new PokemonServiceImpl();
+        service = new PokemonServiceImpl(new GrowthProgress());
     }
 
     // ==================== 枚举 ====================

@@ -48,6 +48,19 @@ public interface BattleGrowthPort {
      */
     List<String> resolveLearn(BattleService.LearnChoice choice, int forgetSlotIndex);
 
+    /**
+     * 野生遭遇被<b>成功捕捉</b>时的申报（用于累计「图鉴捕捉次数」等局外成长进度）。
+     *
+     * <p>战斗模块只负责判定「是否捕捉成功」并申报物种 id，不承担任何成长演算
+     * （捕捉次数如何换算成个体值加成由成长模块决定，见 {@code org.example.growth}）。
+     * 默认实现为空操作，因此 {@link #none()} 与既有实现无需改动即保持原有行为。</p>
+     *
+     * @param speciesId 被捕捉野生精灵的物种 id
+     */
+    default void onCaptured(String speciesId) {
+        // 默认不记录
+    }
+
     /** 空端口：不判定任何成长（经验 / 升级 / 学招 / 进化均降级为无操作）。 */
     static BattleGrowthPort none() {
         return new BattleGrowthPort() {

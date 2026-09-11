@@ -347,7 +347,7 @@ public class BattleView {
     }
 
     /**
-     * 按精灵名加载立绘图片（classpath {@value org.example.util.SpriteLoader#POKEMON_IMAGE_DIR}）；
+     * 按精灵名加载立绘图片（委托公共工具 {@link SpriteLoader}，classpath {@code /images/pokemon/}）；
      * 加载失败返回 {@code null}（调用方回退占位文本）。结果带缓存。
      */
     private static Image loadSprite(String pokemonName) {

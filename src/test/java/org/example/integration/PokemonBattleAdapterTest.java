@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.example.growth.GrowthProgress;
 import org.example.model.ElementType;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
@@ -29,7 +30,8 @@ import org.junit.jupiter.api.Test;
  */
 class PokemonBattleAdapterTest {
 
-    private final PokemonService service = new PokemonServiceImpl();
+    /** 使用隔离的成长进度，避免测试读到开发者本机的真实成长存档。 */
+    private final PokemonService service = new PokemonServiceImpl(new GrowthProgress());
 
     /** 初始精灵转交战斗系统后，身份、属性与种族值应一一对应。 */
     @Test
@@ -158,9 +160,53 @@ class PokemonBattleAdapterTest {
         }
     }
 
+    /**
+     * 个体值必须随个体一起跨系统转换（原先在接缝处被丢弃并重新随机）。
+     *
+     * <p>这是「捕捉次数 → 个体值加成」能被玩家感知到的关键一环：成长模块提升的是新体系
+     * 精灵的个体值，若接缝不搬运，战斗面板就看不到任何变化。</p>
+     */
+    @Test
+    void testToBattlePokemon_carriesIvs() {
+        Species species = service.getInitialPool().get(0);
+        org.example.pokemon.domain.Pokemon starter = service.createPokemon(species.getId(), 20);
+
+        Player player = PokemonBattleAdapter.createBattlePlayer("测试玩家", starter);
+        Pokemon battlePokemon = player.getActive();
+
+        org.example.pokemon.domain.Stats source = starter.getIvs();
+        assertEquals(source.getHpIv(), battlePokemon.getIvs().getHp());
+        assertEquals(source.getAttackIv(), battlePokemon.getIvs().getAttack());
+        assertEquals(source.getDefenseIv(), battlePokemon.getIvs().getDefense());
+        assertEquals(source.getSpAttackIv(), battlePokemon.getIvs().getSpAttack());
+        assertEquals(source.getSpDefenseIv(), battlePokemon.getIvs().getSpDefense());
+        assertEquals(source.getSpeedIv(), battlePokemon.getIvs().getSpeed());
+    }
+
+    /** 局外成长加成应经接缝传导到野生遭遇的战斗模型上（满加成 → 满个体）。 */
+    @Test
+    void testCreateWildPokemon_ivBonusReachesBattleModel() {
+        org.example.growth.GrowthProgress progress = new org.example.growth.GrowthProgress();
+        int captures = org.example.growth.IvGrowthRule.CAPTURES_PER_STEP
+                * org.example.growth.IvGrowthRule.MAX_IV;
+        for (int i = 0; i < captures; i++) {
+            progress.recordCapture(service.getInitialPool().get(0).getId());
+        }
+
+        Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(20, progress);
+
+        assertTrue(wild.isPresent());
+        org.example.model.Stats ivs = wild.get().getIvs();
+        assertEquals(31, ivs.getHp(), "满成长加成下野生精灵应为满个体");
+        assertEquals(31, ivs.getAttack());
+        assertEquals(31, ivs.getDefense());
+        assertEquals(31, ivs.getSpAttack());
+        assertEquals(31, ivs.getSpDefense());
+        assertEquals(31, ivs.getSpeed());
+    }
+
     /** 战斗侧技能应能在新系统数据中回查，且关键字段与源数据一致。 */
-    private void assertMovesAreValid(Pokemon battlePokemon) {
-        assertTrue(battlePokemon.getMoves().size() <= Pokemon.MAX_MOVES,
+    private void assertMovesAreValid(Pokemon battlePokemon) {        assertTrue(battlePokemon.getMoves().size() <= Pokemon.MAX_MOVES,
                 "战斗侧技能数不应超过 " + Pokemon.MAX_MOVES);
         for (Move move : battlePokemon.getMoves()) {
             org.example.pokemon.domain.Move source = GameData.instance().getMove(move.getId())

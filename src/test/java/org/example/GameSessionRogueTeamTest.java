@@ -54,7 +54,7 @@ class GameSessionRogueTeamTest {
 
         Option hospital = hospitalOption();
         session.getRogueRunData().getAvailableOptions().add(hospital);
-        assertTrue(session.consumeRogueOption(hospital));
+        assertTrue(session.enterRogueNode(hospital));
         session.resolveRogueOptionEffect(hospital);
 
         assertEquals(starter.getMaxHp(), starter.getCurrentHp());
@@ -74,7 +74,7 @@ class GameSessionRogueTeamTest {
 
         Option hospital = hospitalOption();
         session.getRogueRunData().getAvailableOptions().add(hospital);
-        assertTrue(session.consumeRogueOption(hospital));
+        assertTrue(session.enterRogueNode(hospital));
         session.resolveRogueOptionEffect(hospital);
 
         for (Pokemon pokemon : player.getParty()) {

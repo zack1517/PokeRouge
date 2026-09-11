@@ -1,301 +1,459 @@
 package org.example.model;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
+/**
+ * 路线推进状态机：负责行动点（AP）、路线节点与必然节点的规则判定。
+ *
+ * <p>职责边界：本类只做**规则判定与数值结算**（AP 扣除、金币奖惩、医院治疗、节点自回血、
+ * 必然节点触发与阶段流转），不进行任何战斗模拟——真实战斗由控制器接管：
+ * {@link #consumeNode(Option)} 扣点后由 UI 拉起战斗，战斗结束后控制器回调
+ * {@link #awardWinGold(OptionType)} 或 {@link #applyDefeatPenalty(OptionType)}，
+ * 再调用 {@link #applyNodeHeal()} 与 {@link #advanceAfterNode()}。</p>
+ *
+ * <p>一次推进的典型调用序列：</p>
+ * <pre>
+ * startRun(team)                       // 进入第 1 段，AP 重置为本段上限
+ *   loop:
+ *     consumeNode(option)              // 校验并扣 AP、把节点标记为已走
+ *     （战斗节点：控制器战斗 → awardWinGold / applyDefeatPenalty）
+ *     resolveImmediateEffect(option)   // 医院治疗 / 特殊事件结算
+ *     applyNodeHeal()                  // 节点自回血：未濒死宝可梦回复最大 HP 的 1/5
+ *     advanceAfterNode()               // AP 耗尽或无节点可走 → 触发道馆战
+ *   mandatory:
+ *     resolveMandatoryVictory()        // 道馆胜利 → 下一段；四天王 → 冠军；冠军 → 通关
+ *     resolveMandatoryDefeat()         // 可失败一次；重试再败则 Run 结束
+ * </pre>
+ */
 public class RogueTurnManager {
+
     private final RunData runData;
-    private final OptionGenerator generator;
-    private final Random random = new Random();
+    private final NodeGenerator generator;
 
     public RogueTurnManager() {
-        this(new RunData(), new OptionGenerator());
+        this(new RunData(), new NodeGenerator());
     }
 
-    public RogueTurnManager(RunData runData, OptionGenerator generator) {
+    public RogueTurnManager(RunData runData, NodeGenerator generator) {
         this.runData = runData == null ? new RunData() : runData;
-        this.generator = generator == null ? new OptionGenerator() : generator;
+        this.generator = generator == null ? new NodeGenerator() : generator;
     }
 
     public RunData getRunData() {
         return runData;
     }
 
-    public OptionGenerator getGenerator() {
+    public NodeGenerator getGenerator() {
         return generator;
     }
 
-    public void enterFloor(int floor) {
-        FloorData floorData = generator.generateFloor(floor);
-        runData.setCurrentFloor(floor);
-        runData.setCurrentPoints(floorData.getStartingPoints());
-        runData.setAvailableOptions(floorData.getAvailableOptions());
-        runData.setBossOption(floorData.getBossOption());
+    // ------------------------------------------------------------------
+    // 开轮与段推进
+    // ------------------------------------------------------------------
+
+    /** 开始一次新远征：写入队伍、重置金币与剧情线状态，并从第 1 段起步。 */
+    public void startRun(List<PokemonInstance> team) {
+        setTeam(team);
+        runData.setGold(RouteConfig.STARTING_GOLD);
         runData.setGameOver(false);
+        runData.setCleared(false);
+        runData.setRocketLineUnlocked(false);
+        runData.setRocketBossDefeated(false);
+        runData.setLegendaryMet(false);
+        runData.setPendingLegendary(false);
+        runData.setAggressionTriggered(false);
+        enterSegment(RunData.FIRST_SEGMENT);
+    }
+
+    /**
+     * 进入某一段：重新生成路线节点（按剧情线状态决定特殊事件），行动点重置为该段上限，
+     * 阶段回到路线探索，「失败一次」的机会也一并重置（§4.1：每段路线开始时重置行动点至该段上限）。
+     */
+    public void enterSegment(int segment) {
+        SegmentPlan plan = generatePlan(segment);
+        runData.setSegment(plan.getSegment());
+        runData.setApMax(plan.getApLimit());
+        runData.setAp(plan.getApLimit());
+        runData.setAvailableOptions(new ArrayList<>(plan.getRouteOptions()));
+        runData.setPhase(RoutePhase.EXPLORING);
+        runData.setRetryUsed(0);
+        runData.setMandatoryOption(null);
+        runData.setGameOver(false);
+        runData.setCleared(false);
+    }
+
+    /**
+     * 刷新本段路线节点（§4.1：<b>每走完一个路线节点，本段剩余节点重新随机生成</b>）：
+     * 按当前段号与剧情线 / 神兽状态重新抽一批节点替换旧列表，
+     * <b>行动点、阶段、金币与剧情线标记都不变</b>——刷新只换节点，不重置本段进度。
+     *
+     * <p>由于常驻节点（路人 / 野外精灵 / 医院）每次都必然入列，刷新后玩家仍能再次进入
+     * 这三类节点，行动点依旧是唯一的限制资源。</p>
+     */
+    public void refreshRoute() {
+        SegmentPlan plan = generatePlan(runData.getSegment());
+        runData.setAvailableOptions(new ArrayList<>(plan.getRouteOptions()));
+    }
+
+    /** 按当前段号与剧情线状态生成本段方案（开段与刷新共用，保证两处规则一致）。 */
+    private SegmentPlan generatePlan(int segment) {
+        return generator.generateSegment(segment, runData.isRocketLineUnlocked(),
+                runData.isRocketBossDefeated(), runData.isLegendaryMet(), runData.isPendingLegendary());
     }
 
     public void setTeam(List<PokemonInstance> team) {
         runData.setTeam(team);
     }
 
-    public void startRun(List<PokemonInstance> team, int startFloor) {
-        runData.setTeam(team);
-        enterFloor(startFloor);
-    }
+    // ------------------------------------------------------------------
+    // 路线节点
+    // ------------------------------------------------------------------
 
     public List<Option> getAvailableOptions() {
         return runData.getAvailableOptions();
     }
 
-    public Option getBossOption() {
-        return runData.getBossOption();
+    /** 当前待攻略的必然节点；路线探索阶段返回 {@code null}。 */
+    public Option getMandatoryOption() {
+        return runData.getMandatoryOption();
     }
 
     public boolean hasAvailableOptions() {
-        return runData.getAvailableOptions() != null && !runData.getAvailableOptions().isEmpty();
+        return !runData.getAvailableOptions().isEmpty();
     }
 
-    public void selectOption(Option chosen) {
-        if (!consumeOption(chosen)) {
-            return;
-        }
-        resolveOptionEffect(chosen);
-        if (isPointsExhausted()) {
-            triggerBossFight();
-        }
+    /** 本段是否还有下一次进入行动点足够、且（若为一次性节点）尚未走过的路线节点。 */
+    public boolean hasSelectableOption() {
+        return runData.hasSelectableOption();
     }
 
-    /**
-     * 剩余点数是否已无法继续消费：点数归零，或剩余可选事件都买不起。
-     *
-     * <p>起始点数（{@code 8 + 层号 * 3 + 0~4}）与事件消耗不保证整除：本层若没刷出 1 点的
-     * 「野怪遭遇」，可反复选择的只剩 3 点的「训练家挑战」，点数会停在 1 或 2 点——既买不起
-     * 任何事件，也永远走不到「点数归零」。故把「买不起任何事件」与「点数归零」一并视为
-     * 本层事件阶段结束，否则玩家会卡死在楼层页。</p>
-     */
-    public boolean isPointsExhausted() {
-        return runData.getCurrentPoints() <= 0 || !hasAffordableOption();
-    }
-
-    /** 是否还存在「可选中且当前点数买得起」的事件（0 成本的隐藏事件不计）。 */
-    public boolean hasAffordableOption() {
-        List<Option> options = runData.getAvailableOptions();
-        if (options == null) {
-            return false;
-        }
-        for (Option option : options) {
-            if (isSelectable(option) && option.getCost() <= runData.getCurrentPoints()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** 事件是否可被玩家选中：非空、非隐藏事件，且属于本层可选列表或本层 BOSS。 */
-    private boolean isSelectable(Option option) {
-        if (option == null || option.isHiddenEvent()) {
-            return false;
-        }
-        if (runData.getBossOption() != null && option == runData.getBossOption()) {
-            return true;
-        }
-        List<Option> options = runData.getAvailableOptions();
-        return options != null && options.contains(option);
+    /** 是否处于必然节点阶段（道馆战 / 四天王连打 / 冠军战）。 */
+    public boolean isAtMandatoryNode() {
+        return runData.getPhase().isMandatoryBattle();
     }
 
     /**
-     * 只做点数校验/扣除与选项替换（不做事件效果结算、不自动触发 BOSS）：
-     * 供 UI 接管战斗型事件（WILD/ENEMY 走真实战斗）时使用。
+     * 进入某个路线节点：校验节点合法、可进入（一次性节点未走过）且行动点够用，然后扣除
+     * 行动点并把该节点标记为已走过（保留在原位供玩家查看）。
      *
-     * @return 扣点成功返回 {@code true}；隐藏事件、非法选项或点数不足返回 {@code false}
+     * <p>常驻节点（路人 / 野外精灵 / 医院）走过后<b>仍可重复进入</b>，行动点是唯一限制；
+     * 一次性节点走过后保持灰色不可点。</p>
+     *
+     * <p>进入节点的同时结算剧情线标记（《需求文档》§5）：进入过火箭队节点即开启后期
+     * 「火箭队抓捕神兽」剧情线；神兽偶遇每局至多一次，进入即算已触发。</p>
+     *
+     * @return 成功返回 true；节点为 null / 一次性节点已走过 / 不属于本段 / 行动点不足时
+     *         返回 false 且不改变任何状态
      */
-    public boolean consumeOption(Option chosen) {
+    public boolean consumeNode(Option chosen) {
         if (chosen == null) {
             return false;
         }
-        if (chosen.isHiddenEvent()) {
-            System.out.println("此处已被掩盖，无法再次选择。");
+        if (chosen.isConsumed() && !chosen.isRepeatable()) {
             return false;
         }
-        if (runData.getAvailableOptions() == null || !runData.getAvailableOptions().contains(chosen)) {
-            if (runData.getBossOption() != null && chosen == runData.getBossOption()) {
-                // 允许直接强制选择 Boss，通常由 BOSS 判定触发
-            } else {
-                System.out.println("当前楼层中不存在该选项，无法执行。");
-                return false;
-            }
-        }
-        int nextPoints = runData.getCurrentPoints() - chosen.getCost();
-        if (nextPoints < 0) {
-            System.out.println("点数不足，无法选择：" + chosen.getName());
+        if (!runData.getAvailableOptions().contains(chosen)) {
             return false;
         }
-
-        runData.setCurrentPoints(nextPoints);
-        replaceMysterySlot(chosen);
+        int nextAp = runData.getAp() - chosen.apCostForNextEntry();
+        if (nextAp < 0) {
+            return false;
+        }
+        runData.setAp(nextAp);
+        chosen.markConsumed();
+        markStorylineOnEnter(chosen.getType());
         return true;
     }
 
-    private void replaceMysterySlot(Option chosen) {
-        if (runData.getAvailableOptions() == null || chosen == null) {
+    /** 进入节点时的剧情线标记结算（§5.1 / §5.2）。 */
+    private void markStorylineOnEnter(OptionType type) {
+        if (type == null) {
             return;
         }
-        if (chosen.getType() != OptionType.RANDOM && chosen.getType() != OptionType.HOSPITAL
-                && chosen.getType() != OptionType.REWARD) {
-            return;
-        }
-        int index = runData.getAvailableOptions().indexOf(chosen);
-        if (index >= 0) {
-            runData.getAvailableOptions().set(index, createMysteryReplacement());
+        switch (type) {
+            case ROCKET -> runData.setRocketLineUnlocked(true);
+            case LEGENDARY -> {
+                runData.setLegendaryMet(true);
+                runData.setPendingLegendary(false);
+            }
+            default -> {
+                // 其余节点不影响剧情线
+            }
         }
     }
 
-    private Option createMysteryReplacement() {
-        OptionType replacementType = random.nextBoolean() ? OptionType.RANDOM : OptionType.HOSPITAL;
-        String detail = "新的神秘事件正在暗中生成……继续探索吧。";
-        return new Option(Option.HIDDEN_EVENT_NAME, replacementType, 0, detail);
-    }
-
-    /** 执行选项的事件效果结算（WILD/ENEMY 为战斗模拟；HOSPITAL/RANDOM 为直接效果）。 */
-    public void resolveOptionEffect(Option option) {
-        if (option == null) {
+    /**
+     * 结算节点的当场效果（不需战斗的部分）：
+     * 医院治疗全队、特殊事件发放金币；商店由控制器打开购买界面，战斗节点由控制器拉起战斗。
+     */
+    public void resolveImmediateEffect(Option option) {
+        if (option == null || option.getType() == null) {
             return;
         }
-
         switch (option.getType()) {
-            case WILD -> resolveWildEvent();
-            case ENEMY -> resolveEnemyEvent();
-            case HOSPITAL -> resolveHospitalEvent();
-            case RANDOM -> resolveRandomEvent();
-            case REWARD -> System.out.println("装备补给事件：真实结算由控制器执行（随机装备入库）。");
-            default -> System.out.println("未知事件：" + option.getName());
-        }
-    }
-
-    private void resolveWildEvent() {
-        System.out.println("遭遇野怪，开始野外战斗模拟...");
-        if (runData.getTeam() == null || runData.getTeam().isEmpty()) {
-            System.out.println("队伍为空，野怪事件无效。");
-            return;
-        }
-
-        int totalDamage = 8 + random.nextInt(12);
-        for (PokemonInstance pokemon : runData.getTeam()) {
-            if (pokemon != null) {
-                pokemon.setHp(Math.max(0, pokemon.getCurrentHp() - totalDamage / 2));
-            }
-        }
-        System.out.println("野怪造成了 " + totalDamage + " 点总伤害，队伍受到波及。");
-    }
-
-    private void resolveEnemyEvent() {
-        System.out.println("遭遇训练家，开始对战模拟...");
-        if (runData.getTeam() == null || runData.getTeam().isEmpty()) {
-            System.out.println("队伍为空，训练家事件无效。");
-            return;
-        }
-
-        int damage = 10 + random.nextInt(15);
-        PokemonInstance target = runData.getTeam().get(random.nextInt(runData.getTeam().size()));
-        if (target != null) {
-            target.setHp(Math.max(0, target.getCurrentHp() - damage));
-        }
-        System.out.println("训练家攻击命中，造成 " + damage + " 点伤害。");
-    }
-
-    private void resolveHospitalEvent() {
-        System.out.println("进入医院，恢复全队状态...");
-        if (runData.getTeam() != null) {
-            for (PokemonInstance pokemon : runData.getTeam()) {
-                if (pokemon != null) {
-                    pokemon.setHp(pokemon.getMaxHp());
-                }
+            case HOSPITAL -> healPartyFully();
+            case SPECIAL -> runData.addGold(goldRewardFor(OptionType.SPECIAL));
+            default -> {
+                // 战斗节点由控制器接管；商店由控制器打开购买界面
             }
         }
     }
 
-    private void resolveRandomEvent() {
-        int floor = runData.getCurrentFloor();
-        int base = randomEventBaseExp(floor);
-        int spread = randomEventExpSpread(floor);
-        System.out.println("神秘礼物：全队获得 " + base + "~" + (base + spread - 1) + " 点经验值！");
-        if (runData.getTeam() != null) {
-            for (PokemonInstance pokemon : runData.getTeam()) {
-                if (pokemon != null && pokemon.getPokemon() != null) {
-                    pokemon.getPokemon().addExp(base + random.nextInt(spread));
-                }
+    /** 医院：全队完全恢复（HP 回满、PP 补满、清除异常，濒死宝可梦复活）。 */
+    public void healPartyFully() {
+        for (PokemonInstance member : runData.getTeam()) {
+            if (member != null && member.getPokemon() != null) {
+                member.getPokemon().fullRestore();
             }
         }
     }
 
     /**
-     * 神秘礼物的经验下限：第 1 层为 25，此后每层 +10。
+     * 节点自回血（§4.4）：每通过一个节点，未濒死的宝可梦恢复最大 HP 的 1/5；
+     * 濒死宝可梦不享受，只能靠医院或道具恢复。
+     */
+    public void applyNodeHeal() {
+        for (PokemonInstance member : runData.getTeam()) {
+            if (member == null || member.getPokemon() == null) {
+                continue;
+            }
+            Pokemon pokemon = member.getPokemon();
+            if (!pokemon.isFainted()) {
+                pokemon.heal(RouteConfig.nodeHealAmount(pokemon.getMaxHp()));
+            }
+        }
+    }
+
+    /**
+     * 进入节点并把「不需战斗」的部分一次结算完（扣点 → 当场效果 → 自回血 → 刷新节点 → 阶段推进）。
+     * 战斗类节点请改用 {@link #consumeNode(Option)}，以便控制器在战斗结束后再回调
+     * {@link #applyNodeHeal()}、{@link #refreshRoute()} 与 {@link #advanceAfterNode()}。
      *
-     * <p>事件消耗为 {@code 2 + 层号}，收益若固定不变则越深越不值；故下限随层号线性提高。
-     * 注意升到下一级所需经验为 {@code 3n² + 3n + 1}（随等级二次增长），
-     * 所以深层相对收益仍会缓慢下降——这是刻意的：经验主要由战斗产出，本事件只是补充。</p>
+     * @return 扣点成功返回 true
      */
-    public static int randomEventBaseExp(int floor) {
-        return 25 + (Math.max(1, floor) - 1) * 10;
+    public boolean resolveNode(Option chosen) {
+        if (!consumeNode(chosen)) {
+            return false;
+        }
+        resolveImmediateEffect(chosen);
+        applyNodeHeal();
+        refreshRoute();
+        advanceAfterNode();
+        return true;
     }
 
     /**
-     * 神秘礼物的经验随机宽度：第 1 层为 30，此后每层 +5。
-     * 即每只精灵实际到手 {@code [下限, 下限 + 宽度 - 1]} 区间内的独立随机值。
+     * 节点结束后检查是否该进入必然节点：本段已无节点可走（行动点不足且没有 0 点节点，
+     * 例如火箭队线必然触发的神兽偶遇）时触发道馆战（§4.1：行动点耗尽后无法再进入本段
+     * 随机节点，直接触发道馆战）。
+     *
+     * @return 触发了必然节点返回 true
      */
-    public static int randomEventExpSpread(int floor) {
-        return 30 + (Math.max(1, floor) - 1) * 5;
+    public boolean advanceAfterNode() {
+        if (runData.isGameOver() || runData.isCleared()) {
+            return false;
+        }
+        if (runData.getPhase() != RoutePhase.EXPLORING) {
+            return false;
+        }
+        if (runData.hasSelectableOption()) {
+            return false;
+        }
+        triggerMandatoryNode();
+        return true;
     }
 
-    public void triggerBossFight() {
-        runData.setCurrentPoints(0); // 买不起任何事件时也归零：本层事件阶段到此结束
-        System.out.println("⚔️ 点数耗尽！强制进入第 " + runData.getCurrentFloor() + " 层 BOSS 战！");
-        if (runData.getBossOption() == null) {
-            System.out.println("当前层没有 BOSS 配置，直接进入下一层。");
-            enterFloor(runData.getCurrentFloor() + 1);
-            return;
-        }
+    // ------------------------------------------------------------------
+    // 必然节点
+    // ------------------------------------------------------------------
 
-        boolean bossWin = resolveBossEncounter(runData.getBossOption());
-        if (bossWin) {
-            System.out.println("BOSS 战胜利，进入下一层。");
-            enterFloor(runData.getCurrentFloor() + 1);
-            return;
+    /** 触发当前段应到的必然节点：路线探索阶段 → 道馆战。 */
+    public Option triggerMandatoryNode() {
+        if (runData.getPhase() != RoutePhase.EXPLORING) {
+            return runData.getMandatoryOption();
         }
-
-        runData.setGameOver(true);
-        System.out.println("BOSS 战失败，游戏结束。");
+        return enterPhase(RoutePhase.GYM);
     }
 
-    private boolean resolveBossEncounter(Option bossOption) {
-        if (bossOption == null) {
+    /** 切换到指定必然节点阶段，并生成对应节点。 */
+    public Option enterPhase(RoutePhase phase) {
+        runData.setPhase(phase);
+        runData.setRetryUsed(0);
+        Option node = generator.createMandatoryOption(phase, runData.getSegment());
+        runData.setMandatoryOption(node);
+        return node;
+    }
+
+    /**
+     * 必然节点胜利后的推进：
+     * 道馆战胜利 → 未到末段则进入下一段，已到末段则进入四天王连打；
+     * 四天王连打胜利 → 冠军战；
+     * 冠军战胜利 → 开启过火箭队剧情线且未提前击败首领则进入首领侵略战，否则通关；
+     * 首领侵略战胜利 → 通关。
+     */
+    public void resolveMandatoryVictory() {
+        RoutePhase phase = runData.getPhase();
+        switch (phase) {
+            case GYM -> {
+                runData.addGold(goldRewardFor(OptionType.GYM));
+                if (runData.getSegment() < RouteConfig.TOTAL_SEGMENTS) {
+                    enterSegment(runData.getSegment() + 1);
+                } else {
+                    enterPhase(RoutePhase.ELITE_FOUR);
+                }
+            }
+            case ELITE_FOUR -> {
+                runData.addGold(goldRewardFor(OptionType.ELITE_FOUR));
+                enterPhase(RoutePhase.CHAMPION);
+            }
+            case CHAMPION -> {
+                runData.addGold(goldRewardFor(OptionType.CHAMPION));
+                if (runData.isRocketLineUnlocked() && !runData.isRocketBossDefeated()) {
+                    // §5.3：进入过火箭队节点却没走抓捕事件 → 击败冠军后触发首领侵略战
+                    runData.setAggressionTriggered(true);
+                    enterPhase(RoutePhase.ROCKET_INVASION);
+                } else {
+                    clearRun();
+                }
+            }
+            case ROCKET_INVASION -> {
+                runData.addGold(goldRewardFor(OptionType.ROCKET_INVASION));
+                clearRun();
+            }
+            default -> {
+                // 非必然节点阶段，无需推进
+            }
+        }
+    }
+
+    /** 结束本轮远征为「通关」。 */
+    private void clearRun() {
+        runData.setPhase(RoutePhase.CLEARED);
+        runData.setCleared(true);
+        runData.setMandatoryOption(null);
+    }
+
+    /**
+     * 火箭队抓捕神兽事件（§5.3）胜利结算：获得大师球（由控制器发放道具），
+     * 并把一次 0 点、必然出现的神兽偶遇追加到本段路线中。
+     *
+     * @return 追加的神兽偶遇节点
+     */
+    public Option resolveRocketBossVictory() {
+        runData.setRocketBossDefeated(true);
+        runData.setPendingLegendary(true);
+        Option legendary = generator.createLegendary(runData.getSegment(), true);
+        runData.getAvailableOptions().add(legendary);
+        return legendary;
+    }
+
+    /**
+     * 必然节点战败后的处理（§4.3）：道馆战 / 四天王可失败一次（大量扣金币），
+     * 重试再败 Run 结束；冠军战不可失败，直接结束。
+     *
+     * @return 还能继续（已消耗这次失败机会并扣金币）返回 true；Run 结束返回 false
+     */
+    public boolean resolveMandatoryDefeat() {
+        RoutePhase phase = runData.getPhase();
+        if (phase.allowsOneRetry() && runData.canRetry()) {
+            runData.useRetry();
+            runData.payGoldPenalty(RouteConfig.mandatoryDefeatGoldPenalty(runData.getSegment()));
+            if (runData.getMandatoryOption() == null) {
+                enterPhase(phase);
+            }
             return true;
         }
-
-        int bossPower = 20 + runData.getCurrentFloor() * 6;
-        int totalTeamHp = 0;
-        int teamCurrentHp = 0;
-        if (runData.getTeam() != null) {
-            for (PokemonInstance pokemon : runData.getTeam()) {
-                if (pokemon != null) {
-                    totalTeamHp += pokemon.getMaxHp();
-                    teamCurrentHp += pokemon.getCurrentHp();
-                }
-            }
-        }
-
-        int bossScore = bossPower + random.nextInt(10);
-        int teamScore = Math.max(1, teamCurrentHp * 2 + totalTeamHp / 4);
-        boolean win = teamScore >= bossScore;
-        if (!win) {
-            System.out.println("Boss 造成压倒性打击，当前层队伍承受失败。");
-        } else {
-            System.out.println("Boss 被击败，队伍获得层间奖励。 ");
-        }
-        return win;
+        runData.setGameOver(true);
+        return false;
     }
+
+    // ------------------------------------------------------------------
+    // 金币
+    // ------------------------------------------------------------------
+
+    /** 该类型节点胜利的金币奖励（不含惩罚）。 */
+    public int goldRewardFor(OptionType type) {
+        if (type == null) {
+            return 0;
+        }
+        int segment = runData.getSegment();
+        return switch (type) {
+            case TRAINER -> RouteConfig.trainerWinGold(segment);
+            case WILD -> RouteConfig.wildWinGold(segment);
+            case SPECIAL -> RouteConfig.specialGold(segment);
+            case ROCKET -> RouteConfig.rocketWinGold(segment);
+            case ROCKET_CAPTURE -> RouteConfig.rocketCaptureWinGold(segment);
+            case LEGENDARY -> RouteConfig.legendaryWinGold(segment);
+            case GYM -> RouteConfig.gymWinGold(segment);
+            case ELITE_FOUR -> RouteConfig.eliteFourWinGold(segment);
+            case CHAMPION -> RouteConfig.championWinGold(segment);
+            case ROCKET_INVASION -> RouteConfig.bossAggressionWinGold(segment);
+            case HOSPITAL, SHOP, REWARD -> 0;
+        };
+    }
+
+    /** 发放胜利奖励并返回实际发放的金币数。 */
+    public int awardWinGold(OptionType type) {
+        int reward = goldRewardFor(type);
+        runData.addGold(reward);
+        return reward;
+    }
+
+    /**
+     * 战败扣金币（§4.3：路人 / 野外精灵战败仅扣金币、不中断 Run；道馆 / 四天王重试时
+     * 大量扣金币）。金币不足时扣到 0，不会变负数。
+     *
+     * @return 实际扣除的金币数
+     */
+    public int applyDefeatPenalty(OptionType type) {
+        if (type == null) {
+            return 0;
+        }
+        int segment = runData.getSegment();
+        int penalty = type.isMandatory()
+                ? RouteConfig.mandatoryDefeatGoldPenalty(segment)
+                : RouteConfig.defeatGoldPenalty(segment);
+        int before = runData.getGold();
+        runData.payGoldPenalty(penalty);
+        return before - runData.getGold();
+    }
+
+    // ------------------------------------------------------------------
+    // 查询
+    // ------------------------------------------------------------------
 
     public boolean isGameOver() {
         return runData.isGameOver();
+    }
+
+    /** 本轮远征是否已通关。 */
+    public boolean isCleared() {
+        return runData.isCleared();
+    }
+
+    /** 是否已开启火箭队剧情线（进入过任意一次火箭队节点，§5.2）。 */
+    public boolean isRocketLineUnlocked() {
+        return runData.isRocketLineUnlocked();
+    }
+
+    /** 是否已击败火箭队首领（完成抓捕神兽事件，§5.3）。 */
+    public boolean isRocketBossDefeated() {
+        return runData.isRocketBossDefeated();
+    }
+
+    /** 本局是否已触发过神兽偶遇（每局至多一次，§5.1）。 */
+    public boolean isLegendaryMet() {
+        return runData.isLegendaryMet();
+    }
+
+    /** 是否有一次 0 点的神兽偶遇待进入。 */
+    public boolean isPendingLegendary() {
+        return runData.isPendingLegendary();
+    }
+
+    /** 本轮远征是否已彻底结束（通关或战败）。 */
+    public boolean isRunFinished() {
+        return runData.isGameOver() || runData.isCleared();
     }
 }
