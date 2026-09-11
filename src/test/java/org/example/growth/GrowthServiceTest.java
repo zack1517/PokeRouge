@@ -21,6 +21,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -291,5 +292,79 @@ class GrowthServiceTest {
 
         assertNotNull(growth.resolveLearn(null, 0));
         assertTrue(growth.resolveLearn(null, 0).isEmpty());
+    }
+
+    // ------------------------------------------------------------------
+    // 图鉴进度申报（捕捉次数 / 对战次数 → 个体值加成）
+    // ------------------------------------------------------------------
+
+    /** 捕捉申报：由战斗模块在捕捉成功时调用，逐次累计该族捕捉次数并换算个体值加成。 */
+    @Test
+    void 捕捉申报累计图鉴捕捉次数() {
+        GrowthProgress progress = new GrowthProgress();
+        GrowthService growth = new GrowthService(BattleDataPorts.none(), progress);
+
+        growth.onCaptured("bulbasaur");
+        growth.onCaptured("bulbasaur");
+
+        assertEquals(2, progress.captureCount("bulbasaur"));
+        assertEquals(1, progress.ivBonus("bulbasaur"), "2 次捕捉记 1 点个体值加成");
+        assertEquals(1, progress.globalIvBonus(), "加成对之后生成的所有精灵生效");
+        assertEquals(0, progress.battleCount("bulbasaur"), "捕捉不增加对战次数");
+    }
+
+    /** 捕捉申报只在持有有效物种 id 时生效，空值应被忽略而不是污染图鉴。 */
+    @Test
+    void 空物种id的捕捉申报被忽略() {
+        GrowthProgress progress = new GrowthProgress();
+        GrowthService growth = new GrowthService(BattleDataPorts.none(), progress);
+
+        growth.onCaptured(null);
+        growth.onCaptured("  ");
+
+        assertTrue(progress.dexEntries().isEmpty());
+        assertEquals(0, progress.globalIvBonus());
+    }
+
+    /** 战斗获胜结算时按参战精灵累计该族对战次数（图鉴展示用，不影响加成）。 */
+    @Test
+    void 结算时按参战精灵累计对战次数() {
+        GrowthProgress progress = new GrowthProgress();
+        GrowthService growth = new GrowthService(BattleDataPorts.none(), progress);
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        Pokemon active = pokemon(mine, 1, SLAM);
+
+        growth.settle(List.of(active), List.of(foe120()));
+
+        assertEquals(1, progress.battleCount("mine_sp"));
+        assertEquals(0, progress.ivBonus("mine_sp"), "对战次数不参与个体值加成演算");
+        assertFalse(progress.record("mine_sp").isBlank());
+    }
+
+    /** 未参战的精灵不产生对战记录，避免图鉴被「只是躺在队伍里」的精灵污染。 */
+    @Test
+    void 未参战精灵不累计对战次数() {
+        GrowthProgress progress = new GrowthProgress();
+        GrowthService growth = new GrowthService(BattleDataPorts.none(), progress);
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        Pokemon benched = pokemon(mine, 1, SLAM);
+
+        growth.settle(List.of(), List.of(foe120()));
+
+        assertTrue(progress.dexEntries().isEmpty(), "空参战列表不写入任何记录");
+        assertNotNull(benched);
+    }
+
+    /** 成长模块是图鉴数据的持有者，局外可直接查询同一份进度。 */
+    @Test
+    void 经成长模块可局外查询图鉴进度() {
+        GrowthProgress progress = new GrowthProgress();
+        GrowthService growth = new GrowthService(BattleDataPorts.none(), progress);
+
+        growth.onCaptured("bulbasaur");
+
+        assertSame(progress, growth.getProgress());
+        assertEquals(1, growth.getProgress().captureCount("bulbasaur"));
+        assertEquals("bulbasaur", growth.getProgress().dexEntries().get(0).getSpeciesId());
     }
 }

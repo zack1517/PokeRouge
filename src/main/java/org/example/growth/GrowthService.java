@@ -25,6 +25,11 @@ import java.util.Objects;
  *
  * <p><b>经验规则</b>：按被击败精灵折算 —— 六维种族值总和 × 等级 / 5，单只不低于
  * {@value #MIN_EXP}；训练师轮战按整队被击败对手求和，一次性发放给每只参战精灵。</p>
+ *
+ * <p><b>图鉴进度</b>：本模块同时维护局外成长进度 {@link GrowthProgress} —— 战斗获胜时按
+ * 参战精灵累计「对战次数」，野生遭遇被捕捉时（{@link #onCaptured(String)}）累计
+ * 「捕捉次数」；捕捉次数经 {@link IvGrowthRule} 换算为个体值加成，由创建流程叠加到之后
+ * 生成的所有宝可梦上（种族值不变）。局外可经 {@link #getProgress()} 直接查询。</p>
  */
 public final class GrowthService implements BattleGrowthPort {
 
@@ -34,19 +39,39 @@ public final class GrowthService implements BattleGrowthPort {
     /** 技能与种族数据的唯一来源。 */
     private final BattleDataPort dataPort;
 
+    /** 局外成长进度（捕捉次数 / 对战次数 / 个体值加成），跨单轮远征存活。 */
+    private final GrowthProgress progress;
+
     /**
-     * 创建成长模块。
+     * 创建成长模块，使用进程级共享成长进度（{@link GrowthProgress#instance()}）。
      *
      * @param dataPort 只读数据端口（技能 / 种族查询），不可为 {@code null}
      */
     public GrowthService(BattleDataPort dataPort) {
+        this(dataPort, GrowthProgress.instance());
+    }
+
+    /**
+     * 创建成长模块，并注入指定成长进度（便于隔离测试）。
+     *
+     * @param dataPort 只读数据端口（技能 / 种族查询），不可为 {@code null}
+     * @param progress 局外成长进度，不可为 {@code null}
+     */
+    public GrowthService(BattleDataPort dataPort, GrowthProgress progress) {
         this.dataPort = Objects.requireNonNull(dataPort, "dataPort");
+        this.progress = Objects.requireNonNull(progress, "progress");
+    }
+
+    /** 本模块持有的局外成长进度（图鉴数据接口，可局外查询）。 */
+    public GrowthProgress getProgress() {
+        return progress;
     }
 
     @Override
     public Settlement settle(List<Pokemon> survivors, List<Pokemon> defeated) {
         List<String> log = new ArrayList<>();
         List<BattleService.LearnChoice> pending = new ArrayList<>();
+        recordBattles(survivors);
         int exp = totalExp(defeated);
         if (exp > 0 && survivors != null) {
             for (Pokemon p : survivors) {
@@ -57,6 +82,14 @@ public final class GrowthService implements BattleGrowthPort {
             }
         }
         return new Settlement(log, pending);
+    }
+
+    @Override
+    public void onCaptured(String speciesId) {
+        if (speciesId == null || speciesId.isBlank()) {
+            return;
+        }
+        progress.recordCapture(speciesId);
     }
 
     @Override
@@ -132,6 +165,19 @@ public final class GrowthService implements BattleGrowthPort {
         }
         log.add(p.getName() + " 进化成了 " + target.getName() + "！");
         p.evolveTo(target);
+    }
+
+    /** 申报参战：战斗获胜时按参战且未倒下的己方精灵逐只累计该族对战次数（图鉴展示用）。 */
+    private void recordBattles(List<Pokemon> survivors) {
+        if (survivors == null) {
+            return;
+        }
+        for (Pokemon p : survivors) {
+            if (p == null || p.getSpecies() == null) {
+                continue;
+            }
+            progress.recordBattle(p.getSpecies().getId());
+        }
     }
 
     /** 整队经验之和：训练师轮战按全队被击败对手一次性结算。 */

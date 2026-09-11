@@ -2,8 +2,10 @@ package org.example.pokemon.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
+import org.example.growth.GrowthProgress;
 import org.example.pokemon.domain.GrowthEvent;
 import org.example.pokemon.domain.LearnableMove;
 import org.example.pokemon.domain.Nature;
@@ -26,8 +28,40 @@ public class PokemonServiceImpl implements PokemonService {
     private Player currentPlayer;
     private final GameData gameData;
 
+    /** 局外成长进度：提供「后续遭遇精灵」的个体值加成。 */
+    private final GrowthProgress growthProgress;
+
+    /** 使用进程级共享成长进度（{@link GrowthProgress#instance()}）构造服务。 */
     public PokemonServiceImpl() {
+        this(GrowthProgress.instance());
+    }
+
+    /**
+     * 使用指定成长进度构造服务（便于隔离测试）。
+     *
+     * @param growthProgress 局外成长进度，不可为 {@code null}
+     */
+    public PokemonServiceImpl(GrowthProgress growthProgress) {
         this.gameData = GameData.instance();
+        this.growthProgress = Objects.requireNonNull(growthProgress, "growthProgress");
+    }
+
+    /**
+     * 本服务持有的局外成长进度（图鉴数据接口：捕捉次数 / 对战次数 / 个体值加成）。
+     *
+     * @return 成长进度，永不为 {@code null}
+     */
+    public GrowthProgress getGrowthProgress() {
+        return growthProgress;
+    }
+
+    /**
+     * 按当前全局个体值加成创建个体：六项个体值在随机值上叠加
+     * {@link GrowthProgress#globalIvBonus()} 并截断到 31。所有创建入口都必须经此方法，
+     * 以保证「成长加成对之后遇到的所有精灵生效」这一口径唯一。
+     */
+    private Pokemon newPokemon(Species species, int level, Nature nature) {
+        return new Pokemon(species, level, Stats.randomIv(growthProgress.globalIvBonus()), nature);
     }
 
     /**
@@ -146,11 +180,11 @@ public class PokemonServiceImpl implements PokemonService {
      */
     @Override
     public Pokemon createPokemon(String speciesId, int level) {
-        return gameData.createPokemon(speciesId, level);
+        return createPokemon(speciesId, level, Nature.HARDY);
     }
 
     /**
-     * 按种族 id 与指定性格创建宝可梦，个体值随机。
+     * 按种族 id 与指定性格创建宝可梦，个体值随机并叠加局外成长加成。
      *
      * @param speciesId 种族 id
      * @param level 初始等级
@@ -161,11 +195,12 @@ public class PokemonServiceImpl implements PokemonService {
     public Pokemon createPokemon(String speciesId, int level, Nature nature) {
         Species species = gameData.getSpecies(speciesId)
                 .orElseThrow(() -> new IllegalArgumentException("未知的种族id: " + speciesId));
-        return new Pokemon(species, level, Stats.randomIv(), nature);
+        return newPokemon(species, level, nature);
     }
 
     /**
-     * 创建野生宝可梦：等级在目标等级 ±2 内随机（最低 1 级），性格随机。
+     * 创建野生宝可梦：等级在目标等级 ±2 内随机（最低 1 级），性格随机，
+     * 个体值随机并叠加局外成长加成。
      *
      * @param speciesId 种族 id
      * @param aroundLevel 目标等级
@@ -179,7 +214,7 @@ public class PokemonServiceImpl implements PokemonService {
         int level = Math.max(1, aroundLevel + random.nextInt(-WILD_LEVEL_OFFSET, WILD_LEVEL_OFFSET + 1));
         List<Nature> natures = gameData.getAllNatures();
         Nature nature = natures.get(random.nextInt(natures.size()));
-        return new Pokemon(species, level, Stats.randomIv(), nature);
+        return newPokemon(species, level, nature);
     }
 
     /**
