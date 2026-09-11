@@ -174,3 +174,68 @@
     -fx-text-fill: white;
     -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.60), 12, 0.25, 0, 4);
 }
+
+/* ---------- 悬浮子页表单（初始宝可梦选择页）：白底胶囊输入/下拉 + 白字标注 ---------- */
+/* 与胶囊按钮同族的白底深蓝描边环（insets 双层背景技巧） */
+.starter-input,
+.starter-combo {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 12px;
+    -fx-background-color: #123c63, rgba(255, 255, 255, 0.94);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 999, 997.5;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.05, 0, 3);
+    /* 屏蔽 modena 聚焦环（本项目全自定义背景） */
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.starter-input {
+    -fx-text-fill: #123c63;
+    -fx-prompt-text-fill: rgba(18, 60, 99, 0.45);
+    -fx-alignment: center;
+    -fx-padding: 5 14;
+}
+
+/* 聚焦/展开时描边环转为亮蓝（与按钮悬停同族反馈） */
+.starter-input:focused,
+.starter-combo:focused,
+.starter-combo:showing {
+    -fx-background-color: #2a75bb, rgba(255, 255, 255, 0.98);
+}
+
+.starter-combo {
+    -fx-padding: 1 4;
+}
+
+.starter-combo > .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #123c63;
+    -fx-alignment: center;
+    -fx-padding: 5 6;
+}
+
+.starter-combo > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0 8 0 4;
+}
+
+.starter-combo > .arrow-button > .arrow {
+    -fx-background-color: #123c63;
+}
+
+/* 表单标注（字段名）与说明文字：白字 + 光晕投影（复杂背景上保持清晰，同标题体系） */
+.starter-caption {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.65), 10, 0.15, 0, 2);
+}
+
+.starter-note {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-text-fill: rgba(255, 255, 255, 0.96);
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.65), 10, 0.15, 0, 2);
+}
