@@ -16,14 +16,20 @@ public class OptionGenerator {
     }
 
     public List<Option> createOptions(int floor) {
-        List<Option> candidates = new ArrayList<>();
-        candidates.add(new Option("野怪遭遇", OptionType.WILD, 1, "遭遇野生精灵，立即进入野怪战斗。"));
-        candidates.add(new Option("训练家挑战", OptionType.ENEMY, 3, "挑战训练家，立即进入训练家对战。"));
-        candidates.add(new Option("神秘礼物", OptionType.RANDOM, 2 + floor, "获得宝贵经验值奖励，提升队伍成长。"));
-        candidates.add(new Option("临时急救站", OptionType.HOSPITAL, 2 + floor, "恢复全队精灵HP，并重整作战状态。"));
-        candidates.add(new Option("装备补给", OptionType.REWARD, 2 + floor, "随机获得一件可携带装备，可穿戴给精灵。"));
-        Collections.shuffle(candidates, random);
-        return new ArrayList<>(candidates.subList(0, 4));
+        // 临时急救站为本层必刷：它承担全队续航，缺失时容易出现连续损血却无处恢复的楼层。
+        Option hospital = new Option("临时急救站", OptionType.HOSPITAL, 2 + floor, "恢复全队精灵HP，并重整作战状态。");
+
+        List<Option> others = new ArrayList<>();
+        others.add(new Option("野怪遭遇", OptionType.WILD, 1, "遭遇野生精灵，立即进入野怪战斗。"));
+        others.add(new Option("训练家挑战", OptionType.ENEMY, 3, "挑战训练家，立即进入训练家对战。"));
+        others.add(new Option("神秘礼物", OptionType.RANDOM, 2 + floor, "获得宝贵经验值奖励，提升队伍成长。"));
+        others.add(new Option("装备补给", OptionType.REWARD, 2 + floor, "随机获得一件可携带装备，可穿戴给精灵。"));
+        Collections.shuffle(others, random);
+
+        List<Option> options = new ArrayList<>(others.subList(0, 3));
+        options.add(hospital);
+        Collections.shuffle(options, random); // 位置同样随机，急救站不会固定落在同一格
+        return options;
     }
 
     public Option createBossOption(int floor) {
