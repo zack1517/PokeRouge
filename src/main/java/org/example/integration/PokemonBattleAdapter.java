@@ -52,6 +52,11 @@ public final class PokemonBattleAdapter {
      * 战斗结算所需的成长端口：经验增加 / 升级 / 学招 / 进化由成长模块判定（见
      * {@link GrowthService}）。与战斗模块共用同一份数据端口。
      *
+     * <p><b>注意</b>：本重载绑定的是 {@link GrowthProgress#instance()} ——
+     * <b>用户主目录</b>下的真实存档，战斗获胜即会把对战次数写入玩家存档。
+     * <b>测试请改用 {@link #battleGrowthPort(BattleDataPort, GrowthProgress)}</b> 注入
+     * 纯内存的 {@code new GrowthProgress()}，避免污染开发机上的真实进度。</p>
+     *
      * @param dataPort 只读数据端口（技能 / 种族查询），不可为 {@code null}
      */
     public static BattleGrowthPort battleGrowthPort(BattleDataPort dataPort) {

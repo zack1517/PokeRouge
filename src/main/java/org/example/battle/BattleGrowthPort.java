@@ -27,7 +27,7 @@ public interface BattleGrowthPort {
     /**
      * 一场战斗的成长申报结果。
      *
-     * @param log           需要追加到战斗日志的文本行（升级 / 学招 / 进化等），无变化时为空列表
+     * @param log           需要追加到战斗日志的文本行（获得经验 / 升级 / 学招 / 进化等），无变化时为空列表
      * @param pendingLearns 技能栏已满、需玩家抉择遗忘的挂起学招项，无挂起时为空列表
      */
     record Settlement(List<String> log, List<BattleService.LearnChoice> pendingLearns) {
