@@ -9,7 +9,10 @@ import org.example.model.PokemonInstance;
 import org.example.model.RogueTurnManager;
 import org.example.model.RunData;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 根包级会话对象：负责持有当前玩家状态，并充当 UI/控制器与底层模型之间的编排中心。
@@ -17,18 +20,20 @@ import java.util.List;
  * 真正的数据/规则实现仍由子包提供。</p>
  * <p>地图段与地图背景属“对局进度”：段号的唯一来源是 {@link RunData#getSegment()}，
  * 当前段背景与段号绑定 —— 同段内多次返回主菜单（多次重建视图）保持同一张图，
- * 只有换段才重抽（见 {@link #enterRogueSegment(int)} / {@link #enterNextSegment()}）。</p>
+ * 只有换段才重抽，且一轮内不重复抽已用过的图（5 段对 5 张，见 {@link #nextMapBackground()}）。</p>
  * <p>肉鸽路线接口（{@link #startRogueRun()} 等）由 {@link RogueTurnManager} 承载段号 / 节点 /
  * 行动点 / 金币逻辑，已接入主流程：主菜单「进入路线节点」→ {@link org.example.view.RogueFloorView}
  * 节点页 → 真实战斗（战斗节点先经 {@link #enterRogueNode(Option)} 扣行动点，再由控制器接管战斗）。</p>
  */
 public class GameSession {
 
-    /** 地图背景候选（classpath；换段时随机取一）。 */
+    /** 地图背景候选（classpath；换段时随机取一，一轮内不重复用已抽过的图，见 {@link #nextMapBackground()}）。 */
     private static final String[] MAP_BACKGROUNDS = {
             "/images/background/bg_map1.jpeg",
             "/images/background/bg_map2.jpeg",
-            "/images/background/bg_map3.jpeg"};
+            "/images/background/bg_map3.jpeg",
+            "/images/background/bg_map4.jpeg",
+            "/images/background/bg_map5.jpeg"};
 
     private final Player player;
 
@@ -40,6 +45,9 @@ public class GameSession {
 
     /** 当前段已确定的地图背景（null = 尚未抽取）；与段号同步变化。 */
     private String mapBackground;
+
+    /** 本轮远征已抽过的地图背景（一轮 5 段对 5 张图，保证各段不重图；用尽后自动清空兜底，见 {@link #nextMapBackground()}）。 */
+    private final Set<String> usedMapBackgrounds = new LinkedHashSet<>();
 
     public GameSession(Player player) {
         this(player, GrowthProgress.instance());
@@ -96,9 +104,12 @@ public class GameSession {
         return mapBackground;
     }
 
-    /** 直接设置当前段地图背景（读档还原用），{@code null} 表示回到「尚未抽取」状态。 */
+    /** 直接设置当前段地图背景（读档还原用），{@code null} 表示回到「尚未抽取」状态；非空时计入已用集合。 */
     public void setMapBackground(String mapBackground) {
         this.mapBackground = mapBackground;
+        if (mapBackground != null) {
+            usedMapBackgrounds.add(mapBackground);
+        }
     }
 
     /**
@@ -124,12 +135,26 @@ public class GameSession {
         return mapBackground;
     }
 
-    /** 从候选图随机取一；已有当前图时避开（避免换段后与上一段同图，3 张候选足够重抽）。 */
+    /**
+     * 从候选图随机取一：只从「本轮尚未用过」的图中抽（各段不重图，5 段对 5 图恰好一一对应）；
+     * 候选用尽（异常长局）时清空历史兜底重来，并始终避开当前段图（读档恢复的图可能不在历史集合中）。
+     */
     private String nextMapBackground() {
-        String pick;
-        do {
-            pick = MAP_BACKGROUNDS[(int) (Math.random() * MAP_BACKGROUNDS.length)];
-        } while (MAP_BACKGROUNDS.length > 1 && pick.equals(mapBackground));
+        List<String> pool = new ArrayList<>();
+        for (String candidate : MAP_BACKGROUNDS) {
+            if (!usedMapBackgrounds.contains(candidate)) {
+                pool.add(candidate);
+            }
+        }
+        if (pool.isEmpty()) {
+            usedMapBackgrounds.clear();
+            pool.addAll(List.of(MAP_BACKGROUNDS));
+        }
+        if (pool.size() > 1) {
+            pool.remove(mapBackground); // 读档恢复等场景下当前图可能尚不在历史集合中
+        }
+        String pick = pool.get((int) (Math.random() * pool.size()));
+        usedMapBackgrounds.add(pick);
         return pick;
     }
 
@@ -167,6 +192,7 @@ public class GameSession {
                 .map(PokemonInstance::new)
                 .toList();
         rogueTurnManager.startRun(team);
+        usedMapBackgrounds.clear(); // 新一轮远征：5 张图重新分配
         mapBackground = nextMapBackground();
     }
 

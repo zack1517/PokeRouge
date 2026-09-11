@@ -69,7 +69,7 @@ import java.util.function.IntPredicate;
  * 悬停技能格实时联动右块）。
  * 双方信息卡同款同尺寸（名称/属性/等级 + HP 条，EXP 行随「卡样式一致」要求移除，待确认后另寻展示位）；
  * 立绘显示精灵图片（classpath /images/pokemon/，文件名与精灵中文名一致；内建精灵无图时回退「精灵名+立绘」占位文本）；
- * 战斗背景从 bg_battle1-3 随机取一（临时素材，dev 流程桩无分段概念；道馆/Boss 专属图待流程接入后按节点切换）。</p>
+ * 战斗背景从 bg_battle1/3/4 随机取一、允许重复（2026-09-11 素材替换；道馆/Boss 专属图待流程接入后按节点切换）。</p>
  *
  * <p>全局等比缩放由 {@link org.example.util.UiScale} 统一施加（本类布局按 640×426.67 设计，3:2）。</p>
  */
@@ -93,11 +93,11 @@ public class BattleView {
         void onExit();
     }
 
-    /** 战斗背景候选（classpath；每次进入战斗随机取一，见类 javadoc）。 */
+    /** 战斗背景候选（classpath；每次进入战斗随机取一、允许重复；素材即 bg_battle 的 1/3/4 三张）。 */
     private static final String[] BATTLE_BACKGROUNDS = {
             "/images/background/bg_battle1.jpeg",
-            "/images/background/bg_battle2.jpeg",
-            "/images/background/bg_battle3.jpeg"};
+            "/images/background/bg_battle3.jpeg",
+            "/images/background/bg_battle4.jpeg"};
 
     // ---- 双方立绘（精灵图片；无图时回退占位文本）----
     private final ImageView playerSprite = new ImageView();
