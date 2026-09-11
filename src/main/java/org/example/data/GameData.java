@@ -396,6 +396,47 @@ public final class GameData {
         putEquipment("e_shell_bell", "贝壳之铃", HeldItemEffect.LIFE_STEAL, "0.125", "攻击造成伤害的 1/8 回复自身 HP");
         putEquipment("e_quick_claw", "先制之爪", HeldItemEffect.FIRST_STRIKE, "20", "20% 概率无视速度先手出招");
         putEquipment("e_eviolite", "进化辉石", HeldItemEffect.EVOLITE, "1.5", "未最终进化时防御与特防提升 50%");
+        // 批次①携带物：招式威力修正
+        putEquipment("e_muscle_band", "力量头带", HeldItemEffect.PHYSICAL_DAMAGE, "1.1", "物理招式伤害提升 10%");
+        putEquipment("e_wise_glasses", "博识眼镜", HeldItemEffect.SPECIAL_DAMAGE, "1.1", "特殊招式伤害提升 10%");
+        putEquipment("e_life_orb", "生命宝珠", HeldItemEffect.LIFE_ORB, "1.3|0.1",
+                "招式伤害提升 30%，每次命中后失去最大 HP 的 1/10");
+        // 速度与出手顺序
+        putEquipment("e_iron_ball", "黑色铁球", HeldItemEffect.SPEED_MULTIPLIER, "0.5|GROUND",
+                "速度降低 50%，且被地面化（不再免疫地面系招式）");
+        putEquipment("e_lagging_tail", "后攻之尾", HeldItemEffect.MOVE_LAST, "",
+                "同先制度时必定最后出招");
+        // 伤害判定修正
+        putEquipment("e_ring_target", "标靶", HeldItemEffect.IGNORE_IMMUNITY, "",
+                "携带者失去属性免疫，原本无效的招式变为 1 倍");
+        putEquipment("e_air_balloon", "气球", HeldItemEffect.GROUND_IMMUNE, "",
+                "免疫地面系招式，被地面系招式命中后消耗");
+        // 回合末效果
+        putEquipment("e_black_sludge", "黑色污泥", HeldItemEffect.POISON_HEAL, "0.0625|0.125",
+                "毒属性每回合末回复 1/16 HP，非毒属性每回合末失去 1/8 HP");
+        putEquipment("e_flame_orb", "火焰宝珠", HeldItemEffect.END_TURN_STATUS, "BURN",
+                "回合结束时变为灼伤状态");
+        putEquipment("e_toxic_orb", "剧毒宝珠", HeldItemEffect.END_TURN_STATUS, "BADLY_POISON",
+                "回合结束时变为剧毒状态");
+        // 天气延长
+        putEquipment("e_heat_rock", "炽热岩石", HeldItemEffect.WEATHER_DURATION, "SUNNY|8",
+                "携带者开启大晴天时持续 8 回合");
+        putEquipment("e_damp_rock", "潮湿岩石", HeldItemEffect.WEATHER_DURATION, "RAIN|8",
+                "携带者开启下雨时持续 8 回合");
+        putEquipment("e_smooth_rock", "沙沙岩石", HeldItemEffect.WEATHER_DURATION, "SANDSTORM|8",
+                "携带者开启沙暴时持续 8 回合");
+        putEquipment("e_icy_rock", "冰冷岩石", HeldItemEffect.WEATHER_DURATION, "HAIL|8",
+                "携带者开启冰雹时持续 8 回合");
+        // 保命
+        putEquipment("e_focus_sash", "气势披带", HeldItemEffect.FOCUS_SASH, "",
+                "满 HP 时受到致死伤害保留 1 HP，触发后消耗");
+        putEquipment("e_focus_band", "气势头带", HeldItemEffect.FOCUS_BAND, "10",
+                "HP 归零时 10% 概率保留 1 HP");
+        // 讲究系
+        putEquipment("e_choice_specs", "讲究眼镜", HeldItemEffect.CHOICE, "SPECIAL|1.5",
+                "特殊招式伤害提升 50%，但只能使用第一个招式");
+        putEquipment("e_choice_scarf", "讲究围巾", HeldItemEffect.CHOICE, "SPEED|1.5",
+                "速度提升 50%，但只能使用第一个招式");
     }
 
     private void putEquipment(String id, String name, HeldItemEffect effectType, String param, String description) {

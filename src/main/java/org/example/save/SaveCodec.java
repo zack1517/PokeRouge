@@ -86,6 +86,7 @@ public final class SaveCodec {
                     .append('|').append(p.badlyPoisonCounter())
                     .append('|').append(p.confusionTurns())
                     .append('|').append(p.currentHp())
+                    .append('|').append(escape(p.heldItemId()))
                     .append('\n');
             for (int slot = 0; slot < p.moves().size(); slot++) {
                 SaveData.MoveData m = p.moves().get(slot);
@@ -192,7 +193,8 @@ public final class SaveCodec {
                         parseInt(field(parts, 12), key, lineNo),
                         parseInt(field(parts, 13), key, lineNo),
                         parseInt(field(parts, 14), key, lineNo),
-                        List.of()));
+                        List.of(),
+                        field(parts, 15)));
                 case KEY_MOVE -> {
                     int owner = parseInt(field(parts, 1), key, lineNo);
                     movesByPokemon.computeIfAbsent(owner, k -> new ArrayList<>())
@@ -223,7 +225,7 @@ public final class SaveCodec {
             SaveData.PokemonData p = party.get(i);
             partyWithMoves.add(new SaveData.PokemonData(p.speciesId(), p.level(), p.ivs(), p.exp(),
                     p.status(), p.sleepTurns(), p.badlyPoisonCounter(), p.confusionTurns(),
-                    p.currentHp(), movesByPokemon.getOrDefault(i, List.of())));
+                    p.currentHp(), movesByPokemon.getOrDefault(i, List.of()), p.heldItemId()));
         }
         return new SaveData(version, playerName, activeIndex, partyWithMoves, bag, run,
                 options, mandatoryOption, segment, mapBackground, savedAt, story);

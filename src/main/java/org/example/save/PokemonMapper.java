@@ -38,7 +38,8 @@ public final class PokemonMapper {
                         ivs.getSpAttack(), ivs.getSpDefense(), ivs.getSpeed()),
                 pokemon.getExp(), pokemon.getStatus().name(), pokemon.getSleepTurns(),
                 pokemon.getBadlyPoisonCounter(), pokemon.getConfusionTurns(),
-                pokemon.getCurrentHp(), moves);
+                pokemon.getCurrentHp(), moves,
+                pokemon.getHeldItem() == null ? "" : pokemon.getHeldItem().getId());
     }
 
     /**
@@ -62,9 +63,23 @@ public final class PokemonMapper {
         Stats ivs = new Stats(iv.hp(), iv.attack(), iv.defense(),
                 iv.spAttack(), iv.spDefense(), iv.speed());
         int level = Math.max(1, Math.min(Pokemon.MAX_LEVEL, data.level()));
-        return Optional.of(Pokemon.restore(species.get(), level, ivs, slots, data.exp(),
+        Pokemon restored = Pokemon.restore(species.get(), level, ivs, slots, data.exp(),
                 StatusCondition.parse(data.status()), data.sleepTurns(),
-                data.badlyPoisonCounter(), data.confusionTurns(), data.currentHp()));
+                data.badlyPoisonCounter(), data.confusionTurns(), data.currentHp());
+        applyHeldItem(restored, data.heldItemId());
+        return Optional.of(restored);
+    }
+
+    /** 还原携带装备：未记录（旧档）或装备已从注册表移除时保持未携带，不凭空造一件。 */
+    private static void applyHeldItem(Pokemon pokemon, String heldItemId) {
+        if (heldItemId == null || heldItemId.isBlank()) {
+            return;
+        }
+        org.example.model.HeldItem equipment =
+                org.example.data.GameData.instance().equipment(heldItemId);
+        if (equipment != null) {
+            pokemon.setHeldItem(equipment);
+        }
     }
 
     /** 按 id 查种族：优先新体系注册表（与战斗生成同源），回退战斗数据端口。 */

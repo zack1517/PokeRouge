@@ -2,6 +2,7 @@ package org.example.save;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -132,7 +133,7 @@ class PokemonMapperTest {
     @Test
     void 未知物种返回空() {
         SaveData.PokemonData data = new SaveData.PokemonData("不存在的物种", 5,
-                new SaveData.IvData(1, 1, 1, 1, 1, 1), 0L, "NONE", 0, 0, 0, 10, List.of());
+                new SaveData.IvData(1, 1, 1, 1, 1, 1), 0L, "NONE", 0, 0, 0, 10, List.of(), "");
 
         assertTrue(PokemonMapper.toPokemon(data).isEmpty());
         assertTrue(PokemonMapper.toPokemon(null).isEmpty());
@@ -149,7 +150,7 @@ class PokemonMapperTest {
                 original.getLevel(), new SaveData.IvData(5, 5, 5, 5, 5, 5), 0L, "NONE", 0, 0, 0,
                 original.getMaxHp(),
                 List.of(new SaveData.MoveData("不存在的技能", 10),
-                        new SaveData.MoveData(knownMoveId, 12)));
+                        new SaveData.MoveData(knownMoveId, 12)), "");
 
         Pokemon restored = PokemonMapper.toPokemon(data).orElseThrow();
 
@@ -165,10 +166,10 @@ class PokemonMapperTest {
 
         Pokemon tooHigh = PokemonMapper.toPokemon(new SaveData.PokemonData(speciesId,
                 Pokemon.MAX_LEVEL + 50, new SaveData.IvData(1, 1, 1, 1, 1, 1), 0L, "NONE",
-                0, 0, 0, 10, List.of())).orElseThrow();
+                0, 0, 0, 10, List.of(), "")).orElseThrow();
         Pokemon tooLow = PokemonMapper.toPokemon(new SaveData.PokemonData(speciesId, 0,
                 new SaveData.IvData(1, 1, 1, 1, 1, 1), 0L, "NONE", 0, 0, 0, 10,
-                List.of())).orElseThrow();
+                List.of(), "")).orElseThrow();
 
         assertEquals(Pokemon.MAX_LEVEL, tooHigh.getLevel());
         assertEquals(1, tooLow.getLevel());
@@ -179,7 +180,7 @@ class PokemonMapperTest {
     void 缺失字段使用安全默认值() {
         String speciesId = starter().getSpecies().getId();
         SaveData.PokemonData data = new SaveData.PokemonData(speciesId, 5, null, 0L,
-                "不存在的异常", 0, 0, 0, 10, null);
+                "不存在的异常", 0, 0, 0, 10, null, null);
 
         Pokemon restored = PokemonMapper.toPokemon(data).orElseThrow();
 
@@ -227,5 +228,45 @@ class PokemonMapperTest {
         assertEquals(secondId, PokemonMapper.toPokemon(
                 PokemonMapper.toData(player.getParty().get(1))).orElseThrow()
                 .getSpecies().getId());
+    }
+
+    /** 携带装备必须随存档往返 —— 否则读档后装备凭空消失，肉鸽奖励等于白拿。 */
+    @Test
+    void 携带装备随存档往返() {
+        Pokemon pokemon = starter();
+        org.example.model.HeldItem equipment =
+                org.example.data.GameData.instance().equipment("e_life_orb");
+        assertNotNull(equipment, "装备注册表应包含生命宝珠");
+        pokemon.setHeldItem(equipment);
+
+        Pokemon restored = PokemonMapper.toPokemon(PokemonMapper.toData(pokemon)).orElseThrow();
+
+        assertNotNull(restored.getHeldItem(), "读档后应保留携带装备");
+        assertEquals("e_life_orb", restored.getHeldItem().getId());
+        assertEquals(org.example.model.HeldItemEffect.LIFE_ORB,
+                restored.getHeldItem().getEffectType());
+        assertEquals("1.3|0.1", restored.getHeldItem().getParam(), "装备参数应取自注册表");
+    }
+
+    /** 未携带装备时写出空 id，读档后仍为空 —— 不能凭空装备一件。 */
+    @Test
+    void 未携带装备读档后仍为空() {
+        Pokemon pokemon = starter();
+        pokemon.setHeldItem(null);
+
+        SaveData.PokemonData data = PokemonMapper.toData(pokemon);
+
+        assertEquals("", data.heldItemId());
+        assertNull(PokemonMapper.toPokemon(data).orElseThrow().getHeldItem());
+    }
+
+    /** 装备已从注册表下架时保持未携带，而不是整档读取失败。 */
+    @Test
+    void 未知装备被忽略() {
+        SaveData.PokemonData data = new SaveData.PokemonData(starter().getSpecies().getId(), 10,
+                new SaveData.IvData(1, 1, 1, 1, 1, 1), 0L, "NONE", 0, 0, 0, 10,
+                List.of(), "已下架的装备");
+
+        assertNull(PokemonMapper.toPokemon(data).orElseThrow().getHeldItem());
     }
 }

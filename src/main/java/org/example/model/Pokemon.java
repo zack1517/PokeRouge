@@ -283,9 +283,29 @@ public class Pokemon {
         return confusionTurns <= 0;
     }
 
-    /** 计入异常状态后的实际速度（麻痹减半，最低 1）。 */
+    /**
+     * 计入异常状态与携带装备后的实际速度（麻痹减半；黑色铁球按倍率减速、讲究围巾按倍率加速；最低 1）。
+     */
     public int effectiveSpeed() {
-        return Math.max(1, (int) Math.round(stats.getSpeed() * status.speedMultiplier()));
+        return Math.max(1, (int) Math.round(stats.getSpeed() * status.speedMultiplier()
+                * heldItemSpeedMultiplier()));
+    }
+
+    /**
+     * 携带装备的速度倍率修正：{@link HeldItemEffect#SPEED_MULTIPLIER} 直接取参数倍率，
+     * {@link HeldItemEffect#CHOICE} 仅在修正项为 {@code SPEED} 时生效。
+     *
+     * @return 速度倍率；未携带装备或无速度类效果时返回 1.0
+     */
+    private double heldItemSpeedMultiplier() {
+        if (heldItem == null) {
+            return 1.0;
+        }
+        return switch (heldItem.getEffectType()) {
+            case SPEED_MULTIPLIER -> heldItem.doubleParam();
+            case CHOICE -> "SPEED".equals(heldItem.choiceKind()) ? heldItem.choiceMultiplier() : 1.0;
+            default -> 1.0;
+        };
     }
 
     /** 计入异常状态后的实际物理攻击（灼伤减半，最低 1）。 */
