@@ -56,6 +56,13 @@ public final class GrowthService implements BattleGrowthPort {
     /**
      * 创建成长模块，使用进程级共享成长进度（{@link GrowthProgress#instance()}）。
      *
+     * <p><b>注意</b>：该共享实例绑定的是<b>用户主目录</b>下的真实存档
+     * （{@code <用户目录>/.pokerouge/growth-progress.txt}），一旦发生
+     * {@link #settle} / {@link #onBattleWon} / 捕捉申报等写入就会<b>直接落盘到玩家存档</b>。
+     * 因此<b>测试与临时实例必须改用 {@link #GrowthService(BattleDataPort, GrowthProgress)}
+     * 注入一份纯内存的 {@code new GrowthProgress()}</b>，否则会污染开发机上的真实进度
+     * （症状：主目录存档里出现测试用的假物种 id）。</p>
+     *
      * @param dataPort 只读数据端口（技能 / 种族查询），不可为 {@code null}
      */
     public GrowthService(BattleDataPort dataPort) {

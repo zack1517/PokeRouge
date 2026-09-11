@@ -124,9 +124,18 @@ public class MainController {
             chooseSlotForNewGame(trainerName, starter);
             return;
         }
+        GameSession created;
+        try {
+            created = saveManager.newGame(slot, trainerName, starter);
+        } catch (RuntimeException ex) {
+            LogUtil.info("[MainController] 开新游戏失败：" + slot + "（" + ex.getMessage() + "）");
+            infoAlert("无法开始", "清空并初始化 " + slot.displayName() + " 时出错：\n" + ex.getMessage());
+            chooseSlotForNewGame(trainerName, starter);
+            return; // 失败时不动 activeSlot / session，避免把旧会话写进新档位
+        }
         this.activeSlot = slot;
-        this.session = saveManager.newGame(slot, trainerName, starter);
-        this.player = session.getPlayer();
+        this.session = created;
+        this.player = created.getPlayer();
         autoSave(); // 立刻落一次盘，玩家此后即使直接关窗口也有档可继续
         showMainMenu();
     }

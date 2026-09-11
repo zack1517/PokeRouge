@@ -123,7 +123,7 @@ class GrowthServiceTest {
                 7, SLAM);
 
         BattleGrowthPort.Settlement settlement =
-                new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe));
+                new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(active), List.of(foe));
 
         assertEquals(4, active.getLevel(), "70 点经验应把 1 级精灵升到 4 级");
         assertTrue(settlement.log().contains(active.getName() + " 升到了 Lv.4！"),
@@ -139,8 +139,8 @@ class GrowthServiceTest {
         Pokemon high = pokemon(mine, 1, SLAM);
 
         // 升级所需累计经验为 等级³ - 1：升到 4 级需 63，升到 5 级需 124，升到 6 级需 215
-        new GrowthService(new RecordingPort()).settle(List.of(low), List.of(pokemon(foeSpecies, 7, SLAM)));
-        new GrowthService(new RecordingPort()).settle(List.of(high), List.of(pokemon(foeSpecies, 21, SLAM)));
+        new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(low), List.of(pokemon(foeSpecies, 7, SLAM)));
+        new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(high), List.of(pokemon(foeSpecies, 21, SLAM)));
 
         assertEquals(4, low.getLevel(), "70 × 7 ÷ 7 = 70 点经验，够升到 4 级");
         assertEquals(5, high.getLevel(), "70 × 21 ÷ 7 = 210 点经验，够升到 5 级");
@@ -153,9 +153,9 @@ class GrowthServiceTest {
         Pokemon weakFoe = pokemon(mine, 1, SLAM);
         Pokemon strongFoe = pokemon(mine, 1, SLAM);
 
-        new GrowthService(new RecordingPort()).settle(List.of(weakFoe),
+        new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(weakFoe),
                 List.of(pokemon(speciesWithBaseExp("foe_low", 64, List.of("m_slam"), null, 0, Map.of()), 28, SLAM)));
-        new GrowthService(new RecordingPort()).settle(List.of(strongFoe),
+        new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(strongFoe),
                 List.of(pokemon(speciesWithBaseExp("foe_high", 236, List.of("m_slam"), null, 0, Map.of()), 28, SLAM)));
 
         assertEquals(6, weakFoe.getLevel(), "baseExp 64 × 28 ÷ 7 = 256 点经验");
@@ -169,7 +169,7 @@ class GrowthServiceTest {
         Pokemon active = pokemon(mine, 1, SLAM);
 
         // baseExp 1 × 1 ÷ 7 = 0，低于下限，按 30 点结算：升到 3 级（累计 26），不足升到 4 级（累计 63）
-        new GrowthService(new RecordingPort()).settle(List.of(active),
+        new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(active),
                 List.of(pokemon(speciesWithBaseExp("foe_tiny", 1, List.of("m_slam"), null, 0, Map.of()), 1, SLAM)));
 
         assertEquals(3, active.getLevel(), "经验折算不应低于 30 点");
@@ -181,7 +181,7 @@ class GrowthServiceTest {
         Pokemon active = pokemon(mine, 1, SLAM);
 
         // baseExp 为 0：六维种族值总和 300 × 等级 2 / 5 = 120 点，升到 4 级
-        new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe120()));
+        new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(active), List.of(foe120()));
 
         assertEquals(4, active.getLevel(), "baseExp 缺失时仍应能按六维种族值总和结算");
     }
@@ -191,7 +191,7 @@ class GrowthServiceTest {
         Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
         Species half = speciesWithBaseExp("foe_half", 70, List.of("m_slam"), null, 0, Map.of());
         Pokemon active = pokemon(mine, 1, SLAM);
-        GrowthService growth = new GrowthService(new RecordingPort());
+        GrowthService growth = new GrowthService(new RecordingPort(), new GrowthProgress());
 
         // 单只 70 × 14 ÷ 7 = 140 点：够升到 5 级（需累计 124）
         growth.settle(List.of(active), List.of(pokemon(half, 14, SLAM)));
@@ -213,7 +213,7 @@ class GrowthServiceTest {
                 7, SLAM);
 
         BattleGrowthPort.Settlement settlement =
-                new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe));
+                new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(active), List.of(foe));
 
         assertEquals(50, active.getLevel(), "70 点经验不足以让 50 级精灵升级");
         assertEquals(70L, active.getExp(), "经验应已累计到精灵身上");
@@ -233,7 +233,7 @@ class GrowthServiceTest {
                 7, SLAM);
 
         BattleGrowthPort.Settlement settlement =
-                new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe));
+                new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(active), List.of(foe));
 
         assertEquals(4, active.getLevel(), "70 点经验应把 1 级精灵升到 4 级");
         assertEquals(active.getName() + " 获得了 70 点经验！", settlement.log().get(0),
@@ -252,7 +252,7 @@ class GrowthServiceTest {
         fainted.takeDamage(fainted.getMaxHp());
 
         BattleGrowthPort.Settlement settlement =
-                new GrowthService(new RecordingPort()).settle(List.of(fainted), List.of(foe120()));
+                new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(fainted), List.of(foe120()));
 
         assertTrue(fainted.isFainted());
         assertEquals(1, fainted.getLevel(), "倒下的精灵不结算经验与成长");
@@ -265,7 +265,7 @@ class GrowthServiceTest {
         Pokemon active = pokemon(mine, 1, SLAM);
 
         BattleGrowthPort.Settlement settlement =
-                new GrowthService(new RecordingPort()).settle(List.of(active), List.of());
+                new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(active), List.of());
 
         assertEquals(1, active.getLevel());
         assertTrue(settlement.log().isEmpty());
@@ -284,7 +284,7 @@ class GrowthServiceTest {
         port.moves.put("m_new", NEW_MOVE);
 
         BattleGrowthPort.Settlement settlement =
-                new GrowthService(port).settle(List.of(active), List.of(foe120()));
+                new GrowthService(port, new GrowthProgress()).settle(List.of(active), List.of(foe120()));
 
         assertTrue(port.calls.contains("move:m_new"), "应经数据端口查询到级技能");
         assertTrue(knows(active, "m_new"), "有空槽时直接学会");
@@ -301,7 +301,7 @@ class GrowthServiceTest {
         port.moves.put("m_new", NEW_MOVE);
 
         BattleGrowthPort.Settlement settlement =
-                new GrowthService(port).settle(List.of(active), List.of(foe120()));
+                new GrowthService(port, new GrowthProgress()).settle(List.of(active), List.of(foe120()));
 
         assertEquals(1, settlement.pendingLearns().size(), "满 4 招时应挂起一个学习抉择");
         BattleService.LearnChoice choice = settlement.pendingLearns().get(0);
@@ -317,7 +317,7 @@ class GrowthServiceTest {
         Pokemon active = pokemon(mine, 1, SLAM);
 
         BattleGrowthPort.Settlement settlement =
-                new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe120()));
+                new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(active), List.of(foe120()));
 
         assertEquals(4, active.getLevel(), "学招降级不影响经验与升级");
         assertFalse(knows(active, "m_new"), "查不到技能时不学会任何技能");
@@ -338,7 +338,7 @@ class GrowthServiceTest {
         port.species.put("mine_evo", evolved);
 
         BattleGrowthPort.Settlement settlement =
-                new GrowthService(port).settle(List.of(active), List.of(foe120()));
+                new GrowthService(port, new GrowthProgress()).settle(List.of(active), List.of(foe120()));
 
         assertTrue(port.calls.contains("species:mine_evo"), "应经数据端口查询进化目标种族");
         assertEquals("mine_evo", active.getSpecies().getId());
@@ -350,7 +350,7 @@ class GrowthServiceTest {
         Species mine = species("mine_sp", 50, List.of("m_slam"), "mine_evo", 2, Map.of());
         Pokemon active = pokemon(mine, 1, SLAM);
 
-        new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe120()));
+        new GrowthService(new RecordingPort(), new GrowthProgress()).settle(List.of(active), List.of(foe120()));
 
         assertEquals(4, active.getLevel(), "进化降级不影响经验与升级");
         assertEquals("mine_sp", active.getSpecies().getId(), "查不到种族时不进化");
@@ -364,7 +364,7 @@ class GrowthServiceTest {
     void 抉择遗忘并学会时替换指定槽位() {
         Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
         Pokemon active = pokemon(mine, 5, fourMoves());
-        GrowthService growth = new GrowthService(new RecordingPort());
+        GrowthService growth = new GrowthService(new RecordingPort(), new GrowthProgress());
 
         List<String> log = growth.resolveLearn(new BattleService.LearnChoice(active, NEW_MOVE), 0);
 
@@ -377,7 +377,7 @@ class GrowthServiceTest {
     void 抉择放弃学习时保留原技能栏() {
         Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
         Pokemon active = pokemon(mine, 5, fourMoves());
-        GrowthService growth = new GrowthService(new RecordingPort());
+        GrowthService growth = new GrowthService(new RecordingPort(), new GrowthProgress());
 
         List<String> log = growth.resolveLearn(new BattleService.LearnChoice(active, NEW_MOVE), -1);
 
@@ -389,7 +389,7 @@ class GrowthServiceTest {
 
     @Test
     void 空抉择返回空日志() {
-        GrowthService growth = new GrowthService(BattleDataPorts.none());
+        GrowthService growth = new GrowthService(BattleDataPorts.none(), new GrowthProgress());
 
         assertNotNull(growth.resolveLearn(null, 0));
         assertTrue(growth.resolveLearn(null, 0).isEmpty());
