@@ -45,6 +45,7 @@ import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
 import org.example.model.MoveSlot;
 import org.example.model.Pokemon;
+import org.example.model.Stat;
 import org.example.model.Stats;
 import org.example.model.StatusCondition;
 import org.example.model.Terrain;
@@ -117,6 +118,7 @@ public class BattleView {
     private final ProgressBar wildHpBar = new ProgressBar();
     private final Label wildHpText = new Label();
     private final Label wildStatus = new Label(); // 异常状态徽章（无异常时隐藏）
+    private final Label wildStages = new Label(); // 能力等级徽章（全部中立时隐藏）
 
     // ---- 己方信息（右下卡片，样式与敌方卡一致） ----
     private final Label playerName = new Label("--");
@@ -125,6 +127,7 @@ public class BattleView {
     private final ProgressBar playerHpBar = new ProgressBar();
     private final Label playerHpText = new Label();
     private final Label playerStatus = new Label(); // 异常状态徽章（无异常时隐藏）
+    private final Label playerStages = new Label(); // 能力等级徽章（全部中立时隐藏）
 
     // ---- 右上角信息块：地图阶段 / 金币（数据来自流程系统，TODO(dev) 接入前为桩文本） ----
     private final Label stageLabel = new Label("第 1 段 · 野外遭遇");
@@ -216,12 +219,12 @@ public class BattleView {
 
     /** 敌信息卡（左上，与己方卡同款，见 {@link #buildStatCard}）。 */
     private VBox buildEnemyCard() {
-        return buildStatCard(wildName, wildType, wildLv, wildHpBar, wildHpText, wildStatus);
+        return buildStatCard(wildName, wildType, wildLv, wildHpBar, wildHpText, wildStatus, wildStages);
     }
 
     /** 中部区域：中央留空展示背景；右下角 [己方立绘 + 己方信息卡]（立绘在信息卡左侧，与敌区镜像）。 */
     private Parent buildCenter() {
-        VBox card = buildStatCard(playerName, playerType, playerLv, playerHpBar, playerHpText, playerStatus);
+        VBox card = buildStatCard(playerName, playerType, playerLv, playerHpBar, playerHpText, playerStatus, playerStages);
         StackPane sprite = spritePane(playerSprite, playerSpriteFallback, "rgba(66, 110, 196, 0.30)");
         playerSpriteBox = sprite;
         HBox group = new HBox(8, sprite, card);
@@ -262,11 +265,11 @@ public class BattleView {
     }
 
     /**
-     * 双方同款信息卡：上行 名称/属性徽章/等级，下行 HP 条与数值，再下行异常状态徽章
-     * （无异常时整行隐藏，卡高自动回落）。
+     * 双方同款信息卡：上行 名称/属性徽章/等级，下行 HP 条与数值，再下行异常状态徽章与能力等级徽章
+     * （无内容时整行隐藏，卡高自动回落）。
      */
     private VBox buildStatCard(Label name, Label type, Label lv,
-                               ProgressBar hpBar, Label hpText, Label status) {
+                               ProgressBar hpBar, Label hpText, Label status, Label stages) {
         VBox card = battleCard();
         HBox line1 = new HBox(6);
         line1.setAlignment(Pos.CENTER_LEFT);
@@ -285,7 +288,12 @@ public class BattleView {
         status.setManaged(false);
         status.setVisible(false);
 
-        card.getChildren().addAll(line1, line2, status);
+        stages.setStyle(statStageChip());
+        stages.setWrapText(true); // 多项能力同时变化时换行，避免撑宽信息卡
+        stages.setManaged(false);
+        stages.setVisible(false);
+
+        card.getChildren().addAll(line1, line2, status, stages);
         return card;
     }
 
@@ -293,6 +301,13 @@ public class BattleView {
     private static String statusChip() {
         return YH + "-fx-background-color: #ffe6c7; -fx-background-radius: 4;"
                 + "-fx-padding: 1 8; -fx-font-size: 12px; -fx-text-fill: #a35200;"
+                + "-fx-font-weight: bold;";
+    }
+
+    /** 能力等级徽章样式（蓝底深字，与异常状态的橙底区分）。 */
+    private static String statStageChip() {
+        return YH + "-fx-background-color: #dbe8ff; -fx-background-radius: 4;"
+                + "-fx-padding: 1 8; -fx-font-size: 12px; -fx-text-fill: #1c4b9c;"
                 + "-fx-font-weight: bold;";
     }
 
@@ -319,9 +334,40 @@ public class BattleView {
         return sb.toString();
     }
 
+    /**
+     * 能力等级徽章文案：按 物攻/物防/特攻/特防/速度 顺序列出所有非中立等级，
+     * 形如 {@code 物攻↑1 速度↓2}；全部中立（含精灵为空/倒下）返回空串。
+     */
+    private static String statStageBadgeText(Pokemon p) {
+        if (p == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Stat stat : Stat.values()) {
+            int stage = p.getStatStage(stat);
+            if (stage == 0) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(stat.getDisplayName()).append(stage > 0 ? '↑' : '↓').append(Math.abs(stage));
+        }
+        return sb.toString();
+    }
+
     /** 把异常状态徽章刷到标签：无异常时隐藏并让出布局空间。 */
     private static void applyStatusBadge(Label target, Pokemon p) {
         String text = statusBadgeText(p);
+        target.setText(text);
+        boolean visible = !text.isEmpty();
+        target.setManaged(visible);
+        target.setVisible(visible);
+    }
+
+    /** 把能力等级徽章刷到标签：全部中立时隐藏并让出布局空间。 */
+    private static void applyStatStageBadge(Label target, Pokemon p) {
+        String text = statStageBadgeText(p);
         target.setText(text);
         boolean visible = !text.isEmpty();
         target.setManaged(visible);
@@ -431,6 +477,7 @@ public class BattleView {
         playerLv.setText("Lv." + player.getLevel());
         refreshHp(playerHpBar, playerHpText, player);
         applyStatusBadge(playerStatus, player);
+        applyStatStageBadge(playerStages, player);
         applySprite(playerSprite, playerSpriteFallback, player);
 
         wildName.setText(wild.getName());
@@ -438,6 +485,7 @@ public class BattleView {
         wildLv.setText("Lv." + wild.getLevel());
         refreshHp(wildHpBar, wildHpText, wild);
         applyStatusBadge(wildStatus, wild);
+        applyStatStageBadge(wildStages, wild);
         applySprite(enemySprite, enemySpriteFallback, wild);
     }
 

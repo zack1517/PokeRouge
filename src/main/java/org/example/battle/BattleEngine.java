@@ -11,6 +11,7 @@ import org.example.model.MoveEffect;
 import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.StatChange;
 import org.example.model.StatusCondition;
 import org.example.model.Terrain;
 import org.example.model.Trainer;
@@ -30,6 +31,14 @@ import java.util.Random;
  * 精灵，也可以是持有一整支队伍的训练师（训练师轮战）。双方都用技能时按速度快者先动（相同速度
  * 随机）。物理技能取 物攻 vs 物防，特殊技能取 特攻 vs 特防，伤害受克制倍率、STAB(本系加成)
  * 与随机浮动影响。捕捉成功、逃跑成功或一方精灵全部倒下即结束。</p>
+ *
+ * <p><b>命中判定</b>：招式按 {@link Move#getAccuracy()} 掷骰，未命中仅追加日志、不造成伤害
+ * 也不施加任何附加效果（PP 已在行动前扣除）。命中率为 {@code -1}（必中）或 {@code >= 100}
+ * 时恒命中，且不消耗随机数。</p>
+ *
+ * <p><b>能力等级</b>：变化类技能可增减自身或对方的物攻、物防、特攻、特防、速度等级
+ * （{@link Move#getStatChanges()}，幅度 -6 ~ +6，按 {@link Pokemon#stageMultiplier(int)} 换算），
+ * 等级为挥发性状态，离场（换宠、倒下）与战斗开始时清零。</p>
  *
  * <p><b>训练师轮战</b>（{@link #getTrainer()} 非空）：战斗持续到某一方队伍精灵全部倒下为止。
  * 不可逃跑、不可捕捉训练师的精灵；敌方当前出战精灵倒下后自动派出下一只健康的（敌方不会主动
@@ -191,6 +200,12 @@ public class BattleEngine implements BattleService {
             }
         } else if (wild == null || wild.isFainted()) {
             throw new IllegalArgumentException("野生精灵无效");
+        }
+        // 能力等级是挥发性状态（换宠/倒下即清零，不写入存档），每场战斗都从 0 级开始
+        player.getActive().clearStatStages();
+        Pokemon opponent = trainer != null ? trainer.getActive() : wild;
+        if (opponent != null) {
+            opponent.clearStatStages();
         }
         events.add(BattleEvent.battleStart()); // 开场事件：界面据此播放双方进场动画
     }
@@ -508,6 +523,9 @@ public class BattleEngine implements BattleService {
         }
         append("你派出了 " + target.getName() + "！");
         events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, target.getName()));
+        // 能力等级随离场消失：下场的精灵放弃自己的等级，上场的精灵从中立等级开始
+        current.clearStatStages();
+        target.clearStatStages();
         if (!foeActive().isFainted() && !target.isFainted()) {
             foeTurn();
         }
@@ -584,12 +602,20 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 执行一次行动：变化类技能应用天气/场地效果并按概率施加异常状态，其余（物理/特殊）技能正常造成伤害。
+     * 执行一次行动：先做命中判定；变化类技能应用能力等级变化、天气/场地效果并按概率施加异常状态，
+     * 其余（物理/特殊）技能正常造成伤害。
      */
     private void executeMove(Pokemon attacker, Pokemon defender, Move move) {
+        if (!moveHits(attacker, move)) {
+            return;
+        }
         if (move.isStatus()) {
-            // 纯变化招：天气/场地效果与异常状态互不排斥；两者都没有时提示无效果
-            if (move.getEffect() != MoveEffect.NONE || !move.hasInfliction()) {
+            // 纯变化招：能力等级 / 天气场地 / 异常状态互不排斥；三者都没有时提示无效果
+            if (move.hasStatChanges()) {
+                applyStatChanges(attacker, defender, move);
+            }
+            if (move.getEffect() != MoveEffect.NONE
+                    || (!move.hasInfliction() && !move.hasStatChanges())) {
                 applyFieldEffect(move.getEffect());
             }
             tryInflict(move, defender);
@@ -598,6 +624,53 @@ public class BattleEngine implements BattleService {
             return;
         }
         performAttack(attacker, defender, move);
+    }
+
+    /**
+     * 命中判定。
+     *
+     * <p>命中率为 {@code -1}（必中）或 {@code >= 100} 时恒判定命中，且<b>不消耗任何随机数</b>
+     * （保证无命中判定的历史随机序列完全不变）；仅 {@code 0 ~ 99} 的命中率会掷一次骰。</p>
+     *
+     * <p>未命中不产生演出事件（招式动画已在行动开始时播报），仅追加日志；PP 已在行动前扣除。</p>
+     *
+     * @return 本次行动是否命中（未命中时调用方需直接返回）
+     */
+    private boolean moveHits(Pokemon attacker, Move move) {
+        int accuracy = move.getAccuracy();
+        if (accuracy < 0 || accuracy >= 100) {
+            return true;
+        }
+        if (random.nextInt(100) < accuracy) {
+            return true;
+        }
+        append(attacker.getName() + " 的【" + move.getName() + "】没有命中！");
+        return false;
+    }
+
+    /**
+     * 应用招式附带的能力等级增减，并按<b>实际</b>变化量播报。
+     *
+     * <p>幅度 ≥2 时用「大幅提高/下降」描述；等级已达 {@value Pokemon#MAX_STAT_STAGE}（或
+     * {@value Pokemon#MIN_STAT_STAGE}）时提示「已经无法再提高/下降」。</p>
+     */
+    private void applyStatChanges(Pokemon attacker, Pokemon defender, Move move) {
+        for (StatChange change : move.getStatChanges()) {
+            Pokemon target = change.recipient() == StatChange.Recipient.SELF ? attacker : defender;
+            if (target == null || target.isFainted()) {
+                continue;
+            }
+            int actual = target.changeStatStage(change.stat(), change.delta());
+            String stat = change.stat().getDisplayName();
+            if (actual > 0) {
+                append(target.getName() + " 的" + stat + (actual >= 2 ? "大幅" : "") + "提高了！");
+            } else if (actual < 0) {
+                append(target.getName() + " 的" + stat + (actual <= -2 ? "大幅" : "") + "下降了！");
+            } else {
+                append(target.getName() + " 的" + stat
+                        + (change.isIncrease() ? "已经无法再提高了！" : "已经无法再下降了！"));
+            }
+        }
     }
 
     /**
@@ -648,7 +721,7 @@ public class BattleEngine implements BattleService {
     private void selfHit(Pokemon p) {
         append(p.getName() + " 因混乱攻击了自己！");
         double base = (2.0 * p.getLevel() / 5.0 + 2.0) * StatusCondition.CONFUSION_SELF_HIT_POWER
-                * ((double) p.effectiveAttack() / Math.max(1, p.getStats().getDefense())) / 50.0 + 2.0;
+                * ((double) p.effectiveAttack() / Math.max(1, p.effectiveDefense())) / 50.0 + 2.0;
         int dealt = p.takeDamage(Math.max(1, (int) base));
         events.add(BattleEvent.hit(sideOf(p), nameOf(p), ElementType.NORMAL, MoveCategory.PHYSICAL,
                 BattleEvent.hpOf(p)));
@@ -782,10 +855,10 @@ public class BattleEngine implements BattleService {
         double def;
         if (move.getCategory() == MoveCategory.PHYSICAL) {
             atk = attacker.effectiveAttack();
-            def = defender.getStats().getDefense();
+            def = defender.effectiveDefense();
         } else {
-            atk = attacker.getStats().getSpAttack();
-            def = defender.getStats().getSpDefense();
+            atk = attacker.effectiveSpAttack();
+            def = defender.effectiveSpDefense();
         }
         // 进化辉石：未最终进化（仍有进化目标）的携带者双防提升
         if (defender.getHeldItem() != null
@@ -891,6 +964,7 @@ public class BattleEngine implements BattleService {
                 return;
             }
             append(trainer.getName() + " 派出了 " + next.getName() + "！");
+            next.clearStatStages(); // 上场即从中立能力等级开始
             events.add(BattleEvent.sendOut(BattleEvent.Side.FOE, next.getName(),
                     BattleEvent.hpOf(next)));
         }
@@ -899,6 +973,7 @@ public class BattleEngine implements BattleService {
             append(pa.getName() + " 倒下了……");
             if (player.switchToNextHealthy() != null) {
                 append("你派出了 " + playerActive().getName() + "！");
+                playerActive().clearStatStages(); // 上场即从中立能力等级开始
                 events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, playerActive().getName(),
                         BattleEvent.hpOf(playerActive())));
             } else {

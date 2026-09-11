@@ -1,14 +1,16 @@
-# id,name,type,category,power,accuracy,maxPp,priority,inflicts,inflictionChance[,effect]
+# id,name,type,category,power,accuracy,maxPp,priority,inflicts,inflictionChance[,statChanges[,effect]]
 # inflicts 为命中后可能施加的异常状态（POISON/BADLY_POISON/PARALYSIS/BURN/SLEEP/FREEZE/CONFUSION），留空表示无
 # inflictionChance 为触发概率百分比（0~100），仅当 inflicts 非空时有意义
+# statChanges 为能力等级变化，格式“受方:能力:幅度”：受方 SELF/OPPONENT，能力 ATTACK/DEFENSE/SP_ATTACK/SP_DEFENSE/SPEED，
+#             幅度 -6~+6 且非 0，多项用“;”分隔（如 SELF:SPEED:+2;OPPONENT:ATTACK:-1），留空表示无
 tackle,撞击,NORMAL,PHYSICAL,40,100,35,0,,
-growl,叫声,NORMAL,STATUS,0,100,40,0,,
+growl,叫声,NORMAL,STATUS,0,100,40,0,,,OPPONENT:ATTACK:-1
 scratch,抓,NORMAL,PHYSICAL,40,100,35,0,,
-tail-whip,摇尾巴,NORMAL,STATUS,0,100,30,0,,
+tail-whip,摇尾巴,NORMAL,STATUS,0,100,30,0,,,OPPONENT:DEFENSE:-1
 quick-attack,电光一闪,NORMAL,PHYSICAL,40,100,30,1,,
 strength,怪力,NORMAL,PHYSICAL,80,100,15,0,,
 body-slam,泰山压顶,NORMAL,PHYSICAL,85,100,15,0,PARALYSIS,30
-harden,硬邦邦,NORMAL,STATUS,0,-1,30,0,,
+harden,硬邦邦,NORMAL,STATUS,0,-1,30,0,,,SELF:DEFENSE:+1
 protect,守住,NORMAL,STATUS,0,-1,10,4,,
 ember,火花,FIRE,SPECIAL,40,100,25,0,BURN,10
 fire-spin,火焰漩涡,FIRE,SPECIAL,35,85,15,0,,
@@ -26,7 +28,7 @@ thunder,打雷,ELECTRIC,SPECIAL,110,70,10,0,PARALYSIS,30
 thunder-wave,电磁波,ELECTRIC,STATUS,0,90,20,0,PARALYSIS,100
 confusion,念力,PSYCHIC,SPECIAL,50,100,25,0,CONFUSION,10
 psybeam,幻象光线,PSYCHIC,SPECIAL,65,100,20,0,CONFUSION,10
-agility,高速移动,PSYCHIC,STATUS,0,-1,30,0,,
+agility,高速移动,PSYCHIC,STATUS,0,-1,30,0,,,SELF:SPEED:+2
 rest,睡觉,PSYCHIC,STATUS,0,-1,10,0,,
 shadow-punch,暗影拳,GHOST,PHYSICAL,60,-1,20,0,,
 confuse-ray,奇异之光,GHOST,STATUS,0,100,10,0,CONFUSION,100
