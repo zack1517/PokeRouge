@@ -18,8 +18,6 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -271,16 +269,16 @@ public final class StartView {
         Label subLabel = new Label(sub);
         subLabel.getStyleClass().add("menu-sub");
         VBox texts = new VBox(1, title, subLabel);
-        texts.setAlignment(Pos.CENTER_LEFT);
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
+        texts.setAlignment(Pos.CENTER); // 主/副标签两行相互居中
+        texts.setFillWidth(false);      // 较短的副标签不被拉宽，保持居中堆叠
 
         Label caret = new Label(">>>");
         caret.getStyleClass().add("menu-caret");
 
-        HBox content = new HBox(8, iconWrap, texts, spacer, caret);
-        content.setAlignment(Pos.CENTER_LEFT);
+        // 三层叠放：图标靠左、文本块严格居中于按钮、指示符靠右
+        StackPane content = new StackPane(iconWrap, texts, caret);
+        StackPane.setAlignment(iconWrap, Pos.CENTER_LEFT);
+        StackPane.setAlignment(caret, Pos.CENTER_RIGHT);
         content.setMaxWidth(Double.MAX_VALUE);
 
         Button button = new Button();
