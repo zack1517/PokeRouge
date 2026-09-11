@@ -265,7 +265,7 @@ public class BattleView {
     }
 
     /**
-     * 双方同款信息卡：上行 名称/属性徽章/等级，下行 HP 条与数值，再下行异常状态徽章与能力等级徽章
+     * 双方同款信息卡：上行 名称/属性徽章/等级，下行 HP 条与数值，再下行状态徽章与能力等级徽章
      * （无内容时整行隐藏，卡高自动回落）。
      */
     private VBox buildStatCard(Label name, Label type, Label lv,
@@ -297,7 +297,7 @@ public class BattleView {
         return card;
     }
 
-    /** 异常状态徽章样式（橙底深字，与属性徽章区分）。 */
+    /** 状态徽章样式（橙底深字，与属性徽章区分）。 */
     private static String statusChip() {
         return YH + "-fx-background-color: #ffe6c7; -fx-background-radius: 4;"
                 + "-fx-padding: 1 8; -fx-font-size: 12px; -fx-text-fill: #a35200;"
@@ -312,7 +312,8 @@ public class BattleView {
     }
 
     /**
-     * 异常状态徽章文案：倒下 &gt; 主要异常 &gt; 混乱（两者可同时显示，用空格连接）；无异常返回空串。
+     * 状态徽章文案：倒下 &gt; 守住 &gt; 寄生种子 &gt; 主要异常 &gt; 混乱（多项可同时显示，用空格连接）；
+     * 无任何状态返回空串。
      */
     private static String statusBadgeText(Pokemon p) {
         if (p == null) {
@@ -322,16 +323,27 @@ public class BattleView {
             return "已倒下";
         }
         StringBuilder sb = new StringBuilder();
+        if (p.isProtected()) {
+            sb.append("守住");
+        }
+        if (p.isSeeded()) {
+            appendBadgeToken(sb, "寄生种子");
+        }
         if (p.getStatus() != StatusCondition.NONE) {
-            sb.append(p.getStatus().getDisplayName());
+            appendBadgeToken(sb, p.getStatus().getDisplayName());
         }
         if (p.isConfused()) {
-            if (sb.length() > 0) {
-                sb.append(' ');
-            }
-            sb.append(StatusCondition.CONFUSION.getDisplayName());
+            appendBadgeToken(sb, StatusCondition.CONFUSION.getDisplayName());
         }
         return sb.toString();
+    }
+
+    /** 追加一个用空格分隔的徽章词条。 */
+    private static void appendBadgeToken(StringBuilder sb, String token) {
+        if (sb.length() > 0) {
+            sb.append(' ');
+        }
+        sb.append(token);
     }
 
     /**
@@ -356,7 +368,7 @@ public class BattleView {
         return sb.toString();
     }
 
-    /** 把异常状态徽章刷到标签：无异常时隐藏并让出布局空间。 */
+    /** 把状态徽章刷到标签：无任何状态时隐藏并让出布局空间。 */
     private static void applyStatusBadge(Label target, Pokemon p) {
         String text = statusBadgeText(p);
         target.setText(text);
@@ -682,8 +694,9 @@ public class BattleView {
     }
 
     /**
-     * 效果行文案：天气/场地类技能显示开启目标；附带异常状态的技能显示「可能使目标陷入X」
-     * （必定触发时显示「使目标陷入X」）；无效果返回空串（调用方隐藏该行）。
+     * 效果行文案：天气/场地类技能显示开启目标，专属效果（守住/寄生种子/睡觉）显示效果说明；
+     * 附带异常状态的技能显示「可能使目标陷入X」（必定触发时显示「使目标陷入X」）；
+     * 无效果返回空串（调用方隐藏该行）。
      */
     private static String moveEffectText(Move move) {
         String status = inflictionText(move);
@@ -691,14 +704,19 @@ public class BattleView {
         if (effect == MoveEffect.NONE) {
             return status;
         }
-        String fieldText;
-        Weather weather = effect.toWeather();
-        if (weather != null) {
-            fieldText = "效果：开启" + weather.getDisplayName();
-        } else {
-            Terrain terrain = effect.toTerrain();
-            fieldText = terrain != null ? "效果：开启" + terrain.getDisplayName() : "效果：附加";
-        }
+        String fieldText = switch (effect) {
+            case PROTECT -> "效果：本回合挡下对方的一切招式";
+            case LEECH_SEED -> "效果：每回合吸取目标最大 HP 的 1/8";
+            case REST -> "效果：回满 HP 并睡眠 2 回合";
+            default -> {
+                Weather weather = effect.toWeather();
+                if (weather != null) {
+                    yield "效果：开启" + weather.getDisplayName();
+                }
+                Terrain terrain = effect.toTerrain();
+                yield terrain != null ? "效果：开启" + terrain.getDisplayName() : "效果：附加";
+            }
+        };
         return status.isEmpty() ? fieldText : fieldText + "\n" + status;
     }
 

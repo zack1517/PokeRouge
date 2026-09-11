@@ -5,8 +5,8 @@ import java.util.List;
 /**
  * 技能。
  * <p>一个精灵最多携带 4 个技能。技能具有元素属性、类别（物/特）、威力、命中率、PP（使用次数）
- * 与先制度；变化类技能可附带天气/场地效果（{@link MoveEffect}）、按概率施加异常状态
- * （{@link StatusCondition}，见 {@link #getInflicts()}），或增减双方的能力等级
+ * 与先制度；变化类技能可附带天气/场地或专属效果（守住/寄生种子/睡觉，见 {@link MoveEffect}）、
+ * 按概率施加异常状态（{@link StatusCondition}，见 {@link #getInflicts()}），或增减双方的能力等级
  * （{@link StatChange}，见 {@link #getStatChanges()}）。</p>
  */
 public class Move {
@@ -21,7 +21,7 @@ public class Move {
     private final int accuracy;
     /** 最大 PP（使用次数）。 */
     private final int maxPp;
-    /** 先制度：数值越大越先出手；0 为普通技能（当前引擎按速度决定先手，暂未启用）。 */
+    /** 先制度：数值越大越先出手（相同才比较速度）；0 为普通技能。 */
     private final int priority;
     /** 技能附带效果（天气/场地等）；无特殊效果为 {@link MoveEffect#NONE}。 */
     private final MoveEffect effect;
@@ -110,7 +110,7 @@ public class Move {
         return maxPp;
     }
 
-    /** 先制度：数值越大越先出手；0 为普通技能。 */
+    /** 先制度：数值越大越先出手（相同才回退速度判定）；0 为普通技能。 */
     public int getPriority() {
         return priority;
     }

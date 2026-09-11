@@ -42,6 +42,8 @@ public enum StatusCondition {
     /** 睡眠持续回合数范围（含两端）。 */
     public static final int SLEEP_MIN_TURNS = 2;
     public static final int SLEEP_MAX_TURNS = 5;
+    /** 「睡觉」招式造成的固定睡眠回合数。 */
+    public static final int REST_SLEEP_TURNS = 2;
     /** 混乱持续回合数范围（含两端）。 */
     public static final int CONFUSION_MIN_TURNS = 2;
     public static final int CONFUSION_MAX_TURNS = 5;

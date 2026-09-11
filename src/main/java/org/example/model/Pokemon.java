@@ -59,6 +59,14 @@ public class Pokemon {
      * {@link #restore} 恢复的个体一律从中立等级开始。</p>
      */
     private final Map<Stat, Integer> statStages = new EnumMap<>(Stat.class);
+    /**
+     * 本回合是否受「守住」保护（挥发性：回合结束或离场即失效）。
+     */
+    private boolean protectedThisTurn;
+    /** 连续使用「守住」的次数（改用其他招式即归零），决定成功率递减幅度。 */
+    private int protectStreak;
+    /** 是否被「寄生种子」寄生（挥发性：离场即清除）。 */
+    private boolean seeded;
 
     private Pokemon(Species species, int level, Stats stats, Stats ivs, int maxHp, List<MoveSlot> slots) {
         this.uuid = UUID.randomUUID().toString();
@@ -373,6 +381,47 @@ public class Pokemon {
         statStages.clear();
     }
 
+    /** 本回合是否受「守住」保护（挥发性：回合结束或离场即失效）。 */
+    public boolean isProtected() {
+        return protectedThisTurn;
+    }
+
+    /** 设置本回合的「守住」保护（回合末由战斗引擎统一清除）。 */
+    public void setProtected(boolean value) {
+        protectedThisTurn = value;
+    }
+
+    /** 连续使用「守住」的次数（改用其他招式或离场即归零）。 */
+    public int getProtectStreak() {
+        return protectStreak;
+    }
+
+    /** 记录连续使用「守住」的次数（负数视为 0）。 */
+    public void setProtectStreak(int streak) {
+        protectStreak = Math.max(0, streak);
+    }
+
+    /** 是否被「寄生种子」寄生（挥发性：离场即清除）。 */
+    public boolean isSeeded() {
+        return seeded;
+    }
+
+    /** 设置寄生种子状态。 */
+    public void setSeeded(boolean value) {
+        seeded = value;
+    }
+
+    /**
+     * 清除全部<b>挥发性</b>战斗状态：能力等级、守住保护与连续次数、寄生种子。
+     * <p>离场（换宠、倒下）与战斗开始时调用；这些状态不写入存档。</p>
+     */
+    public void clearVolatileState() {
+        clearStatStages();
+        protectedThisTurn = false;
+        protectStreak = 0;
+        seeded = false;
+    }
+
     public String getName() {
         return species.getName();
     }
@@ -464,21 +513,21 @@ public class Pokemon {
         return real;
     }
 
-    /** 完全恢复：HP 回满、补满全部技能 PP，并清除异常状态、混乱与能力等级。 */
+    /** 完全恢复：HP 回满、补满全部技能 PP，并清除异常状态、混乱、能力等级与寄生种子。 */
     public void fullRestore() {
         currentHp = maxHp;
         for (MoveSlot slot : moveSlots) {
             slot.restore(slot.getMove().getMaxPp());
         }
         clearAllStatus();
-        clearStatStages();
+        clearVolatileState();
     }
 
-    /** 契约补充：仅回满 HP 并清除异常状态（§2.11 fullHeal；混乱与能力等级一并清除）。 */
+    /** 契约补充：仅回满 HP 并清除异常状态（§2.11 fullHeal；混乱、能力等级与寄生种子一并清除）。 */
     public void fullHeal() {
         currentHp = maxHp;
         clearAllStatus();
-        clearStatStages();
+        clearVolatileState();
     }
 
     /** 是否满足进化条件（定义了进化目标且达到等级）。 */
