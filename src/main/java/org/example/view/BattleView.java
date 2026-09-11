@@ -111,8 +111,8 @@ public class BattleView {
     /** 单个立绘区域：宽 40%（左侧 0-40% / 右侧 60-100%）、高为主背景区的 35%。 */
     private static final double SPRITE_AREA_W = 640 * 0.40;
     private static final double SPRITE_AREA_H = STAGE_HEIGHT * 0.35;
-    /** 立绘贴图适配尺寸（正方形素材等比缩放，清晰可见又不喧宾夺主）。 */
-    private static final double SPRITE_SIZE = 84;
+    /** 立绘贴图适配尺寸（正方形素材等比缩放；2026-09-11 起由 84 放大一倍 → 168）。 */
+    private static final double SPRITE_SIZE = 168;
     /** 待机浮动：上下 4 设计单位、单程 1.8s 往返循环（敌我相位错开）。 */
     private static final double SPRITE_FLOAT_AMPLITUDE = 4;
     private static final int MS_SPRITE_FLOAT = 1800;
@@ -243,8 +243,10 @@ public class BattleView {
     }
 
     /**
-     * 立绘层：按主背景区（上方 2/3）定位两个立绘区域 —— 敌方右上角（宽 60-100%、顶部 0-35%）、
-     * 我方左下角（宽 0-40%、底部往上 0-35%）；区域容器负责定位与居中，并挂上下浮动待机动画。
+     * 立绘层：按主背景区（上方 2/3）定位两个立绘区域 —— 敌方右上角（宽 60-100%）、
+     * 我方左下角（宽 0-40%）；区域容器负责定位与居中，并挂上下浮动待机动画。
+     * 立绘放大一倍（84→168）后整体下调：敌区自顶部下移 42（上缘留 ≈8 防超顶）、
+     * 我区在原 0-35% 位置基础上再下移 6（脚底轻触底栏顶，仍完整留在主背景区内）。
      * 进出场/受击等演出动画作用在内层立绘底座（{@link #spriteBoxOf}）上，与区域浮动互不干扰。
      */
     private Pane buildSpriteLayer() {
@@ -253,8 +255,8 @@ public class BattleView {
         enemySpriteBox = spritePane(enemySprite, enemySpriteFallback);
         playerSpriteBox = spritePane(playerSprite, playerSpriteFallback);
         layer.getChildren().addAll(
-                spriteArea(enemySpriteBox, 640 * 0.60, 0, false),
-                spriteArea(playerSpriteBox, 0, STAGE_HEIGHT - SPRITE_AREA_H, true));
+                spriteArea(enemySpriteBox, 640 * 0.60, 42, false),
+                spriteArea(playerSpriteBox, 0, STAGE_HEIGHT - SPRITE_AREA_H + 6, true));
         return layer;
     }
 
