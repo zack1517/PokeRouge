@@ -157,6 +157,20 @@ class PokemonBattleAdapterTest {
         assertEquals(31, ivs.getSpeed());
     }
 
+    /** 种族经验值 baseExp 必须随种族一起跨系统转换，否则经验折算会退化。 */
+    @Test
+    void testToBattleSpecies_carriesBaseExpYield() {
+        Species species = service.getInitialPool().get(0);
+        org.example.pokemon.domain.Pokemon starter = service.createPokemon(species.getId(), 5);
+
+        Player player = PokemonBattleAdapter.createBattlePlayer("测试玩家", starter);
+
+        assertTrue(species.getBaseExpYield() > 0, "新体系种族数据应提供种族经验值");
+        assertEquals(species.getBaseExpYield(),
+                player.getActive().getSpecies().getBaseExpYield(),
+                "战斗模型种族应带上原种族的经验值，经验折算才与种族挂钩");
+    }
+
     /** 战斗侧技能应能在新系统数据中回查，且关键字段与源数据一致。 */
     private void assertMovesAreValid(Pokemon battlePokemon) {        assertTrue(battlePokemon.getMoves().size() <= Pokemon.MAX_MOVES,
                 "战斗侧技能数不应超过 " + Pokemon.MAX_MOVES);

@@ -128,12 +128,14 @@ public class BattleController implements BattleView.Actions {
         view.refreshPokemon(engine.playerActive(), engine.foeActive());
         view.refreshFieldStatus(engine.getWeather(), engine.getTerrain());
         view.showLog(engine.getLog());
+        if (!engine.pendingLearnChoices().isEmpty()) {
+            // 升级在击倒当回合即时发生，故「技能栏已满」的抉择可能在战斗进行中就出现：
+            // 先让玩家处理完再回到战斗菜单（未处理完就继续行动会积压多项抉择）。
+            showLearnMenu();
+            return;
+        }
         if (!engine.isOngoing()) {
-            if (!engine.pendingLearnChoices().isEmpty()) {
-                showLearnMenu(); // 获胜后还有待玩家抉择的学招，先处理完再展示结局
-            } else {
-                view.showResult(resultText());
-            }
+            view.showResult(resultText());
             return;
         }
         view.showMainMenu(this::showMoveMenu, this::showBagMenu, this::showPartyMenu);

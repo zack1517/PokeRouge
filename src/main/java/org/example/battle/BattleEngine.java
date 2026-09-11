@@ -778,15 +778,18 @@ public class BattleEngine implements BattleService {
                 // 野生战斗：野生精灵倒下即获胜
                 status = Status.PLAYER_WIN;
                 append("野生的 " + foe.getName() + " 倒下了！你赢了！");
-                settleGrowth();
+                settleGrowth(foe);
+                reportBattleWon();
                 return;
             }
-            // 训练师轮战：出战精灵倒下后自动派出下一只健康的；没有了 → 玩家获胜
+            // 训练师轮战：每只倒下的对手都即时结算一次经验（不等整场结束）
+            settleGrowth(foe);
+            // 出战精灵倒下后自动派出下一只健康的；没有了 → 玩家获胜
             Pokemon next = trainer.switchToNextHealthy();
             if (next == null) {
                 status = Status.PLAYER_WIN;
                 append("训练师 " + trainer.getName() + " 的所有精灵都倒下了！你赢了！");
-                settleGrowth();
+                reportBattleWon();
                 return;
             }
             append(trainer.getName() + " 派出了 " + next.getName() + "！");
@@ -915,28 +918,40 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 胜利结算：把「参战且未倒下的己方精灵」与「被击败的对手」交给外部成长模块判定
-     * 经验增加、升级、学招与进化（见 {@link BattleGrowthPort}）。
+     * 击倒一只对手后的<b>即时</b>成长结算：把「参战且未倒下的己方精灵」与「刚被击败的那只对手」
+     * 交给外部成长模块判定经验增加、升级、学招与进化（见 {@link BattleGrowthPort}）。
      *
-     * <p>本引擎不自行计算经验、不判定升级 / 学招 / 进化：成长模块返回的日志文本行原样追加，
-     * 返回的「技能栏已满」挂起学招项进入待抉择队列。未注入成长端口时本方法无任何副作用。</p>
+     * <p>每击倒一只对手调用一次，因此训练师轮战中倒下的每一只都会单独结算经验（打输也不会回收
+     * 已经拿到的经验）。本引擎不自行计算经验、不判定升级 / 学招 / 进化：成长模块返回的日志文本行
+     * 原样追加，返回的「技能栏已满」挂起学招项进入待抉择队列。未注入成长端口时本方法无副作用。</p>
+     *
+     * @param defeated 刚被击败的对手（野生精灵或训练师队伍中倒下的一只）
      */
-    private void settleGrowth() {
-        if (status != Status.PLAYER_WIN) {
+    private void settleGrowth(Pokemon defeated) {
+        if (defeated == null) {
             return;
         }
+        BattleGrowthPort.Settlement settlement = growthPort.settle(survivors(), List.of(defeated));
+        for (String line : settlement.log()) {
+            append(line);
+        }
+        pendingLearns.addAll(settlement.pendingLearns());
+    }
+
+    /** 参战且未倒下的己方精灵（经验与图鉴申报的接收者）。 */
+    private List<Pokemon> survivors() {
         List<Pokemon> survivors = new ArrayList<>();
         for (Pokemon p : player.getParty()) {
             if (!p.isFainted()) {
                 survivors.add(p);
             }
         }
-        List<Pokemon> defeated = trainer == null ? List.of(wild) : List.copyOf(trainer.getParty());
-        BattleGrowthPort.Settlement settlement = growthPort.settle(survivors, defeated);
-        for (String line : settlement.log()) {
-            append(line);
-        }
-        pendingLearns.addAll(settlement.pendingLearns());
+        return survivors;
+    }
+
+    /** 玩家获胜申报：图鉴「对战次数」按场次累计，故整场战斗只申报一次。 */
+    private void reportBattleWon() {
+        growthPort.onBattleWon(survivors());
     }
 
     // ------------------------------------------------------------------
