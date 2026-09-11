@@ -60,9 +60,47 @@ public class RogueTurnManager {
             return;
         }
         resolveOptionEffect(chosen);
-        if (runData.getCurrentPoints() <= 0) {
+        if (isPointsExhausted()) {
             triggerBossFight();
         }
+    }
+
+    /**
+     * 剩余点数是否已无法继续消费：点数归零，或剩余可选事件都买不起。
+     *
+     * <p>起始点数（{@code 8 + 层号 * 3 + 0~4}）与事件消耗不保证整除：本层若没刷出 1 点的
+     * 「野怪遭遇」，可反复选择的只剩 3 点的「训练家挑战」，点数会停在 1 或 2 点——既买不起
+     * 任何事件，也永远走不到「点数归零」。故把「买不起任何事件」与「点数归零」一并视为
+     * 本层事件阶段结束，否则玩家会卡死在楼层页。</p>
+     */
+    public boolean isPointsExhausted() {
+        return runData.getCurrentPoints() <= 0 || !hasAffordableOption();
+    }
+
+    /** 是否还存在「可选中且当前点数买得起」的事件（0 成本的隐藏事件不计）。 */
+    public boolean hasAffordableOption() {
+        List<Option> options = runData.getAvailableOptions();
+        if (options == null) {
+            return false;
+        }
+        for (Option option : options) {
+            if (isSelectable(option) && option.getCost() <= runData.getCurrentPoints()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 事件是否可被玩家选中：非空、非隐藏事件，且属于本层可选列表或本层 BOSS。 */
+    private boolean isSelectable(Option option) {
+        if (option == null || option.isHiddenEvent()) {
+            return false;
+        }
+        if (runData.getBossOption() != null && option == runData.getBossOption()) {
+            return true;
+        }
+        List<Option> options = runData.getAvailableOptions();
+        return options != null && options.contains(option);
     }
 
     /**
@@ -75,7 +113,7 @@ public class RogueTurnManager {
         if (chosen == null) {
             return false;
         }
-        if ("隐藏事件".equals(chosen.getName())) {
+        if (chosen.isHiddenEvent()) {
             System.out.println("此处已被掩盖，无法再次选择。");
             return false;
         }
@@ -87,7 +125,6 @@ public class RogueTurnManager {
                 return false;
             }
         }
-
         int nextPoints = runData.getCurrentPoints() - chosen.getCost();
         if (nextPoints < 0) {
             System.out.println("点数不足，无法选择：" + chosen.getName());
@@ -115,9 +152,8 @@ public class RogueTurnManager {
 
     private Option createMysteryReplacement() {
         OptionType replacementType = random.nextBoolean() ? OptionType.RANDOM : OptionType.HOSPITAL;
-        String title = "隐藏事件";
         String detail = "新的神秘事件正在暗中生成……继续探索吧。";
-        return new Option(title, replacementType, 0, detail);
+        return new Option(Option.HIDDEN_EVENT_NAME, replacementType, 0, detail);
     }
 
     /** 执行选项的事件效果结算（WILD/ENEMY 为战斗模拟；HOSPITAL/RANDOM 为直接效果）。 */
@@ -190,6 +226,7 @@ public class RogueTurnManager {
     }
 
     public void triggerBossFight() {
+        runData.setCurrentPoints(0); // 买不起任何事件时也归零：本层事件阶段到此结束
         System.out.println("⚔️ 点数耗尽！强制进入第 " + runData.getCurrentFloor() + " 层 BOSS 战！");
         if (runData.getBossOption() == null) {
             System.out.println("当前层没有 BOSS 配置，直接进入下一层。");

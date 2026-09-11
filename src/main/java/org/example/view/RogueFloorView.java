@@ -46,9 +46,12 @@ public class RogueFloorView {
                 + " -fx-padding: 8 14 10 14;");
         root.getChildren().add(header);
 
-        if (data.getCurrentPoints() <= 0) {
-            Label bossHint = new Label("点数耗尽，BOSS 战正在自动展开！其余事件已被隐藏。");
+        if (session.isRoguePointsExhausted()) {
+            Label bossHint = new Label(data.getCurrentPoints() <= 0
+                    ? "点数耗尽，BOSS 战正在自动展开！其余事件已被隐藏。"
+                    : "剩余点数已买不起任何事件，本层 BOSS 战即将展开！");
             bossHint.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-font-family: 'Microsoft YaHei'; -fx-text-fill: #8b3a00;");
+            bossHint.setWrapText(true);
             root.getChildren().addAll(bossHint, buildBackButton());
             return UiScale.scene(root);
         }
@@ -62,7 +65,7 @@ public class RogueFloorView {
 
         VBox optionsBox = new VBox(12);
         for (Option option : data.getAvailableOptions()) {
-            if ("隐藏事件".equals(option.getName())) {
+            if (option.isHiddenEvent()) {
                 Label hidden = new Label("隐藏事件：已被揭晓，等待新的暗面...");
                 hidden.setWrapText(true);
                 hidden.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 12px; -fx-text-fill: #666;");

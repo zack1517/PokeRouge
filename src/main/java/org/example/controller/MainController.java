@@ -39,7 +39,8 @@ import java.util.Optional;
  * 主视图以反映最新状态。</p>
  *
  * <p>肉鸽流程：主菜单「进入层内事件」→ 楼层选项页（点数/事件）→ WILD/ENEMY 走真实战斗、
- * HOSPITAL/RANDOM 当场结算 → 点数耗尽与楼层 BOSS 决战 → 胜利推进下一层（地图段号同步）。</p>
+ * HOSPITAL/RANDOM 当场结算 → 点数耗尽（或剩余点数已买不起任何事件）与楼层 BOSS 决战 →
+ * 胜利推进下一层（地图段号同步）。</p>
  */
 public class MainController {
 
@@ -193,7 +194,7 @@ public class MainController {
     // 肉鸽楼层流程：「进入层内事件」入口 ⇄ 真实战斗 ⇄ BOSS
     // ------------------------------------------------------------------
 
-    /** 进入肉鸽楼层事件：无进行中的一轮则新开，有则继续当前进度。 */
+    /** 进入肉鸽楼层事件：无进行中的一轮则新开，有则继续当前进度（点数已无法消费则直接进 BOSS）。 */
     public void startRogueFloor() {
         if (session == null || player == null) {
             return;
@@ -203,11 +204,16 @@ public class MainController {
             return;
         }
         RunData data = session.getRogueRunData();
-        boolean inProgress = data.getCurrentFloor() > 0 && !data.isGameOver() && data.getCurrentPoints() > 0;
+        boolean inProgress = data.getCurrentFloor() > 0 && !data.isGameOver();
         if (!inProgress) {
             session.startRogueRun(); // 新开一轮：从第 1 层起，队伍快照进 RogueTurnManager
-        } else {
-            session.syncRogueTeam(); // 继续当前轮：把中途新入队的精灵同步进快照
+            showRogueFloorScene();
+            return;
+        }
+        session.syncRogueTeam(); // 继续当前轮：把中途新入队的精灵同步进快照
+        if (session.isRoguePointsExhausted()) {
+            startRogueBossBattle(); // 剩余点数已无法消费：直接进入 BOSS，避免卡在楼层页
+            return;
         }
         showRogueFloorScene();
     }
@@ -226,7 +232,11 @@ public class MainController {
             return;
         }
         if (!session.consumeRogueOption(option)) {
-            showRogueFloorScene(); // 隐藏事件 / 点数不足：重绘提示
+            if (session.isRoguePointsExhausted()) {
+                afterRogueStep(); // 已买不起任何事件：直接推进到本层 BOSS
+                return;
+            }
+            showRogueFloorScene(); // 隐藏事件：重绘提示
             return;
         }
         switch (option.getType()) {
@@ -259,15 +269,15 @@ public class MainController {
                 + "\n可在主菜单点击精灵名，在详情页中穿戴。");
     }
 
-    /** 一次楼层事件（含战斗）结束后的统一推进：已结束→主菜单；点数耗尽→BOSS；否则重绘。 */
+    /** 一次楼层事件（含战斗）结束后的统一推进：已结束→主菜单；点数耗尽/买不起任何事件→BOSS；否则重绘。 */
     private void afterRogueStep() {
         if (session.isRogueRunFinished()) {
             infoAlert("本轮结束", "队伍倒下了……肉鸽远征到此为止。");
             showMainMenu();
             return;
         }
-        if (session.getRogueRunData().getCurrentPoints() <= 0) {
-            startRogueBossBattle(); // 点数耗尽：真实 BOSS 战
+        if (session.isRoguePointsExhausted()) {
+            startRogueBossBattle(); // 点数耗尽或已买不起任何事件：真实 BOSS 战
             return;
         }
         showRogueFloorScene();
@@ -351,12 +361,13 @@ public class MainController {
         }
     }
 
-    /** 点数耗尽：与同层 BOSS 展开真实决斗；胜利推进下一层+下一段，战败/逃跑结束本轮。 */
+    /** 点数耗尽（或剩余点数已买不起任何事件）：与同层 BOSS 展开真实决斗；胜利推进下一层+下一段，战败/逃跑结束本轮。 */
     private void startRogueBossBattle() {
         if (!ensureRogueBattleReady()) {
             return;
         }
         RunData data = session.getRogueRunData();
+        data.setCurrentPoints(0); // 剩余点数无法再消费：归零，避免回到楼层页时反复进入 BOSS
         int bossLevel = Math.max(5, session.getActive().getLevel() + 4 + data.getCurrentFloor() * 2);
         Optional<Pokemon> boss = PokemonBattleAdapter.createWildPokemon(bossLevel);
         if (boss.isEmpty()) {

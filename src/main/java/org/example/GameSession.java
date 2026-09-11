@@ -178,6 +178,16 @@ public class GameSession {
         return rogueTurnManager.getRunData();
     }
 
+    /**
+     * 肉鸽剩余点数是否已无法继续消费：点数归零，或剩余可选事件都买不起。
+     *
+     * <p>起始点数与事件消耗不保证整除，剩余点数可能买不起任何事件；此时应直接进入本层
+     * BOSS，否则玩家会卡在楼层页（既点不动事件，也走不到「点数耗尽」）。</p>
+     */
+    public boolean isRoguePointsExhausted() {
+        return rogueTurnManager.isPointsExhausted();
+    }
+
     /** 当前可选的肉鸽事件列表。 */
     public List<Option> getRogueOptions() {
         return rogueTurnManager.getAvailableOptions();
