@@ -20,8 +20,9 @@ import java.util.stream.Collectors;
  * 战斗控制器：桥接 {@link BattleView} 与 {@link BattleService}。
  *
  * <p>流程：刷新精灵面板与日志 → 展示主菜单（技能/背包/精灵/逃跑）→ 引擎结算 → 依据状态
- * 继续或展示结局。战斗中精灵倒下会被引擎自动切换，玩家也可在行动回合主动切换，每次渲染都
- * 重新读取当前出战精灵。</p>
+ * 继续或展示结局。己方出战精灵倒下而队伍仍有健康精灵时，引擎会挂起等待补位
+ * （{@link BattleService#isAwaitingReplacement()}），此时界面强制展示队伍选择面板，玩家选出
+ * 下一只上场精灵后战斗继续；行动回合中玩家也可主动切换，每次渲染都重新读取当前出战精灵。</p>
  *
  * <p>敌方面板统一取 {@link BattleService#foeActive()}：野生遭遇为野生精灵，训练师轮战为训练师
  * 当前出战精灵（{@link BattleService#getWild()} 为 {@code null}），因此训练师换宠后界面会自动
@@ -132,6 +133,16 @@ public class BattleController implements BattleView.Actions {
         playEventsThenRender();
     }
 
+    /** 补位选择（己方出战精灵倒下后强制弹出）：选出下一只上场精灵，不消耗回合。 */
+    @Override
+    public void onReplacementSelected(int partyIndex) {
+        if (playing) {
+            return;
+        }
+        engine.chooseReplacement(partyIndex);
+        playEventsThenRender();
+    }
+
     @Override
     public void onRun() {
         if (playing) {
@@ -153,9 +164,11 @@ public class BattleController implements BattleView.Actions {
     /**
      * 播放上一条行动结算产生的演出事件，全部播完后 {@link #render()}。
      *
-     * <p>日志与天气/场地行在动画<b>开始前</b>刷新，让本回合文本与演出同步可见；精灵立绘、HP 条等
-     * 改由演出结束后的 {@code render()} 统一刷新 —— 这样「伤害数字/HP 条在受击后才变化」，
-     * 且倒下与放出动画不会因为引擎已自动换宠而作用到新精灵身上（事件自带精灵名，动画按名切图）。</p>
+     * <p>日志与天气/场地行在动画<b>开始前</b>刷新，让本回合文本与演出同步可见。事件本身按「一方动作 →
+     * 另一方受击 → 另一方的动作 → 这边受击」的顺序投递（见 {@code BattleEventTest}），界面在播放每一步
+     * 动画前先按事件携带的 HP 快照刷新对应血条（{@code BattleView.applyEventHp}），因此血量按先后手
+     * 逐段结算、不会等双方都演完才变化。精灵名、等级、异常状态等仍在演出结束后的 {@code render()}
+     * 统一刷新，保证倒下与放出动画不会因为引擎已自动换宠而作用到新精灵身上（事件自带精灵名，动画按名切图）。</p>
      */
     private void playEventsThenRender() {
         List<BattleEvent> events = engine.drainEvents();
@@ -197,6 +210,10 @@ public class BattleController implements BattleView.Actions {
             }
             return;
         }
+        if (engine.isAwaitingReplacement()) {
+            showReplacementMenu(); // 出战精灵倒下：必须选出替补才能继续
+            return;
+        }
         view.showMainMenu(this::showMoveMenu, this::showBagMenu, this::showPartyMenu);
     }
 
@@ -219,6 +236,13 @@ public class BattleController implements BattleView.Actions {
                     render();
                 },
                 "队伍已满！" + captured.getName() + " 需要入队，请选择一只精灵放生（携带的装备会返还装备库），或点「放弃捕捉」。");
+    }
+
+    /** 补位面板：列出玩家队伍，选出下一只上场精灵（倒下的精灵灰显不可点，不可返回主菜单）。 */
+    private void showReplacementMenu() {
+        List<Pokemon> party = engine.getPlayer().getParty();
+        int activeIndex = party.indexOf(engine.playerActive());
+        view.showReplacementMenu(party, activeIndex, this::onReplacementSelected);
     }
 
     /** 展示队首一项「技能满、想学新招」的抉择菜单。 */

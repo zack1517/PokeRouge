@@ -162,7 +162,7 @@ class BattleEngineTrainerTest {
     // ------------------------------------------------------------------
 
     @Test
-    void 己方单只倒下时自动换宠且战斗继续() {
+    void 己方单只倒下时挂起等待玩家选择替补() {
         Pokemon first = weak("mine_a", 20);
         Pokemon second = weak("mine_b", 20);
         Player player = playerWith(first, second);
@@ -174,8 +174,15 @@ class BattleEngineTrainerTest {
         assertEquals(BattleService.Status.ONGOING, battle.getStatus(), "队伍仍有健康精灵时不应战败");
         assertTrue(first.isFainted());
         assertFalse(second.isFainted());
+        assertTrue(battle.isAwaitingReplacement(), "倒下后应等待玩家选择替补，而不是自动换宠");
+        assertEquals(first, battle.playerActive(), "未选择前出战精灵不下场");
+
+        List<String> logs = battle.chooseReplacement(1);
+
+        assertFalse(battle.isAwaitingReplacement(), "选完替补后应恢复行动");
         assertEquals(second, player.getActive());
         assertEquals(second, battle.playerActive());
+        assertTrue(logs.stream().anyMatch(line -> line.contains("派出了")), "应有派出提示: " + logs);
     }
 
     @Test
@@ -186,10 +193,12 @@ class BattleEngineTrainerTest {
         Trainer trainer = trainerWith("强敌", strong("boss", 20));
         BattleService battle = BattleServices.newTrainerBattle(player, trainer);
 
-        battle.useMove(player.getActive().getMoveSlots().get(0)); // 己方首只倒下，自动换成第二只
+        battle.useMove(player.getActive().getMoveSlots().get(0)); // 己方首只倒下，等待玩家补位
+        battle.chooseReplacement(1);                              // 玩家选出第二只
         battle.useMove(player.getActive().getMoveSlots().get(0)); // 第二只（最后一只）倒下
 
         assertEquals(BattleService.Status.PLAYER_LOSE, battle.getStatus());
+        assertFalse(battle.isAwaitingReplacement(), "没有健康精灵时直接判负，不应等待补位");
         assertTrue(player.isPartyAllFainted());
         assertFalse(trainer.getActive().isFainted(), "对方仍有存活精灵，应是战败而非获胜");
     }
@@ -312,7 +321,8 @@ class BattleEngineTrainerTest {
         assertEquals(1, growth.defeated.size(), "击倒即申报，不需要等到整场结束");
         assertEquals(trainer.getParty().get(0), growth.defeated.get(0));
 
-        battle.useMove(player.getActive().getMoveSlots().get(0)); // 对方强敌先手击败己方首只
+        battle.useMove(player.getActive().getMoveSlots().get(0)); // 对方强敌先手击败己方首只（v1.14 起挂起等待补位）
+        battle.chooseReplacement(1);                              // 玩家选出第二只（补位不消耗回合）
         battle.useMove(player.getActive().getMoveSlots().get(0)); // 己方最后一只倒下 → 战败
 
         assertEquals(BattleService.Status.PLAYER_LOSE, battle.getStatus());
