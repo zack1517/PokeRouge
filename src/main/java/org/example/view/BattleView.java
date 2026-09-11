@@ -60,10 +60,11 @@ import java.util.function.IntPredicate;
 /**
  * 战斗场景布局（纯界面，无业务逻辑）。
  *
- * <p>2026-09-09 视觉改版：上中下三段横向区域 ——
- * 上：敌信息卡(左上) + 敌立绘占位(卡右侧) + 阶段/金币块(右上角)；
- * 中：中央透出背景图，右下角 [己方立绘占位 + 己方信息卡]（绘左、卡右，与敌区镜像）；
- * 下：大横面板（约界面高度 1/3），左=战斗日志，右=行动区（主菜单 2×2 网格，子菜单同区切换）；
+ * <p>2026-09-11 视觉改版：上 2/3 主背景区 + 下 1/3 信息区 ——
+ * 主背景区（上方 2/3）：中央透出背景图，双方立绘为透明贴图直接悬于背景之上、带上下浮动待机动画 ——
+ * 我方立绘位于左下角（宽 0-40%、底部往上 0-35% 区域），敌方立绘位于右上角（宽 60-100%、顶部 0-35% 区域）；
+ * 左上：敌信息卡 + 阶段/金币块（敌卡下方）；右下：己方信息卡（与敌卡同款同尺寸）；
+ * 下 1/3：大横面板（约界面高度 1/3，左右结构与原版一致），左=战斗日志，右=行动区（主菜单 2×2 网格，子菜单同区切换）；
  * 「战斗」→ 技能面板时：左块整组换成 [状态行+2×2 技能格]，右块换成技能信息卡（名称/属性/分类/威力/命中/PP，
  * 悬停技能格实时联动右块）。
  * 双方信息卡同款同尺寸（名称/属性/等级 + HP 条，EXP 行随「卡样式一致」要求移除，待确认后另寻展示位）；
@@ -103,6 +104,18 @@ public class BattleView {
     private final ImageView enemySprite = new ImageView();
     private final Label playerSpriteFallback = new Label();
     private final Label enemySpriteFallback = new Label();
+
+    // ---- 主背景区（上方 2/3）与立绘区域（按 640×426.67 设计画布计算）----
+    /** 主背景区高度（界面高 2/3）：426.67 → 284.45。 */
+    private static final double STAGE_HEIGHT = 426.67 * 2 / 3;
+    /** 单个立绘区域：宽 40%（左侧 0-40% / 右侧 60-100%）、高为主背景区的 35%。 */
+    private static final double SPRITE_AREA_W = 640 * 0.40;
+    private static final double SPRITE_AREA_H = STAGE_HEIGHT * 0.35;
+    /** 立绘贴图适配尺寸（正方形素材等比缩放，清晰可见又不喧宾夺主）。 */
+    private static final double SPRITE_SIZE = 84;
+    /** 待机浮动：上下 4 设计单位、单程 1.8s 往返循环（敌我相位错开）。 */
+    private static final double SPRITE_FLOAT_AMPLITUDE = 4;
+    private static final int MS_SPRITE_FLOAT = 1800;
     /**
      * 演出层：与内容根同尺寸叠放（见 {@link #createScene()}）、不拦截鼠标，承载飞行道具、光点、
      * 闪光环等临时特效节点。动画一律以<b>设计单位</b>书写（整场景由 {@link UiScale} 统一缩放），
@@ -189,28 +202,26 @@ public class BattleView {
         root.setTop(buildTop());
         root.setCenter(buildCenter());
         root.setBottom(buildBottom());
+        // 立绘层：在主背景区（上方 2/3）内绝对定位双方立绘（我方左下、敌方右上），叠在内容根之上、演出层之下。
+        Pane spriteLayer = buildSpriteLayer();
         // 演出层与内容根同尺寸叠放（StackPane 自动拉伸）：铺满整个设计区、不拦截鼠标，
         // 飞行道具/闪光等临时特效节点挂在此层，坐标经 sceneToLocal 换算，不受 UiScale 缩放影响。
         effectLayer.setMouseTransparent(true);
         effectLayer.setPickOnBounds(false);
-        return UiScale.scene(new StackPane(root, effectLayer));
+        return UiScale.scene(new StackPane(root, spriteLayer, effectLayer));
     }
 
     // ------------------------------------------------------------------
     // 构建
     // ------------------------------------------------------------------
 
-    /** 上部区域：敌信息卡(左) + 敌立绘占位 + 右上角阶段/金币信息块。 */
+    /** 上部区域：敌信息卡 + 阶段/金币块（左上堆叠；敌立绘已移至主背景区右上角，见 {@link #buildSpriteLayer()}）。 */
     private Parent buildTop() {
-        HBox top = new HBox(10);
+        VBox topLeft = new VBox(4, buildEnemyCard(), buildHud());
+        topLeft.setAlignment(Pos.TOP_LEFT);
+        HBox top = new HBox(10, topLeft, spacer());
         top.setPadding(new Insets(0, 0, 6, 0));
-        top.setAlignment(Pos.TOP_LEFT); // 子块贴顶排列，右上角信息随之上移贴近角部
-        enemySpriteBox = spritePane(enemySprite, enemySpriteFallback, "rgba(196, 66, 66, 0.30)");
-        top.getChildren().addAll(
-                buildEnemyCard(),
-                enemySpriteBox,
-                spacer(),
-                buildHud());
+        top.setAlignment(Pos.TOP_LEFT); // 子块贴顶排列
         return top;
     }
 
@@ -219,24 +230,54 @@ public class BattleView {
         return buildStatCard(wildName, wildType, wildLv, wildHpBar, wildHpText, wildStatus);
     }
 
-    /** 中部区域：中央留空展示背景；右下角 [己方立绘 + 己方信息卡]（立绘在信息卡左侧，与敌区镜像）。 */
+    /** 中部区域：中央留空展示主背景（立绘悬浮其上，见 {@link #buildSpriteLayer()}）；右下角己方信息卡。 */
     private Parent buildCenter() {
         VBox card = buildStatCard(playerName, playerType, playerLv, playerHpBar, playerHpText, playerStatus);
-        StackPane sprite = spritePane(playerSprite, playerSpriteFallback, "rgba(66, 110, 196, 0.30)");
-        playerSpriteBox = sprite;
-        HBox group = new HBox(8, sprite, card);
-        group.setAlignment(Pos.CENTER_LEFT);
-        // 关键：center 是 StackPane，默认会把整组拉高到与中部区域同高、拉宽到同宽，导致信息卡过高且立绘落到页面最左侧；
-        // 宽高都限定为内容自然尺寸（高=立绘 80；宽=立绘+卡+间距），再以 BOTTOM_RIGHT 归位到右下，fillHeight 使信息卡与敌卡同高。
-        group.setMaxHeight(Region.USE_PREF_SIZE);
-        group.setMaxWidth(Region.USE_PREF_SIZE);
-        StackPane center = new StackPane(group);
-        StackPane.setAlignment(group, Pos.BOTTOM_RIGHT);
-        StackPane.setMargin(group, new Insets(0, 6, 8, 0));
+        // 关键：center 是 StackPane，默认会把卡片拉高到与中部区域同高；宽高都限定为内容自然尺寸，再以 BOTTOM_RIGHT 归位到右下。
+        card.setMaxHeight(Region.USE_PREF_SIZE);
+        card.setMaxWidth(Region.USE_PREF_SIZE);
+        StackPane center = new StackPane(card);
+        StackPane.setAlignment(card, Pos.BOTTOM_RIGHT);
+        StackPane.setMargin(card, new Insets(0, 6, 8, 0));
         return center;
     }
 
-    /** 底部区域：大横面板（半透明白，约界面高 1/4 ≈ 120）—— 左：场况行 + 日志；右：行动区。 */
+    /**
+     * 立绘层：按主背景区（上方 2/3）定位两个立绘区域 —— 敌方右上角（宽 60-100%、顶部 0-35%）、
+     * 我方左下角（宽 0-40%、底部往上 0-35%）；区域容器负责定位与居中，并挂上下浮动待机动画。
+     * 进出场/受击等演出动画作用在内层立绘底座（{@link #spriteBoxOf}）上，与区域浮动互不干扰。
+     */
+    private Pane buildSpriteLayer() {
+        Pane layer = new Pane();
+        layer.setMouseTransparent(true);
+        enemySpriteBox = spritePane(enemySprite, enemySpriteFallback);
+        playerSpriteBox = spritePane(playerSprite, playerSpriteFallback);
+        layer.getChildren().addAll(
+                spriteArea(enemySpriteBox, 640 * 0.60, 0, false),
+                spriteArea(playerSpriteBox, 0, STAGE_HEIGHT - SPRITE_AREA_H, true));
+        return layer;
+    }
+
+    /** 单个立绘区域：定尺寸容器 + 立绘居中 + 上下浮动待机动画（{@code floatUpPhase} 控制敌我相位错开）。 */
+    private static StackPane spriteArea(StackPane box, double x, double y, boolean floatUpPhase) {
+        StackPane area = new StackPane(box);
+        area.setPrefSize(SPRITE_AREA_W, SPRITE_AREA_H);
+        area.setMinSize(SPRITE_AREA_W, SPRITE_AREA_H);
+        area.setMaxSize(SPRITE_AREA_W, SPRITE_AREA_H);
+        area.setLayoutX(x);
+        area.setLayoutY(y);
+        area.setMouseTransparent(true);
+        TranslateTransition floating = new TranslateTransition(Duration.millis(MS_SPRITE_FLOAT), area);
+        floating.setFromY(floatUpPhase ? 0 : -SPRITE_FLOAT_AMPLITUDE);
+        floating.setToY(floatUpPhase ? -SPRITE_FLOAT_AMPLITUDE : 0);
+        floating.setInterpolator(Interpolator.EASE_BOTH);
+        floating.setAutoReverse(true);
+        floating.setCycleCount(Animation.INDEFINITE);
+        floating.play();
+        return area;
+    }
+
+    /** 底部区域：大横面板（半透明白，高 142 ≈ 界面高 1/3）—— 左：场况行 + 日志；右：行动区。 */
     private Parent buildBottom() {
         // 左块：场况（天气/场地，无数据时留空）+ 战斗日志（深色文字；白字黑描边方案因 JavaFX 描边渲染性能
         // 问题废弃——动态中文描边每字符 ~50ms 光栅且无缓存，见 MAX_LOG_ROWS 注释）
@@ -329,20 +370,21 @@ public class BattleView {
     }
 
     /**
-     * 立绘区：半透明底色底座 + 白字占位（无图时可见）+ 精灵图片（有图时覆盖占位）。
-     * 图片等比缩放适配 92×80 底座，保留底色区分敌我方位（敌方红底 / 己方蓝底）。
+     * 立绘底座：透明贴图直接悬于背景之上（素材自带透明底，不再套底座色框与边框）。
+     * 图片等比适配 {@link #SPRITE_SIZE}；无图时回退「精灵名 + 立绘」占位文本（暗底胶囊保证浅色背景上可读）。
      */
-    private StackPane spritePane(ImageView imageView, Label fallback, String bgColor) {
+    private StackPane spritePane(ImageView imageView, Label fallback) {
         fallback.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
-        fallback.setStyle(YH + "-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: rgba(255,255,255,0.95);");
+        fallback.setStyle(YH + "-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: rgba(255,255,255,0.95);"
+                + "-fx-background-color: rgba(24, 40, 64, 0.55); -fx-background-radius: 8; -fx-padding: 5 8;");
         imageView.setPreserveRatio(true);
         imageView.setSmooth(true);
-        imageView.setFitWidth(80);
-        imageView.setFitHeight(70);
+        imageView.setFitWidth(SPRITE_SIZE);
+        imageView.setFitHeight(SPRITE_SIZE);
         StackPane box = new StackPane(fallback, imageView);
-        box.setPrefSize(92, 80);
-        box.setStyle("-fx-background-color: " + bgColor + "; -fx-background-radius: 10;"
-                + "-fx-border-width: 2; -fx-border-radius: 10; -fx-border-color: rgba(255,255,255,0.9);");
+        // 限定为内容自然尺寸：StackPane 默认把 managed 子节点拉伸到整个区域，
+        // 若放任拉伸，受击闪光（包围盒）等特效会按区域大小绘制而非立绘大小。
+        box.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         return box;
     }
 
@@ -381,19 +423,16 @@ public class BattleView {
         }
     }
 
-    /** 右上角纯文本块：当前地图阶段（上）+ 玩家金币（下，金色）。无背景框、小字号，直接叠于背景图上。 */
+    /** 左上角纯文本块（敌卡下方）：当前地图阶段（上）+ 玩家金币（下，金色）。无背景框、小字号，直接叠于背景图上。 */
     private VBox buildHud() {
         stageLabel.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #333;"
                 + "-fx-effect: dropshadow(gaussian, rgba(255,255,255,0.85), 2, 0.6, 0, 0);"); // 白晕保底可读
         moneyLabel.setStyle(YH + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #b8860b;"
                 + "-fx-effect: dropshadow(gaussian, rgba(255,255,255,0.85), 2, 0.6, 0, 0);");
         VBox hud = new VBox(1, stageLabel, moneyLabel);
-        hud.setAlignment(Pos.CENTER_RIGHT);
-        // 关键：HBox 默认 fillHeight 会把 hud 拉高至同行最高子块，文字随之居中悬空；
-        // 限定 max 高度保持内容自然高即可贴顶排列，配合 translateY 让字形距上边框约 5px（实测：-9→顶1px、-6→顶≈5px）。
+        hud.setAlignment(Pos.CENTER_LEFT);
         hud.setMaxHeight(Region.USE_PREF_SIZE);
         hud.setMaxWidth(Region.USE_PREF_SIZE);
-        hud.setTranslateY(-6);
         return hud;
     }
 
@@ -1064,15 +1103,15 @@ public class BattleView {
 
     // ---- 单步动画 ----
 
-    /** 战斗开场（进场动画）：双方立绘分别自左右屏外滑入并淡入。 */
+    /** 战斗开场（进场动画）：敌立绘自右侧屏外（右上位置）、己方立绘自左侧屏外（左下位置）滑入并淡入。 */
     public void playEntrance(Runnable onFinished) {
         prepare(enemySpriteBox, playerSpriteBox);
         ParallelTransition entrance = new ParallelTransition();
         if (enemySpriteBox != null) {
-            entrance.getChildren().add(slideIn(enemySpriteBox, -ENTRANCE_OFFSET));
+            entrance.getChildren().add(slideIn(enemySpriteBox, ENTRANCE_OFFSET));
         }
         if (playerSpriteBox != null) {
-            entrance.getChildren().add(slideIn(playerSpriteBox, ENTRANCE_OFFSET));
+            entrance.getChildren().add(slideIn(playerSpriteBox, -ENTRANCE_OFFSET));
         }
         if (entrance.getChildren().isEmpty()) {
             runNow(onFinished);
@@ -1159,10 +1198,10 @@ public class BattleView {
         }
         prepare(attacker, target);
         TranslateTransition forward = new TranslateTransition(Duration.millis(MS_LUNGE), attacker);
-        forward.setByX(side == BattleEvent.Side.FOE ? 11 : -11);
+        forward.setByX(side == BattleEvent.Side.FOE ? -11 : 11); // 双方面向对方前冲（敌在右上向左、我在左下向右）
         forward.setInterpolator(Interpolator.EASE_OUT);
         TranslateTransition retreat = new TranslateTransition(Duration.millis(MS_LUNGE * 1.4), attacker);
-        retreat.setByX(side == BattleEvent.Side.FOE ? -11 : 11);
+        retreat.setByX(side == BattleEvent.Side.FOE ? 11 : -11);
         retreat.setInterpolator(Interpolator.EASE_IN);
         SequentialTransition lunge = new SequentialTransition(forward, retreat);
         ParallelTransition cast = new ParallelTransition(lunge, projectile(attacker, target, element, category));
