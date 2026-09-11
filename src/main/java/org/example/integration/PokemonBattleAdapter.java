@@ -130,6 +130,50 @@ public final class PokemonBattleAdapter {
     private static final int WILD_LEVEL_OFFSET = WildEncounter.LEVEL_SPREAD;
 
     /**
+     * 神兽偶遇专属候选池（传说宝可梦，捕获率极低，建议大师球）。
+     *
+     * <p>神兽不参与普通野生遭遇（见 {@link PokemonLibraryDataPort#wildSpeciesPool} 与
+     * {@link #wildCandidates}），只通过 LEGENDARY 节点出场：后期段随机神兽偶遇 /
+     * 火箭队线必然触发的神兽偶遇。</p>
+     */
+    static final List<String> LEGENDARY_POOL = List.of(
+            "milk-god", "articuno", "zapdos", "moltres",
+            "raikou", "entei", "suicune");
+
+    /** 该物种 id 是否属于神兽池（神兽不参与普通野生遭遇与训练家队伍）。 */
+    static boolean isLegendary(String speciesId) {
+        return LEGENDARY_POOL.contains(speciesId);
+    }
+
+    /**
+     * 生成一只神兽偶遇的对手精灵：从神兽专属候选池随机选一只，等级为目标等级 ±2 浮动。
+     *
+     * <p>与普通野生遭遇同源（个体值含局外成长加成、随机性格），区别仅在候选池——
+     * 池内种族全部不进化、捕获率 3，强度由「等级加成」体现（见
+     * {@code RouteConfig#legendaryLevelBonus}）。</p>
+     *
+     * @param aroundLevel 目标等级（实际等级 ±2 浮动）
+     * @param progress    局外成长进度（决定个体值加成）
+     * @return 生成的神兽精灵；候选池为空（数据缺失）时返回 {@link Optional#empty()}
+     */
+    public static Optional<Pokemon> createLegendaryPokemon(int aroundLevel, GrowthProgress progress) {
+        PokemonService source = new PokemonServiceImpl(progress);
+        int level = Math.max(1, aroundLevel
+                + ThreadLocalRandom.current().nextInt(-WILD_LEVEL_OFFSET, WILD_LEVEL_OFFSET + 1));
+        List<org.example.pokemon.domain.Species> choices = new ArrayList<>();
+        for (String id : LEGENDARY_POOL) {
+            org.example.pokemon.infrastructure.GameData.instance().getSpecies(id)
+                    .ifPresent(choices::add);
+        }
+        if (choices.isEmpty()) {
+            return Optional.empty();
+        }
+        org.example.pokemon.domain.Species species =
+                choices.get(ThreadLocalRandom.current().nextInt(choices.size()));
+        return Optional.of(toBattlePokemon(source.createPokemon(species.getId(), level, randomNature(source))));
+    }
+
+    /**
      * 使用新宝可梦库生成一只野生精灵（个体值已含局外成长加成）。
      *
      * <p><b>生成顺序</b>：先确定最终等级（目标等级 ±2 浮动），再按最终等级做进化链合法性筛选
@@ -201,6 +245,7 @@ public final class PokemonBattleAdapter {
         Trainer trainer = new Trainer(name);
         List<org.example.pokemon.domain.Species> pool =
                 new ArrayList<>(org.example.pokemon.infrastructure.GameData.instance().getAllSpecies());
+        pool.removeIf(species -> isLegendary(species.getId())); // 神兽不出现在训练家队伍
         Collections.shuffle(pool);
         PokemonService source = new PokemonServiceImpl();
         int picks = Math.min(Math.max(1, count), Math.min(Trainer.MAX_PARTY, pool.size()));
@@ -226,6 +271,9 @@ public final class PokemonBattleAdapter {
                 org.example.pokemon.infrastructure.GameData.instance().getAllSpecies();
         List<org.example.pokemon.domain.Species> candidates = new ArrayList<>();
         for (org.example.pokemon.domain.Species species : all) {
+            if (isLegendary(species.getId())) {
+                continue; // 神兽只出现在神兽偶遇，不参与普通野生遭遇
+            }
             if (legalAtLevel(species, level, all)) {
                 candidates.add(species);
             }

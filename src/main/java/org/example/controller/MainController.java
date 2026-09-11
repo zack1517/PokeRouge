@@ -830,7 +830,8 @@ public class MainController {
             return;
         }
         int level = highestPartyLevel() + RouteConfig.legendaryLevelBonus(session.getSegment());
-        Optional<Pokemon> legendary = PokemonBattleAdapter.createWildPokemon(level, growthProgress());
+        // 神兽从专属候选池生成（传说宝可梦，捕获率极低，不会混入普通野生遭遇）
+        Optional<Pokemon> legendary = PokemonBattleAdapter.createLegendaryPokemon(level, growthProgress());
         if (legendary.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的神兽（数据缺失）。");
             showRogueFloorScene();
