@@ -22,7 +22,7 @@ public class OptionGenerator {
         List<Option> others = new ArrayList<>();
         others.add(new Option("野怪遭遇", OptionType.WILD, 1, "遭遇野生精灵，立即进入野怪战斗。"));
         others.add(new Option("训练家挑战", OptionType.ENEMY, 3, "挑战训练家，立即进入训练家对战。"));
-        others.add(new Option("神秘礼物", OptionType.RANDOM, 2 + floor, "获得宝贵经验值奖励，提升队伍成长。"));
+        others.add(new Option("神秘礼物", OptionType.RANDOM, 2 + floor, "获得经验值奖励（奖励随层数增长），提升队伍成长。"));
         others.add(new Option("装备补给", OptionType.REWARD, 2 + floor, "随机获得一件可携带装备，可穿戴给精灵。"));
         Collections.shuffle(others, random);
 

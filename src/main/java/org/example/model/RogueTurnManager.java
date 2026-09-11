@@ -215,14 +215,36 @@ public class RogueTurnManager {
     }
 
     private void resolveRandomEvent() {
-        System.out.println("神秘礼物：你获得了宝贵的经验值奖励！");
+        int floor = runData.getCurrentFloor();
+        int base = randomEventBaseExp(floor);
+        int spread = randomEventExpSpread(floor);
+        System.out.println("神秘礼物：全队获得 " + base + "~" + (base + spread - 1) + " 点经验值！");
         if (runData.getTeam() != null) {
             for (PokemonInstance pokemon : runData.getTeam()) {
                 if (pokemon != null && pokemon.getPokemon() != null) {
-                    pokemon.getPokemon().addExp(25 + random.nextInt(30));
+                    pokemon.getPokemon().addExp(base + random.nextInt(spread));
                 }
             }
         }
+    }
+
+    /**
+     * 神秘礼物的经验下限：第 1 层为 25，此后每层 +10。
+     *
+     * <p>事件消耗为 {@code 2 + 层号}，收益若固定不变则越深越不值；故下限随层号线性提高。
+     * 注意升到下一级所需经验为 {@code 3n² + 3n + 1}（随等级二次增长），
+     * 所以深层相对收益仍会缓慢下降——这是刻意的：经验主要由战斗产出，本事件只是补充。</p>
+     */
+    public static int randomEventBaseExp(int floor) {
+        return 25 + (Math.max(1, floor) - 1) * 10;
+    }
+
+    /**
+     * 神秘礼物的经验随机宽度：第 1 层为 30，此后每层 +5。
+     * 即每只精灵实际到手 {@code [下限, 下限 + 宽度 - 1]} 区间内的独立随机值。
+     */
+    public static int randomEventExpSpread(int floor) {
+        return 30 + (Math.max(1, floor) - 1) * 5;
     }
 
     public void triggerBossFight() {
