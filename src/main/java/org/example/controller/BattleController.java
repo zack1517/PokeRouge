@@ -35,6 +35,8 @@ public class BattleController implements BattleView.Actions {
     private final BattleView view = new BattleView(this);
     /** 演出进行中标志：动画未播完前丢弃一切行动输入，避免结算与画面错位。 */
     private boolean playing;
+    /** 是否放弃了满队捕捉的精灵（结局文案与「成功捕捉」区分）。 */
+    private boolean discardedCapture;
 
     /** @param engine 已就绪的战斗服务实例（玩家与敌方当前出战精灵均已非倒下，通常来自
      *                {@link org.example.battle.BattleServices#newBattle} 或
@@ -180,7 +182,9 @@ public class BattleController implements BattleView.Actions {
         view.refreshFieldStatus(engine.getWeather(), engine.getTerrain());
         view.showLog(engine.getLog());
         if (!engine.isOngoing()) {
-            if (!engine.pendingLearnChoices().isEmpty()) {
+            if (engine.capturedAwaitingRelease() != null) {
+                showReleaseMenu(); // 满队捕捉：先处理放生抉择，处理完再展示结局
+            } else if (!engine.pendingLearnChoices().isEmpty()) {
                 showLearnMenu(); // 获胜后还有待玩家抉择的学招，先处理完再展示结局
             } else {
                 view.showResult(resultText());
@@ -188,6 +192,27 @@ public class BattleController implements BattleView.Actions {
             return;
         }
         view.showMainMenu(this::showMoveMenu, this::showBagMenu, this::showPartyMenu);
+    }
+
+    /**
+     * 满队捕捉后的放生面板：底部行动区自动切到「精灵」六格面板，提示需放生一只
+     * 腾位；点选精灵即放生（携带装备返还装备库）并收下新精灵，或点「放弃捕捉」。
+     */
+    private void showReleaseMenu() {
+        Pokemon captured = engine.capturedAwaitingRelease();
+        List<Pokemon> party = engine.getPlayer().getParty();
+        int activeIndex = party.indexOf(engine.playerActive());
+        view.showReleaseMenu(party, activeIndex,
+                idx -> {
+                    engine.releaseToMakeRoom(idx);
+                    render();
+                },
+                () -> {
+                    engine.discardCaptured();
+                    discardedCapture = true;
+                    render();
+                },
+                "队伍已满！" + captured.getName() + " 需要入队，请选择一只精灵放生（携带的装备会返还装备库），或点「放弃捕捉」。");
     }
 
     /** 展示队首一项「技能满、想学新招」的抉择菜单。 */
@@ -280,7 +305,9 @@ public class BattleController implements BattleView.Actions {
                     : "战斗胜利！你获得了经验！";
             case PLAYER_LOSE -> "你已没有能战斗的精灵……";
             case FLED -> "成功逃离了战斗！";
-            case CAUGHT -> "成功捕捉！它加入了你的队伍！";
+            case CAUGHT -> discardedCapture
+                    ? "你放走了捕捉到的精灵……"
+                    : "成功捕捉！它加入了你的队伍！";
             case ONGOING -> "";
         };
     }
