@@ -144,10 +144,20 @@ public final class GameData {
     }
 
     /**
-     * 按物种 id 创建一只满血个体（等级任意）。技能按成长解锁：先给「出生即会」的技能，
+     * 按物种 id 创建一只满血个体（等级任意，个体值随机）。技能按成长解锁：先给「出生即会」的技能，
      * 再按等级升序补入该等级已经习得的技能（最多 4 招），因此低等级个体技能较少。
      */
     public Optional<Pokemon> createPokemon(String speciesId, int level) {
+        return createPokemon(speciesId, level, null);
+    }
+
+    /**
+     * 按物种 id 创建一只满血个体，可指定个体值（{@code ivs} 为 null 时随机）。
+     *
+     * <p>个体值参与属性演算，随机个体值会让同一物种两次创建得到不同 HP/属性；
+     * 存档重建等需要确定性的场景应传入固定个体值（如全 0）。</p>
+     */
+    public Optional<Pokemon> createPokemon(String speciesId, int level, Stats ivs) {
         Species sp = species(speciesId);
         if (sp == null) {
             return Optional.empty();
@@ -168,7 +178,7 @@ public final class GameData {
                 pool.add(mv);
             }
         }
-        return Optional.of(Pokemon.create(sp, level, pool));
+        return Optional.of(Pokemon.create(sp, level, pool, ivs == null ? Stats.randomIv() : ivs));
     }
 
     // ------------------------------------------------------------------
