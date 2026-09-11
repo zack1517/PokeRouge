@@ -14,9 +14,12 @@ import org.example.model.Trainer;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -49,6 +52,34 @@ class BattleEngineTrainerTest {
     /** 队员：高速、高物攻（先手且一击必杀）。 */
     private static Pokemon strong(String id, int level) {
         return Pokemon.create(species(id + "_sp", 200, 200, 40, 200), level, List.of(SLAM));
+    }
+
+    /** 队员：比 {@link #strong} 更快（用于固定「敌方先手」）。 */
+    private static Pokemon faster(String id, int level) {
+        return Pokemon.create(species(id + "_sp", 200, 200, 40, 400), level, List.of(SLAM));
+    }
+
+    /** 成长端口桩：记录每次击倒申报的对手与整场战斗的获胜申报次数。 */
+    private static final class RecordingGrowth implements BattleGrowthPort {
+
+        final List<Pokemon> defeated = new ArrayList<>();
+        int wins;
+
+        @Override
+        public Settlement settle(List<Pokemon> survivors, List<Pokemon> foes) {
+            defeated.addAll(foes);
+            return new Settlement(List.of(), List.of());
+        }
+
+        @Override
+        public List<String> resolveLearn(BattleService.LearnChoice choice, int forgetSlotIndex) {
+            return List.of();
+        }
+
+        @Override
+        public void onBattleWon(List<Pokemon> survivors) {
+            wins++;
+        }
     }
 
     private static Player playerWith(Pokemon... party) {
@@ -188,7 +219,84 @@ class BattleEngineTrainerTest {
     }
 
     // ------------------------------------------------------------------
-    // 敌方信息接口与野生遭遇回归
+    // 经验申报时机：每击倒一只对手即时申报一次
+    // ------------------------------------------------------------------
+
+    /** 训练师轮战中，每一只对手倒下都应立刻申报一次成长结算（不再等整场结束）。 */
+    @Test
+    void 训练师战每只对手倒下都即时申报成长() {
+        Player player = playerWith(strong("mine", 20));
+        Trainer trainer = trainerWith("道馆馆主",
+                weak("foe_0", 20), weak("foe_1", 20), weak("foe_2", 20));
+        RecordingGrowth growth = new RecordingGrowth();
+        BattleService battle = BattleServices.newTrainerBattle(player, trainer, new Random(7),
+                BattleDataPorts.none(), growth);
+        MoveSlot slot = player.getActive().getMoveSlots().get(0);
+
+        for (int i = 0; i < 3; i++) {
+            battle.useMove(slot);
+            assertEquals(i + 1, growth.defeated.size(),
+                    "第 " + (i + 1) + " 只对手倒下时应已即时申报成长");
+            assertEquals(trainer.getParty().get(i), growth.defeated.get(i), "申报的应是刚倒下的那一只");
+        }
+
+        assertEquals(BattleService.Status.PLAYER_WIN, battle.getStatus());
+        assertEquals(1, growth.wins, "整场战斗只做一次获胜申报（图鉴对战次数按场次计）");
+        assertTrue(growth.defeated.get(0).isFainted(), "申报的对手确实已倒下");
+    }
+
+    /** 野生遭遇仍是单只倒下即获胜，同时完成一次击倒申报与一次获胜申报。 */
+    @Test
+    void 野生遭遇倒下时即时申报成长() {
+        Player player = playerWith(strong("mine", 20));
+        Pokemon wild = weak("wild", 20);
+        RecordingGrowth growth = new RecordingGrowth();
+        BattleService battle = BattleServices.newBattle(player, wild, new Random(7),
+                BattleDataPorts.none(), growth);
+
+        battle.useMove(player.getActive().getMoveSlots().get(0));
+
+        assertEquals(BattleService.Status.PLAYER_WIN, battle.getStatus());
+        assertEquals(List.of(wild), growth.defeated);
+        assertEquals(1, growth.wins);
+    }
+
+    /** 即时结算意味着战败也不会回收已经拿到的经验（击倒申报与胜负无关）。 */
+    @Test
+    void 战斗落败也不回收已申报的经验() {
+        Player player = playerWith(strong("mine_a", 20), weak("mine_b", 20));
+        Trainer trainer = trainerWith("强敌", weak("foe_a", 20), faster("foe_b", 20));
+        RecordingGrowth growth = new RecordingGrowth();
+        BattleService battle = BattleServices.newTrainerBattle(player, trainer, new Random(7),
+                BattleDataPorts.none(), growth);
+
+        battle.useMove(player.getActive().getMoveSlots().get(0)); // 击倒对方第 1 只 → 即时申报
+        assertEquals(1, growth.defeated.size(), "击倒即申报，不需要等到整场结束");
+        assertEquals(trainer.getParty().get(0), growth.defeated.get(0));
+
+        battle.useMove(player.getActive().getMoveSlots().get(0)); // 对方强敌先手击败己方首只
+        battle.useMove(player.getActive().getMoveSlots().get(0)); // 己方最后一只倒下 → 战败
+
+        assertEquals(BattleService.Status.PLAYER_LOSE, battle.getStatus());
+        assertEquals(1, growth.defeated.size(), "战败不回收已经拿到的经验");
+        assertEquals(0, growth.wins, "战败不做获胜申报");
+    }
+
+    /** 未注入成长端口时，击倒与获胜申报全部降级为无操作且不抛异常。 */
+    @Test
+    void 未注入成长端口时照常运行() {
+        Player player = playerWith(strong("mine", 20));
+        Trainer trainer = trainerWith("劲敌", weak("foe", 20));
+        BattleService battle = BattleServices.newTrainerBattle(player, trainer);
+        MoveSlot slot = player.getActive().getMoveSlots().get(0);
+
+        assertDoesNotThrow(() -> battle.useMove(slot));
+
+        assertEquals(BattleService.Status.PLAYER_WIN, battle.getStatus());
+    }
+
+    // ------------------------------------------------------------------
+    // 训练师战经训练师接口暴露敌方精灵
     // ------------------------------------------------------------------
 
     @Test

@@ -61,6 +61,9 @@ import java.util.Random;
  */
 public class BattleEngine implements BattleService {
 
+    /** 目标陷入睡眠 / 麻痹时的捕捉率加成系数（其余状态无加成）。 */
+    private static final double CAPTURE_STATUS_BONUS = 2.0;
+
     private final Player player;
     /** 野生战斗中的敌方野生精灵；训练师轮战（{@code trainer} 非空）时为 {@code null}。 */
     private final Pokemon wild;
@@ -73,6 +76,8 @@ public class BattleEngine implements BattleService {
     private final BattleGrowthPort growthPort;
     /** 全程日志（按行累积）。 */
     private final List<String> log = new ArrayList<>();
+    /** 待取走的演出事件队列（界面动画数据源，见 {@link #drainEvents()}）。 */
+    private final List<BattleEvent> events = new ArrayList<>();
     /** 获胜升级后「技能满、待玩家抉择是否/如何学习」的请求队列。 */
     private final List<LearnChoice> pendingLearns = new ArrayList<>();
 
@@ -187,6 +192,7 @@ public class BattleEngine implements BattleService {
         } else if (wild == null || wild.isFainted()) {
             throw new IllegalArgumentException("野生精灵无效");
         }
+        events.add(BattleEvent.battleStart()); // 开场事件：界面据此播放双方进场动画
     }
 
     // ------------------------------------------------------------------
@@ -244,6 +250,17 @@ public class BattleEngine implements BattleService {
     @Override
     public List<String> getLog() {
         return Collections.unmodifiableList(log);
+    }
+
+    /**
+     * 取走并清空演出事件队列：界面在每次行动结算后播放这些事件对应的动画。
+     * <p>事件不参与任何战斗结算，忽略它们的调用方行为与本特性引入前一致。</p>
+     */
+    @Override
+    public List<BattleEvent> drainEvents() {
+        List<BattleEvent> drained = List.copyOf(events);
+        events.clear();
+        return drained;
     }
 
     /** 背包（从玩家处转发，便捷）。 */
@@ -358,6 +375,7 @@ public class BattleEngine implements BattleService {
             return;
         }
         append(self.getName() + " 使用了【" + slot.getMove().getName() + "】！");
+        events.add(BattleEvent.move(BattleEvent.Side.PLAYER, self.getName(), slot.getMove()));
         executeMove(self, foe, slot.getMove());
     }
 
@@ -385,7 +403,9 @@ public class BattleEngine implements BattleService {
             }
             player.getBag().consume(item);
             append("向 " + wild.getName() + " 投出了【" + item.getName() + "】！");
-            if (!tryCapture(item) && isOngoing() && !wild.isFainted() && !playerActive().isFainted()) {
+            boolean caught = tryCapture(item);
+            events.add(BattleEvent.capture(item.getName(), caught));
+            if (!caught && isOngoing() && !wild.isFainted() && !playerActive().isFainted()) {
                 foeTurn();
             }
             finishRound();
@@ -408,6 +428,7 @@ public class BattleEngine implements BattleService {
             }
             player.getBag().consume(item);
             append("使用了【" + item.getName() + "】，" + target.getName() + " 回复了 " + healed + " HP");
+            events.add(BattleEvent.item(item.getName()));
         } else if (item.getCategory() == ItemCategory.CURE) {
             if (!cureWithItem(target, item)) {
                 append(target.getName() + " 没有可解除的异常状态，【" + item.getName() + "】没有使用。");
@@ -415,6 +436,7 @@ public class BattleEngine implements BattleService {
             }
             player.getBag().consume(item);
             append("使用了【" + item.getName() + "】");
+            events.add(BattleEvent.item(item.getName()));
         } else {
             append("该道具暂时无法使用");
             return slice(mark);
@@ -453,9 +475,11 @@ public class BattleEngine implements BattleService {
         if (random.nextDouble() < chance) {
             append("成功逃跑了！");
             status = Status.FLED;
+            events.add(BattleEvent.run(true));
             return slice(mark);
         }
         append("逃跑失败……");
+        events.add(BattleEvent.run(false));
         if (!wild.isFainted() && !playerActive().isFainted()) {
             foeTurn();
         }
@@ -478,10 +502,12 @@ public class BattleEngine implements BattleService {
             return slice(mark);
         }
         append(player.getName() + " 收回了 " + current.getName() + "！");
+        events.add(BattleEvent.recall(BattleEvent.Side.PLAYER, current.getName()));
         if (current.clearConfusion()) {
             append(current.getName() + " 的混乱解除了！");
         }
         append("你派出了 " + target.getName() + "！");
+        events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, target.getName()));
         if (!foeActive().isFainted() && !target.isFainted()) {
             foeTurn();
         }
@@ -507,12 +533,20 @@ public class BattleEngine implements BattleService {
         MoveSlot usable = pickFoeMove();
         if (usable == null) {
             append(foe.getName() + " 没有可用技能了，正在挣扎！");
+            events.add(BattleEvent.move(BattleEvent.Side.FOE, foe.getName(), null));
             int dmg = Math.max(1, foe.getLevel() / 4);
             int dealt = playerActive().takeDamage(dmg);
             append("对 " + playerActive().getName() + " 造成了 " + dealt + " 点伤害");
+            events.add(BattleEvent.hit(BattleEvent.Side.PLAYER, playerActive().getName(),
+                    ElementType.NORMAL, MoveCategory.PHYSICAL));
+            if (playerActive().isFainted()) {
+                append(playerActive().getName() + " 倒下了！");
+                events.add(BattleEvent.faint(BattleEvent.Side.PLAYER, playerActive().getName()));
+            }
         } else {
             usable.use();
             append(foe.getName() + " 使用了【" + usable.getMove().getName() + "】！");
+            events.add(BattleEvent.move(BattleEvent.Side.FOE, foe.getName(), usable.getMove()));
             executeMove(foe, playerActive(), usable.getMove());
         }
     }
@@ -558,6 +592,8 @@ public class BattleEngine implements BattleService {
                 applyFieldEffect(move.getEffect());
             }
             tryInflict(move, defender);
+            events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
+                    MoveCategory.STATUS));
             return;
         }
         performAttack(attacker, defender, move);
@@ -610,11 +646,13 @@ public class BattleEngine implements BattleService {
     /** 混乱自伤：按威力 {@value StatusCondition#CONFUSION_SELF_HIT_POWER} 的无属性物理招式对自身结算。 */
     private void selfHit(Pokemon p) {
         append(p.getName() + " 因混乱攻击了自己！");
+        events.add(BattleEvent.hit(sideOf(p), nameOf(p), ElementType.NORMAL, MoveCategory.PHYSICAL));
         double base = (2.0 * p.getLevel() / 5.0 + 2.0) * StatusCondition.CONFUSION_SELF_HIT_POWER
                 * ((double) p.effectiveAttack() / Math.max(1, p.getStats().getDefense())) / 50.0 + 2.0;
         int dealt = p.takeDamage(Math.max(1, (int) base));
         append("自伤了 " + dealt + " 点伤害");
         if (p.isFainted()) {
+            events.add(BattleEvent.faint(sideOf(p), nameOf(p)));
             append(p.getName() + " 倒下了！");
         }
     }
@@ -718,6 +756,8 @@ public class BattleEngine implements BattleService {
         }
         int damage = computeDamage(attacker, defender, move);
         int dealt = defender.takeDamage(damage);
+        events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
+                move.getCategory()));
         applyLifeSteal(attacker, dealt);
         StringBuilder sb = new StringBuilder();
         sb.append("造成 ").append(dealt).append(" 点伤害");
@@ -728,6 +768,7 @@ public class BattleEngine implements BattleService {
         }
         append(sb.toString());
         if (defender.isFainted()) {
+            events.add(BattleEvent.faint(sideOf(defender), nameOf(defender)));
             append(defender.getName() + " 倒下了！");
             return;
         }
@@ -789,9 +830,10 @@ public class BattleEngine implements BattleService {
         } else {
             int maxHp = wild.getMaxHp();
             int curHp = wild.getCurrentHp();
-            // 血量越低、捕获率越高、球倍率越大则越容易
+            // 血量越低、捕获率越高、球倍率越大、目标陷入睡眠/麻痹则越容易
             double hpFactor = Math.max(0.0, (3.0 * maxHp - 2.0 * curHp) / (3.0 * maxHp));
-            double a = hpFactor * wild.getSpecies().getCatchRate() * ball.getEffect();
+            double a = hpFactor * wild.getSpecies().getCatchRate() * ball.getEffect()
+                    * captureStatusBonus(wild.getStatus());
             double chance = Math.min(0.98, a / 255.0);
             caught = random.nextDouble() < chance;
         }
@@ -803,10 +845,21 @@ public class BattleEngine implements BattleService {
             if (!player.getParty().contains(wild)) {
                 player.addPokemon(wild);
             }
+            // 申报捕捉事件：捕捉次数驱动的局外成长（个体值加成）由成长模块自行判定
+            growthPort.onCaptured(wild.getSpecies().getId());
             return true;
         }
         append("野生的 " + wild.getName() + " 挣脱了出来！");
         return false;
+    }
+
+    /**
+     * 捕捉时的异常状态加成：目标陷入睡眠或麻痹时更容易被收入球中
+     * （×{@value #CAPTURE_STATUS_BONUS}），其余状态与无状态均为 ×1。
+     */
+    private static double captureStatusBonus(StatusCondition status) {
+        return status == StatusCondition.SLEEP || status == StatusCondition.PARALYSIS
+                ? CAPTURE_STATUS_BONUS : 1.0;
     }
 
     /** 回合结束结算：胜负判定、敌方出战倒下后的自动替换/续战、玩家精灵倒下后的自动换宠。 */
@@ -824,24 +877,29 @@ public class BattleEngine implements BattleService {
                 // 野生战斗：野生精灵倒下即获胜
                 status = Status.PLAYER_WIN;
                 append("野生的 " + foe.getName() + " 倒下了！你赢了！");
-                settleGrowth();
+                settleGrowth(foe);
+                reportBattleWon();
                 return;
             }
-            // 训练师轮战：出战精灵倒下后自动派出下一只健康的；没有了 → 玩家获胜
+            // 训练师轮战：每只倒下的对手都即时结算一次经验（不等整场结束）
+            settleGrowth(foe);
+            // 出战精灵倒下后自动派出下一只健康的；没有了 → 玩家获胜
             Pokemon next = trainer.switchToNextHealthy();
             if (next == null) {
                 status = Status.PLAYER_WIN;
                 append("训练师 " + trainer.getName() + " 的所有精灵都倒下了！你赢了！");
-                settleGrowth();
+                reportBattleWon();
                 return;
             }
             append(trainer.getName() + " 派出了 " + next.getName() + "！");
+            events.add(BattleEvent.sendOut(BattleEvent.Side.FOE, next.getName()));
         }
 
         if (playerDown) {
             append(pa.getName() + " 倒下了……");
             if (player.switchToNextHealthy() != null) {
                 append("你派出了 " + playerActive().getName() + "！");
+                events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, playerActive().getName()));
             } else {
                 status = Status.PLAYER_LOSE;
                 append("你已没有能战斗的精灵，战败了……");
@@ -926,6 +984,7 @@ public class BattleEngine implements BattleService {
                 p.increaseBadlyPoisonCounter();
             }
             if (p.isFainted()) {
+                events.add(BattleEvent.faint(sideOf(p), nameOf(p)));
                 append(p.getName() + " 倒下了！");
                 return;
             }
@@ -951,6 +1010,7 @@ public class BattleEngine implements BattleService {
         int dealt = p.takeDamage(Math.max(1, (int) (p.getMaxHp() * weather.chipRatio())));
         append(weather.getDisplayName() + " 侵蚀着 " + p.getName() + "，造成了 " + dealt + " 点伤害！");
         if (p.isFainted()) {
+            events.add(BattleEvent.faint(sideOf(p), nameOf(p)));
             append(p.getName() + " 倒下了！");
         }
     }
@@ -987,28 +1047,40 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 胜利结算：把「参战且未倒下的己方精灵」与「被击败的对手」交给外部成长模块判定
-     * 经验增加、升级、学招与进化（见 {@link BattleGrowthPort}）。
+     * 击倒一只对手后的<b>即时</b>成长结算：把「参战且未倒下的己方精灵」与「刚被击败的那只对手」
+     * 交给外部成长模块判定经验增加、升级、学招与进化（见 {@link BattleGrowthPort}）。
      *
-     * <p>本引擎不自行计算经验、不判定升级 / 学招 / 进化：成长模块返回的日志文本行原样追加，
-     * 返回的「技能栏已满」挂起学招项进入待抉择队列。未注入成长端口时本方法无任何副作用。</p>
+     * <p>每击倒一只对手调用一次，因此训练师轮战中倒下的每一只都会单独结算经验（打输也不会回收
+     * 已经拿到的经验）。本引擎不自行计算经验、不判定升级 / 学招 / 进化：成长模块返回的日志文本行
+     * 原样追加，返回的「技能栏已满」挂起学招项进入待抉择队列。未注入成长端口时本方法无副作用。</p>
+     *
+     * @param defeated 刚被击败的对手（野生精灵或训练师队伍中倒下的一只）
      */
-    private void settleGrowth() {
-        if (status != Status.PLAYER_WIN) {
+    private void settleGrowth(Pokemon defeated) {
+        if (defeated == null) {
             return;
         }
+        BattleGrowthPort.Settlement settlement = growthPort.settle(survivors(), List.of(defeated));
+        for (String line : settlement.log()) {
+            append(line);
+        }
+        pendingLearns.addAll(settlement.pendingLearns());
+    }
+
+    /** 参战且未倒下的己方精灵（经验与图鉴申报的接收者）。 */
+    private List<Pokemon> survivors() {
         List<Pokemon> survivors = new ArrayList<>();
         for (Pokemon p : player.getParty()) {
             if (!p.isFainted()) {
                 survivors.add(p);
             }
         }
-        List<Pokemon> defeated = trainer == null ? List.of(wild) : List.copyOf(trainer.getParty());
-        BattleGrowthPort.Settlement settlement = growthPort.settle(survivors, defeated);
-        for (String line : settlement.log()) {
-            append(line);
-        }
-        pendingLearns.addAll(settlement.pendingLearns());
+        return survivors;
+    }
+
+    /** 玩家获胜申报：图鉴「对战次数」按场次累计，故整场战斗只申报一次。 */
+    private void reportBattleWon() {
+        growthPort.onBattleWon(survivors());
     }
 
     // ------------------------------------------------------------------
@@ -1027,6 +1099,16 @@ public class BattleEngine implements BattleService {
         if (status != Status.ONGOING) {
             throw new IllegalStateException("战斗已结束，状态: " + status);
         }
+    }
+
+    /** 某只场上精灵所属阵营（玩家当前出战为 {@link BattleEvent.Side#PLAYER}，其余为 FOE）。 */
+    private BattleEvent.Side sideOf(Pokemon p) {
+        return p != null && p == player.getActive() ? BattleEvent.Side.PLAYER : BattleEvent.Side.FOE;
+    }
+
+    /** 事件用的精灵名（防御空引用：精灵恒存在，此处仅作兜底）。 */
+    private static String nameOf(Pokemon p) {
+        return p == null ? "" : p.getName();
     }
 
     private void append(String message) {

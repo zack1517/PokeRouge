@@ -22,9 +22,11 @@ import java.util.List;
 
 /**
  * 主菜单视图（当前阶段的地图驻留页占位，见 GameSession 类 javadoc）：铺当前段的 bg_map 随机背景，
- * 展示训练家队伍与背包（可设先发），并给予「进入层内事件」「返回开始界面」「退出游戏」三个入口。
+ * 展示训练家队伍与背包（可设先发），并给予「进入层内事件」「保存游戏」「读取存档」「返回主界面」四个入口。
  * <p>背景由控制器按“段”决定后传入（同段多张图固定，换段才变），本类不做任何背景状态；
  * 每次进入主菜单都由控制器重新构建（队伍可能在对战中变化），因此本类不做状态刷新。</p>
+ * <p>「返回主界面」只回到启动页（读档 / 新游戏都在那里发起），<b>不</b>退出程序 ——
+ * 真正退出由窗口关闭按钮的二次确认负责（见 {@code MainController#bindStageEvents()}）。</p>
  */
 public class MainView {
 
@@ -36,6 +38,13 @@ public class MainView {
         /** 将 index 对应的精灵设为下一场战斗先发。 */
         void onSetActive(int index);
 
+        /** 保存游戏：写入所选档位（未作战时可用）。 */
+        void onSaveGame();
+
+        /** 读取存档：另选一个档位载入（未作战时可用）。 */
+        void onLoadGame();
+
+        /** 回到初始主界面（启动页）：不退出程序。 */
         void onExit();
 
         /** 打开 index 对应精灵的详情页（立绘/属性/技能/装备；装备穿脱后返回主菜单自动同步）。 */
@@ -51,12 +60,26 @@ public class MainView {
     private final Actions actions;
     private final String mapBackground; // 当前段地图背景（classpath，同一段内恒定）
     private final int segment; // 当前地图段号（仅用于展示）
+    private final int gold; // 金币余额（负数表示本轮远征尚未开始，不展示）
+    private final String slotName; // 当前存档位名（null = 尚未选档，仅用于展示）
 
     public MainView(Player player, Actions actions, String mapBackground, int segment) {
+        this(player, actions, mapBackground, segment, -1, null);
+    }
+
+    public MainView(Player player, Actions actions, String mapBackground, int segment,
+                    String slotName) {
+        this(player, actions, mapBackground, segment, -1, slotName);
+    }
+
+    public MainView(Player player, Actions actions, String mapBackground, int segment,
+                    int gold, String slotName) {
         this.player = player;
         this.actions = actions;
         this.mapBackground = mapBackground;
         this.segment = segment;
+        this.gold = gold;
+        this.slotName = slotName;
     }
 
     public Scene createScene() {
@@ -72,7 +95,9 @@ public class MainView {
     private Parent buildHeader() {
         Label title = new Label("宝可梦对战 · 训练家 " + player.getName());
         title.setStyle(YH + "-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #222;");
-        Label stage = new Label("第 " + segment + " 段 · 地图");
+        Label stage = new Label("第 " + segment + " 段 · 地图"
+                + (gold < 0 ? "" : " · 金币 " + gold + " 🪙")
+                + (slotName == null ? "" : " · " + slotName));
         stage.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #555;");
         VBox box = new VBox(2, title, stage);
         // 半透明 header：标题叠在地图背景上可读，同时背景明显透出（本段地图需展示）
@@ -179,16 +204,20 @@ public class MainView {
         rogue.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 15px; -fx-padding: 10 18;");
         rogue.setOnAction(e -> actions.onStartRogueFloor());
 
-        Button exit = new Button("退出游戏");
-        exit.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
-        exit.setOnAction(e -> actions.onExit());
+        Button save = new Button("保存游戏");
+        save.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
+        save.setOnAction(e -> actions.onSaveGame());
 
-        // 返回第一屏：不弹确认，直接切场景（玩家可能误点，重新「开始游戏」即可继续新流程）
-        Button back = new Button("返回开始界面");
-        back.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
-        back.setOnAction(e -> actions.onBackToStart());
+        Button load = new Button("读取存档");
+        load.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
+        load.setOnAction(e -> actions.onLoadGame());
 
-        HBox bar = new HBox(12, rogue, back, exit);
+        // 回启动页（读档 / 新游戏都在那里发起），不是退出程序
+        Button backToTitle = new Button("返回主界面");
+        backToTitle.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
+        backToTitle.setOnAction(e -> actions.onExit());
+
+        HBox bar = new HBox(12, rogue, save, load, backToTitle);
         bar.setAlignment(Pos.CENTER);
         bar.setPadding(new Insets(10, 0, 0, 0));
         return bar;

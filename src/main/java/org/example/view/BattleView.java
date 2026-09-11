@@ -1,7 +1,21 @@
 package org.example.view;
 
+import javafx.animation.Animation;
+import javafx.animation.FadeTransition;
+import javafx.animation.Interpolator;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.ParallelTransition;
+import javafx.animation.ScaleTransition;
+import javafx.animation.SequentialTransition;
+import javafx.animation.Timeline;
+import javafx.animation.TranslateTransition;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
+import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
+import javafx.scene.Group;
+import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
@@ -11,12 +25,21 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Arc;
+import javafx.scene.shape.ArcType;
+import javafx.scene.shape.Circle;
+import javafx.scene.shape.Rectangle;
+import javafx.util.Duration;
+import org.example.battle.BattleEvent;
+import org.example.model.ElementType;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
@@ -80,6 +103,12 @@ public class BattleView {
     private final ImageView enemySprite = new ImageView();
     private final Label playerSpriteFallback = new Label();
     private final Label enemySpriteFallback = new Label();
+    /**
+     * 演出层：与内容根同尺寸叠放（见 {@link #createScene()}）、不拦截鼠标，承载飞行道具、光点、
+     * 闪光环等临时特效节点。动画一律以<b>设计单位</b>书写（整场景由 {@link UiScale} 统一缩放），
+     * 节点落位用 {@code sceneToLocal} 在场景坐标与演出层坐标间换算，不依赖布局时机。
+     */
+    private final Pane effectLayer = new Pane();
 
     // ---- 敌方信息（左上卡片） ----
     private final Label wildName = new Label("--");
@@ -160,7 +189,11 @@ public class BattleView {
         root.setTop(buildTop());
         root.setCenter(buildCenter());
         root.setBottom(buildBottom());
-        return UiScale.scene(root);
+        // 演出层与内容根同尺寸叠放（StackPane 自动拉伸）：铺满整个设计区、不拦截鼠标，
+        // 飞行道具/闪光等临时特效节点挂在此层，坐标经 sceneToLocal 换算，不受 UiScale 缩放影响。
+        effectLayer.setMouseTransparent(true);
+        effectLayer.setPickOnBounds(false);
+        return UiScale.scene(new StackPane(root, effectLayer));
     }
 
     // ------------------------------------------------------------------
@@ -172,9 +205,10 @@ public class BattleView {
         HBox top = new HBox(10);
         top.setPadding(new Insets(0, 0, 6, 0));
         top.setAlignment(Pos.TOP_LEFT); // 子块贴顶排列，右上角信息随之上移贴近角部
+        enemySpriteBox = spritePane(enemySprite, enemySpriteFallback, "rgba(196, 66, 66, 0.30)");
         top.getChildren().addAll(
                 buildEnemyCard(),
-                spritePane(enemySprite, enemySpriteFallback, "rgba(196, 66, 66, 0.30)"),
+                enemySpriteBox,
                 spacer(),
                 buildHud());
         return top;
@@ -189,6 +223,7 @@ public class BattleView {
     private Parent buildCenter() {
         VBox card = buildStatCard(playerName, playerType, playerLv, playerHpBar, playerHpText, playerStatus);
         StackPane sprite = spritePane(playerSprite, playerSpriteFallback, "rgba(66, 110, 196, 0.30)");
+        playerSpriteBox = sprite;
         HBox group = new HBox(8, sprite, card);
         group.setAlignment(Pos.CENTER_LEFT);
         // 关键：center 是 StackPane，默认会把整组拉高到与中部区域同高、拉宽到同宽，导致信息卡过高且立绘落到页面最左侧；
@@ -312,7 +347,7 @@ public class BattleView {
     }
 
     /**
-     * 按精灵名加载立绘图片（classpath {@value #POKEMON_IMAGE_DIR}）；
+     * 按精灵名加载立绘图片（委托公共工具 {@link SpriteLoader}，classpath {@code /images/pokemon/}）；
      * 加载失败返回 {@code null}（调用方回退占位文本）。结果带缓存。
      */
     private static Image loadSprite(String pokemonName) {
@@ -321,7 +356,14 @@ public class BattleView {
 
     /** 把某只精灵的立绘刷到指定图片区：有图则显示图片；无图则隐藏图片、回退显示精灵名占位。 */
     private static void applySprite(ImageView imageView, Label fallback, Pokemon p) {
-        String name = p == null ? null : p.getName();
+        applySpriteByName(imageView, fallback, p == null ? null : p.getName());
+    }
+
+    /**
+     * 按<b>精灵名</b>刷新立绘（演出事件只携带名字，战斗中精灵对象随换宠而变，故与 {@link #applySprite} 分开）。
+     * 有图显示图片；无图回退「精灵名 + 立绘」占位文本。
+     */
+    private static void applySpriteByName(ImageView imageView, Label fallback, String name) {
         Image image = loadSprite(name);
         if (image != null) {
             imageView.setImage(image);
@@ -956,6 +998,498 @@ public class BattleView {
                 + "-fx-background-color: #ffffff; -fx-border-color: #c9c9c9;"
                 + "-fx-border-radius: 6; -fx-text-fill: #222;");
         return b;
+    }
+
+    // ------------------------------------------------------------------
+    // 战斗动画（演出层）
+    // ------------------------------------------------------------------
+
+    /** 双方立绘底座（进场/放出/收回/受击/倒下/投球动画的操作对象），构建场景时赋值。 */
+    private StackPane enemySpriteBox;
+    private StackPane playerSpriteBox;
+
+    // 单步演出时长（毫秒）：一次行动（我方出招 + 受击 + 敌方还手）合计约 1.4–1.8s，保持回合节奏不拖沓
+    private static final int MS_ENTRANCE = 560;
+    private static final int MS_SEND_OUT = 420;
+    private static final int MS_RECALL = 320;
+    private static final int MS_LUNGE = 130;
+    private static final int MS_HIT = 300;
+    private static final int MS_FAINT = 520;
+    private static final int MS_FLY = 300;
+
+    /** 进场时立绘自屏外滑入的水平距离（设计单位，界面宽 640）。 */
+    private static final double ENTRANCE_OFFSET = 234;
+
+    /**
+     * 演出期间锁定/解锁行动区输入：屏蔽点击（避免动画未播完就触发下一次结算，控制器另有 playing 标志二次防护）。
+     * JavaFX 对 {@code :disabled} 的默认半透明效果顺带充当「结算中」的视觉提示。
+     */
+    public void setInputLocked(boolean locked) {
+        actionBox.setDisable(locked);
+    }
+
+    // ---- 播放入口 ----
+
+    /**
+     * 依次播放一组演出事件对应的动画，全部播完后回调 {@code onFinished}（在主线程）。
+     *
+     * <p>事件为空时立即回调；单步动画被跳过（无立绘）时该步耗时为零。播放前后各复位一次立绘变换与特效层，
+     * 保证上一段演出的残留位移/缩放不会叠加到下一段。</p>
+     */
+    public void playEvents(List<BattleEvent> events, Runnable onFinished) {
+        resetPerformance();
+        playAt(events, 0, onFinished);
+    }
+
+    private void playAt(List<BattleEvent> events, int index, Runnable onFinished) {
+        if (events == null || index >= events.size()) {
+            resetPerformance();
+            runNow(onFinished);
+            return;
+        }
+        BattleEvent event = events.get(index);
+        Runnable next = () -> playAt(events, index + 1, onFinished);
+        switch (event.kind()) {
+            case BATTLE_START -> playEntrance(next);
+            case SEND_OUT -> playSendOut(event.side(), event.actor(), next);
+            case RECALL -> playRecall(event.side(), event.actor(), next);
+            case MOVE -> playMoveCast(event.side(), event.element(), event.category(), next);
+            case HIT -> playHit(event.side(), event.element(), next);
+            case FAINT -> playFaint(event.side(), event.actor(), next);
+            case CAPTURE -> playCapture(event.success(), next);
+            case ITEM -> playItem(next);
+            case RUN -> playRun(event.success(), next);
+        }
+    }
+
+    // ---- 单步动画 ----
+
+    /** 战斗开场（进场动画）：双方立绘分别自左右屏外滑入并淡入。 */
+    public void playEntrance(Runnable onFinished) {
+        prepare(enemySpriteBox, playerSpriteBox);
+        ParallelTransition entrance = new ParallelTransition();
+        if (enemySpriteBox != null) {
+            entrance.getChildren().add(slideIn(enemySpriteBox, -ENTRANCE_OFFSET));
+        }
+        if (playerSpriteBox != null) {
+            entrance.getChildren().add(slideIn(playerSpriteBox, ENTRANCE_OFFSET));
+        }
+        if (entrance.getChildren().isEmpty()) {
+            runNow(onFinished);
+            return;
+        }
+        entrance.setOnFinished(e -> runNow(onFinished));
+        entrance.play();
+    }
+
+    /** 自 {@code fromX} 滑到原位并淡入（进场用）。 */
+    private static Animation slideIn(Node node, double fromX) {
+        node.setOpacity(0);
+        node.setTranslateX(fromX);
+        TranslateTransition move = new TranslateTransition(Duration.millis(MS_ENTRANCE), node);
+        move.setToX(0);
+        move.setInterpolator(Interpolator.EASE_OUT);
+        FadeTransition fade = new FadeTransition(Duration.millis(MS_ENTRANCE * 0.75), node);
+        fade.setFromValue(0);
+        fade.setToValue(1);
+        return new ParallelTransition(move, fade);
+    }
+
+    /** 派出精灵（放出动画）：立绘先切到该精灵，再自小球缩放展开 + 淡入，并闪一圈白色光环。 */
+    public void playSendOut(BattleEvent.Side side, String name, Runnable onFinished) {
+        StackPane box = spriteBoxOf(side);
+        applySpriteBySide(side, name); // 事件只带名字：先切图再演，避免放出后仍是上一只
+        if (box == null) {
+            runNow(onFinished);
+            return;
+        }
+        prepare(box);
+        box.setOpacity(0);
+        box.setScaleX(0.25);
+        box.setScaleY(0.25);
+        ScaleTransition grow = new ScaleTransition(Duration.millis(MS_SEND_OUT), box);
+        grow.setToX(1);
+        grow.setToY(1);
+        grow.setInterpolator(Interpolator.EASE_OUT);
+        FadeTransition fade = new FadeTransition(Duration.millis(MS_SEND_OUT * 0.6), box);
+        fade.setFromValue(0);
+        fade.setToValue(1);
+        ParallelTransition appear = new ParallelTransition(grow, fade);
+        appear.setOnFinished(e -> runNow(onFinished));
+        appear.play();
+        ringFlash(box, Color.WHITE, 0.9, 46, MS_SEND_OUT + 120);
+    }
+
+    /** 收回精灵（收回动画）：立绘缩小 + 上浮 + 淡出，并闪一圈淡蓝光环。 */
+    public void playRecall(BattleEvent.Side side, String name, Runnable onFinished) {
+        StackPane box = spriteBoxOf(side);
+        applySpriteBySide(side, name);
+        if (box == null) {
+            runNow(onFinished);
+            return;
+        }
+        prepare(box);
+        ScaleTransition shrink = new ScaleTransition(Duration.millis(MS_RECALL), box);
+        shrink.setToX(0.15);
+        shrink.setToY(0.15);
+        shrink.setInterpolator(Interpolator.EASE_IN);
+        TranslateTransition rise = new TranslateTransition(Duration.millis(MS_RECALL), box);
+        rise.setByY(-10);
+        FadeTransition fade = new FadeTransition(Duration.millis(MS_RECALL), box);
+        fade.setToValue(0);
+        ParallelTransition leave = new ParallelTransition(shrink, rise, fade);
+        leave.setOnFinished(e -> runNow(onFinished));
+        leave.play();
+        ringFlash(box, Color.web("#cfe0ff"), 0.8, 34, MS_RECALL + 100);
+    }
+
+    /**
+     * 技能释放（施法动画）：攻击者朝目标小幅前冲再回位，同时弹道自攻击者飞向目标。
+     * 弹道配色取招式属性（{@link ElementType#getColorCode()}），形态取招式分类
+     * （物理=实心带白环、特殊=发光球、变化=空心脉冲环）。
+     */
+    public void playMoveCast(BattleEvent.Side side, ElementType element, MoveCategory category,
+                             Runnable onFinished) {
+        StackPane attacker = spriteBoxOf(side);
+        StackPane target = spriteBoxOf(side == BattleEvent.Side.FOE
+                ? BattleEvent.Side.PLAYER : BattleEvent.Side.FOE);
+        if (attacker == null || target == null) {
+            runNow(onFinished);
+            return;
+        }
+        prepare(attacker, target);
+        TranslateTransition forward = new TranslateTransition(Duration.millis(MS_LUNGE), attacker);
+        forward.setByX(side == BattleEvent.Side.FOE ? 11 : -11);
+        forward.setInterpolator(Interpolator.EASE_OUT);
+        TranslateTransition retreat = new TranslateTransition(Duration.millis(MS_LUNGE * 1.4), attacker);
+        retreat.setByX(side == BattleEvent.Side.FOE ? -11 : 11);
+        retreat.setInterpolator(Interpolator.EASE_IN);
+        SequentialTransition lunge = new SequentialTransition(forward, retreat);
+        ParallelTransition cast = new ParallelTransition(lunge, projectile(attacker, target, element, category));
+        cast.setOnFinished(e -> runNow(onFinished));
+        cast.play();
+    }
+
+    /** 从 {@code from} 中心飞向 {@code to} 中心并炸开的弹道特效。 */
+    private Animation projectile(Node from, Node to, ElementType element, MoveCategory category) {
+        Color color = element == null ? Color.web("#A8A878") : Color.web(element.getColorCode());
+        Circle core = new Circle(6.5);
+        if (category == MoveCategory.STATUS) {
+            core.setFill(Color.TRANSPARENT);
+            core.setStroke(color);
+            core.setStrokeWidth(3);
+        } else {
+            core.setFill(color);
+            core.setStroke(Color.web("#ffffff", 0.85));
+            core.setStrokeWidth(category == MoveCategory.SPECIAL ? 0 : 2);
+        }
+        Group shot = new Group(core);
+        if (category == MoveCategory.SPECIAL) {
+            shot.getChildren().add(0, new Circle(12, color.deriveColor(0, 1, 1, 0.30)));
+        }
+        Point2D start = centerOf(from);
+        Point2D end = centerOf(to);
+        shot.setLayoutX(start.getX());
+        shot.setLayoutY(start.getY());
+        double dx = end.getX() - start.getX();
+        double dy = end.getY() - start.getY();
+        double arc = Math.min(96, 40 + Math.abs(dx) * 0.25); // 抛物线抬升量，纯视觉
+        Timeline fly = new Timeline(
+                new KeyFrame(Duration.ZERO,
+                        new KeyValue(shot.translateXProperty(), 0.0),
+                        new KeyValue(shot.translateYProperty(), 0.0)),
+                new KeyFrame(Duration.millis(MS_FLY * 0.6),
+                        new KeyValue(shot.translateXProperty(), dx * 0.62),
+                        new KeyValue(shot.translateYProperty(), dy * 0.45 - arc)),
+                new KeyFrame(Duration.millis(MS_FLY),
+                        new KeyValue(shot.translateXProperty(), dx),
+                        new KeyValue(shot.translateYProperty(), dy)));
+        ScaleTransition burst = new ScaleTransition(Duration.millis(190), shot);
+        burst.setToX(2.3);
+        burst.setToY(2.3);
+        FadeTransition gone = new FadeTransition(Duration.millis(190), shot);
+        gone.setToValue(0);
+        SequentialTransition full = new SequentialTransition(fly, new ParallelTransition(burst, gone));
+        effectLayer.getChildren().add(shot);
+        full.setOnFinished(e -> effectLayer.getChildren().remove(shot));
+        return full;
+    }
+
+    /** 受击（命中动画）：被打一方左右急抖，并叠一层招式属性色闪光。 */
+    public void playHit(BattleEvent.Side side, ElementType element, Runnable onFinished) {
+        StackPane box = spriteBoxOf(side);
+        if (box == null) {
+            runNow(onFinished);
+            return;
+        }
+        prepare(box);
+        Color color = element == null ? Color.WHITE : Color.web(element.getColorCode());
+        Rectangle flash = overlayFor(box, color.deriveColor(0, 1, 1, 0.45));
+        effectLayer.getChildren().add(flash);
+        FadeTransition flashOut = new FadeTransition(Duration.millis(MS_HIT), flash);
+        flashOut.setFromValue(0.95);
+        flashOut.setToValue(0);
+        flashOut.setOnFinished(e -> effectLayer.getChildren().remove(flash));
+        flashOut.play();
+
+        Timeline shake = new Timeline(
+                new KeyFrame(Duration.ZERO, new KeyValue(box.translateXProperty(), 0)),
+                new KeyFrame(Duration.millis(55), new KeyValue(box.translateXProperty(), -5)),
+                new KeyFrame(Duration.millis(110), new KeyValue(box.translateXProperty(), 5)),
+                new KeyFrame(Duration.millis(165), new KeyValue(box.translateXProperty(), -3)),
+                new KeyFrame(Duration.millis(220), new KeyValue(box.translateXProperty(), 3)),
+                new KeyFrame(Duration.millis(MS_HIT), new KeyValue(box.translateXProperty(), 0)));
+        shake.setOnFinished(e -> runNow(onFinished));
+        shake.play();
+    }
+
+    /**
+     * 倒下（倒地动画）：立绘先切回倒下的那只，再下沉 + 淡出。
+     * 复位交给序列结束时的 {@link #resetPerformance()}；若紧随 SEND_OUT，则由放出动画重新显示新精灵。
+     */
+    public void playFaint(BattleEvent.Side side, String name, Runnable onFinished) {
+        StackPane box = spriteBoxOf(side);
+        applySpriteBySide(side, name);
+        if (box == null) {
+            runNow(onFinished);
+            return;
+        }
+        prepare(box);
+        TranslateTransition down = new TranslateTransition(Duration.millis(MS_FAINT), box);
+        down.setToY(14);
+        down.setInterpolator(Interpolator.EASE_IN);
+        FadeTransition fade = new FadeTransition(Duration.millis(MS_FAINT), box);
+        fade.setToValue(0);
+        ParallelTransition fall = new ParallelTransition(down, fade);
+        fall.setOnFinished(e -> runNow(onFinished));
+        fall.play();
+    }
+
+    /**
+     * 投球（捕捉动画）：球自玩家立绘处抛物线飞向野生精灵；成功则原地摆动三次并把精灵收入球中，
+     * 失败则球炸开、精灵抖一下。球体为纯几何绘制（不依赖图片资源）。
+     */
+    public void playCapture(boolean success, Runnable onFinished) {
+        StackPane from = playerSpriteBox;
+        StackPane to = enemySpriteBox;
+        if (from == null || to == null) {
+            runNow(onFinished);
+            return;
+        }
+        prepare(from, to);
+        Group ball = createBall();
+        Point2D start = centerOf(from);
+        Point2D end = centerOf(to);
+        ball.setLayoutX(start.getX());
+        ball.setLayoutY(start.getY());
+        double dx = end.getX() - start.getX();
+        double dy = end.getY() - start.getY();
+        Timeline fly = new Timeline(
+                new KeyFrame(Duration.ZERO,
+                        new KeyValue(ball.translateXProperty(), 0.0),
+                        new KeyValue(ball.translateYProperty(), 0.0),
+                        new KeyValue(ball.rotateProperty(), 0.0)),
+                new KeyFrame(Duration.millis(200),
+                        new KeyValue(ball.translateXProperty(), dx * 0.55),
+                        new KeyValue(ball.translateYProperty(), dy * 0.4 - 90)),
+                new KeyFrame(Duration.millis(430),
+                        new KeyValue(ball.translateXProperty(), dx),
+                        new KeyValue(ball.translateYProperty(), dy)));
+
+        SequentialTransition full;
+        if (success) {
+            Timeline wobble = new Timeline(
+                    new KeyFrame(Duration.millis(120), new KeyValue(ball.rotateProperty(), -24)),
+                    new KeyFrame(Duration.millis(300), new KeyValue(ball.rotateProperty(), 24)),
+                    new KeyFrame(Duration.millis(480), new KeyValue(ball.rotateProperty(), -24)),
+                    new KeyFrame(Duration.millis(660), new KeyValue(ball.rotateProperty(), 0)));
+            ScaleTransition suck = new ScaleTransition(Duration.millis(360), to);
+            suck.setToX(0.05);
+            suck.setToY(0.05);
+            FadeTransition vanish = new FadeTransition(Duration.millis(360), to);
+            vanish.setToValue(0);
+            full = new SequentialTransition(fly, wobble, new ParallelTransition(suck, vanish));
+        } else {
+            ScaleTransition burst = new ScaleTransition(Duration.millis(200), ball);
+            burst.setToX(2.4);
+            burst.setToY(2.4);
+            FadeTransition gone = new FadeTransition(Duration.millis(200), ball);
+            gone.setToValue(0);
+            Timeline shake = new Timeline(
+                    new KeyFrame(Duration.ZERO, new KeyValue(to.translateXProperty(), 0)),
+                    new KeyFrame(Duration.millis(70), new KeyValue(to.translateXProperty(), -5)),
+                    new KeyFrame(Duration.millis(140), new KeyValue(to.translateXProperty(), 5)),
+                    new KeyFrame(Duration.millis(210), new KeyValue(to.translateXProperty(), 0)));
+            full = new SequentialTransition(fly, new ParallelTransition(burst, gone), shake);
+        }
+        effectLayer.getChildren().add(ball);
+        full.setOnFinished(e -> {
+            effectLayer.getChildren().remove(ball);
+            runNow(onFinished);
+        });
+        full.play();
+    }
+
+    /** 精灵球图形：白底 + 红色上半球 + 中央按钮（上半球用 {@link ArcType#ROUND} 的 180° 圆弧拼出）。 */
+    private static Group createBall() {
+        Circle body = new Circle(8, Color.web("#f7f7f7"));
+        body.setStroke(Color.web("#333333"));
+        body.setStrokeWidth(1.4);
+        Arc top = new Arc(0, 0, 8, 8, 0, 180);
+        top.setType(ArcType.ROUND);
+        top.setFill(Color.web("#e2504c"));
+        top.setStroke(Color.web("#333333"));
+        top.setStrokeWidth(1.4);
+        Circle button = new Circle(2.6, Color.web("#fdfdfd"));
+        button.setStroke(Color.web("#333333"));
+        button.setStrokeWidth(1.2);
+        return new Group(body, top, button);
+    }
+
+    /** 使用回复/解除类道具（回复动画）：玩家立绘上方依次浮起三颗绿色光点。 */
+    public void playItem(Runnable onFinished) {
+        StackPane box = playerSpriteBox;
+        if (box == null) {
+            runNow(onFinished);
+            return;
+        }
+        prepare(box);
+        Point2D center = centerOf(box);
+        ParallelTransition sparks = new ParallelTransition();
+        for (int i = 0; i < 3; i++) {
+            Circle dot = new Circle(3.6, Color.web("#5fce62"));
+            dot.setLayoutX(center.getX() + (i - 1) * 14);
+            dot.setLayoutY(center.getY() + 6);
+            effectLayer.getChildren().add(dot);
+            Duration delay = Duration.millis(i * 80.0);
+            TranslateTransition rise = new TranslateTransition(Duration.millis(520), dot);
+            rise.setByY(-34);
+            rise.setDelay(delay);
+            FadeTransition fade = new FadeTransition(Duration.millis(520), dot);
+            fade.setToValue(0);
+            fade.setDelay(delay);
+            ParallelTransition one = new ParallelTransition(rise, fade);
+            one.setOnFinished(e -> effectLayer.getChildren().remove(dot));
+            sparks.getChildren().add(one);
+        }
+        sparks.setOnFinished(e -> runNow(onFinished));
+        sparks.play();
+    }
+
+    /** 逃跑动画：成功则玩家立绘向右滑出并淡出；失败则原地左右抖动。 */
+    public void playRun(boolean success, Runnable onFinished) {
+        StackPane box = playerSpriteBox;
+        if (box == null) {
+            runNow(onFinished);
+            return;
+        }
+        prepare(box);
+        if (success) {
+            TranslateTransition out = new TranslateTransition(Duration.millis(460), box);
+            out.setByX(230);
+            out.setInterpolator(Interpolator.EASE_IN);
+            FadeTransition fade = new FadeTransition(Duration.millis(460), box);
+            fade.setToValue(0);
+            ParallelTransition flee = new ParallelTransition(out, fade);
+            flee.setOnFinished(e -> runNow(onFinished));
+            flee.play();
+            return;
+        }
+        Timeline shake = new Timeline(
+                new KeyFrame(Duration.ZERO, new KeyValue(box.translateXProperty(), 0)),
+                new KeyFrame(Duration.millis(70), new KeyValue(box.translateXProperty(), 6)),
+                new KeyFrame(Duration.millis(140), new KeyValue(box.translateXProperty(), -6)),
+                new KeyFrame(Duration.millis(210), new KeyValue(box.translateXProperty(), 6)),
+                new KeyFrame(Duration.millis(280), new KeyValue(box.translateXProperty(), 0)));
+        shake.setOnFinished(e -> runNow(onFinished));
+        shake.play();
+    }
+
+    // ---- 演出辅助 ----
+
+    /** 复位双方立绘的位移/缩放/透明度并清空特效层（每段事件序列开始前与结束后各调用一次）。 */
+    private void resetPerformance() {
+        prepare(playerSpriteBox, enemySpriteBox);
+        effectLayer.getChildren().clear();
+    }
+
+    /** 把立绘复位到「无变换」状态：清掉上一段演出残留的位移/缩放/旋转/透明度。 */
+    private static void prepare(Node... nodes) {
+        for (Node node : nodes) {
+            if (node == null) {
+                continue;
+            }
+            node.setTranslateX(0);
+            node.setTranslateY(0);
+            node.setScaleX(1);
+            node.setScaleY(1);
+            node.setRotate(0);
+            node.setOpacity(1);
+        }
+    }
+
+    /** 某阵营对应的立绘底座（事件阵营 → 界面方位）。 */
+    private StackPane spriteBoxOf(BattleEvent.Side side) {
+        return side == BattleEvent.Side.PLAYER ? playerSpriteBox : enemySpriteBox;
+    }
+
+    /** 按阵营把精灵名对应的立绘刷到该侧（放出/收回/倒下动画只拿到名字）。 */
+    private void applySpriteBySide(BattleEvent.Side side, String name) {
+        if (side == BattleEvent.Side.PLAYER) {
+            applySpriteByName(playerSprite, playerSpriteFallback, name);
+        } else if (side == BattleEvent.Side.FOE) {
+            applySpriteByName(enemySprite, enemySpriteFallback, name);
+        }
+    }
+
+    /** 节点中心在演出层坐标系中的位置（自动适配 {@link UiScale} 的全局缩放与各级内边距）。 */
+    private Point2D centerOf(Node node) {
+        Bounds b = node.getBoundsInLocal();
+        return effectLayer.sceneToLocal(
+                node.localToScene(b.getMinX() + b.getWidth() / 2, b.getMinY() + b.getHeight() / 2));
+    }
+
+    /** 与节点同尺寸、贴合场景坐标的圆角覆盖矩形（受击闪光层）。 */
+    private Rectangle overlayFor(Node node, Color color) {
+        Bounds b = node.getBoundsInLocal();
+        Point2D topLeft = effectLayer.sceneToLocal(node.localToScene(b.getMinX(), b.getMinY()));
+        Point2D bottomRight = effectLayer.sceneToLocal(node.localToScene(b.getMaxX(), b.getMaxY()));
+        Rectangle r = new Rectangle(topLeft.getX(), topLeft.getY(),
+                bottomRight.getX() - topLeft.getX(), bottomRight.getY() - topLeft.getY());
+        r.setArcWidth(20);
+        r.setArcHeight(20);
+        r.setFill(color);
+        return r;
+    }
+
+    /**
+     * 在节点中心闪一圈扩散光环（放出/收回演出用）。
+     * 纯几何特效：不使用文本描边，也不改变立绘外布局，避免触到动态中文渲染性能红线。
+     */
+    private void ringFlash(Node node, Color color, double opacity, double radius, int ms) {
+        Point2D center = centerOf(node);
+        double base = Math.max(8, radius * 0.3);
+        Circle ring = new Circle(base, color.deriveColor(0, 1, 1, opacity * 0.35));
+        ring.setStroke(color.deriveColor(0, 1, 1, opacity));
+        ring.setStrokeWidth(3);
+        ring.setLayoutX(center.getX());
+        ring.setLayoutY(center.getY());
+        effectLayer.getChildren().add(ring);
+        ScaleTransition expand = new ScaleTransition(Duration.millis(ms), ring);
+        expand.setToX(radius / base);
+        expand.setToY(radius / base);
+        expand.setInterpolator(Interpolator.EASE_OUT);
+        FadeTransition fade = new FadeTransition(Duration.millis(ms), ring);
+        fade.setToValue(0);
+        ParallelTransition flash = new ParallelTransition(expand, fade);
+        flash.setOnFinished(e -> effectLayer.getChildren().remove(ring));
+        flash.play();
+    }
+
+    private static void runNow(Runnable onFinished) {
+        if (onFinished != null) {
+            onFinished.run();
+        }
     }
 
     private static String typeOf(Pokemon p) {

@@ -14,6 +14,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
+import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
@@ -38,12 +39,13 @@ import java.util.Map;
  * 游戏启动页（第一屏）：无卡片悬浮式主菜单。
  *
  * <p>样式改编自「临时/主界面设计代码」（Web/React 版主界面）：背景插画铺满整页，
- * 彩色 Logo 与五个胶囊入口按钮直接悬浮其上（不再使用半透明中央卡片），
+ * 彩色 Logo 与六个胶囊入口按钮直接悬浮其上（不再使用半透明中央卡片），
  * 可读性由元素自身的描边、投影与底色承担；样式集中在
  * {@code /css/start-menu.css}，本类只负责结构与动效。</p>
  *
- * <p>功能接线与原版完全一致（不受样式改编影响）：「开始游戏」进入初始宝可梦选择流程；
- * 「自定义战斗」进入模式选择页（均由 {@code MainController} 接线）；
+ * <p>功能接线与 dev 版一致（不受样式改编影响）：「开始游戏」进入初始宝可梦选择流程、
+ * 「继续游戏」进入存档位选择页（无存档时置灰）、「自定义战斗」进入模式选择页
+ * （均由 {@code MainController} 接线）；
  * 「宝可梦图鉴」「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
  *
  * <p>交互细节：鼠标悬停与方向键 ↑/↓ 切换选中项（黄描边蓝底胶囊 + 放大 1.05），
@@ -61,19 +63,19 @@ public final class StartView {
     /** 启动页样式表（classpath）。 */
     private static final String STYLE_SHEET = "/css/start-menu.css";
 
-    /** Logo 显示宽度（设计画布 px；原图 2784×1632 等比缩放）。 */
-    private static final double LOGO_WIDTH = 250;
+    /** Logo 显示宽度（设计画布 px；原图 2784×1632 等比缩放；六个入口的版面平衡值）。 */
+    private static final double LOGO_WIDTH = 235;
 
-    /** 胶囊按钮统一宽高（设计画布 px）。 */
+    /** 胶囊按钮统一宽高（设计画布 px；高度由六入口版 40 微收，内容区恰好容纳 26 图标）。 */
     private static final double MENU_WIDTH = 216;
 
-    private static final double MENU_HEIGHT = 40;
+    private static final double MENU_HEIGHT = 38;
 
-    /** 按钮垂直间距。 */
-    private static final double MENU_GAP = 8;
+    /** 按钮垂直间距（六个入口挤占画布，由五入口版的 8 收紧）。 */
+    private static final double MENU_GAP = 5;
 
-    /** 整列（Logo+菜单）垂直偏移量：底部信息条移除后的构图微调（设计画布 px，负值上移）。 */
-    private static final double COLUMN_OFFSET_Y = -10;
+    /** 整列（Logo+菜单）垂直偏移量：底栏移除且扩充至六个入口后的构图校准（设计画布 px，负值上移）。 */
+    private static final double COLUMN_OFFSET_Y = 0;
 
     /** 图标圆底直径。 */
     private static final double ICON_WRAP_SIZE = 26;
@@ -102,7 +104,7 @@ public final class StartView {
     /** 选中态伪类（由 CSS {@code .menu-pill:selected} 承载选中视觉）。 */
     private static final PseudoClass SELECTED = PseudoClass.getPseudoClass("selected");
 
-    /** 五个入口的 24 单位视口单色描边图标（lucide 风格手绘简化版）。 */
+    /** 六个入口的 24 单位视口单色描边图标（lucide 风格手绘简化版）。 */
     private static final String ICON_PLAY = "M7 4 L20 12 L7 20 Z";
     private static final String ICON_BOOK = "M12 6.5 C9.6 4.8 6.6 4.2 4.2 4.2 L4.2 18.2 C6.6 18.2 9.6 18.8 12 20.5"
             + " C14.4 18.8 17.4 18.2 19.8 18.2 L19.8 4.2 C17.4 4.2 14.4 4.8 12 6.5 Z M12 6.5 L12 20.5";
@@ -113,11 +115,21 @@ public final class StartView {
     private static final String ICON_SETTINGS = "M20 7 L11 7 M14 17 L5 17"
             + " M17 20 A3 3 0 1 0 17 14 A3 3 0 1 0 17 20 M7 10 A3 3 0 1 0 7 4 A3 3 0 1 0 7 10";
 
+    /** 「继续游戏」图标：读档（history 风格，回流箭头 + 表盘）。 */
+    private static final String ICON_HISTORY = "M3 12 A9 9 0 1 0 12 3 A9.75 9.75 0 0 0 5.26 5.74 L3 8"
+            + " M3 3 L3 8 L8 8 M12 7 L12 12 L16 14";
+
     private final Runnable onStartGame;
+
+    /** 「继续游戏」回调（进入存档位选择页；无存档置灰时不触发）。 */
+    private final Runnable onContinueGame;
+
+    /** 是否存在可继续的存档（来自 dev 版存档系统）：false 时「继续游戏」置灰。 */
+    private final boolean canContinue;
 
     private final Runnable onCustomBattle;
 
-    /** 五个胶囊按钮（顺序 = 视觉顺序，供键盘导航索引）。 */
+    /** 六个胶囊按钮（顺序 = 视觉顺序，供键盘导航索引）。 */
     private final List<Button> menuButtons = new ArrayList<>();
 
     /** 每按钮悬停位移动画缓存（重复触发前先 stop，避免同属性动画竞争）。 */
@@ -139,8 +151,10 @@ public final class StartView {
     /** 静音状态跨场景保持：MusicPlayer 为全局单例，重进主界面时需恢复静音。 */
     private static boolean muted;
 
-    public StartView(Runnable onStartGame, Runnable onCustomBattle) {
+    public StartView(Runnable onStartGame, Runnable onContinueGame, boolean canContinue, Runnable onCustomBattle) {
         this.onStartGame = onStartGame;
+        this.onContinueGame = onContinueGame;
+        this.canContinue = canContinue;
         this.onCustomBattle = onCustomBattle;
     }
 
@@ -177,7 +191,7 @@ public final class StartView {
     // 布局：Logo + 胶囊菜单
     // ------------------------------------------------------------------
 
-    /** 中央悬浮列：彩色 Logo（含入场/浮动双层容器）+ 五个胶囊入口。 */
+    /** 中央悬浮列：彩色 Logo（含入场/浮动双层容器）+ 六个胶囊入口。 */
     private Region buildMenuColumn() {
         Image logoImage = ImageBackgrounds.load(LOGO_IMAGE);
         ImageView logo = new ImageView(logoImage);
@@ -197,6 +211,7 @@ public final class StartView {
         menu.setFillWidth(false);
         menu.getChildren().addAll(
                 buildMenuButton("yellow", "开始游戏", "START", ICON_PLAY, onStartGame),
+                buildContinueButton(),
                 buildMenuButton("blue", "宝可梦图鉴", "POKEDEX", ICON_BOOK,
                         () -> LogUtil.info("[StartView] 宝可梦图鉴：图鉴展示功能待实现（预留入口）")),
                 buildMenuButton("crimson", "自定义战斗", "CUSTOM RUN", ICON_SWORDS, onCustomBattle),
@@ -205,7 +220,7 @@ public final class StartView {
                 buildMenuButton("slate", "设置选项", "SETTINGS", ICON_SETTINGS,
                         () -> LogUtil.info("[StartView] 设置选项：音效、画面等配置功能待实现（预留入口）")));
 
-        VBox column = new VBox(12, logoEntrance, menu);
+        VBox column = new VBox(10, logoEntrance, menu); // Logo 与菜单间距（六入口版收紧为 10）
         column.setAlignment(Pos.CENTER);
         // 关键：BorderPane 会把 center 子节点拉满可用高度，不设上限时整列会被垂直撑开；
         // maxHeight 用内容首选高封顶后，整列按内容收拢并垂直居中。
@@ -213,6 +228,20 @@ public final class StartView {
         column.setMaxWidth(Region.USE_PREF_SIZE);
         column.setTranslateY(COLUMN_OFFSET_Y); // 底部信息条移除后整列微调，校准构图
         return column;
+    }
+
+    /** 「继续游戏」入口：有存档时可进入存档位选择页，无存档时置灰并提示（与 dev 版行为一致）。 */
+    private Button buildContinueButton() {
+        Button button = buildMenuButton("yellow", "继续游戏", "CONTINUE", ICON_HISTORY, () -> {
+            if (onContinueGame != null) {
+                onContinueGame.run();
+            }
+        });
+        if (!canContinue) {
+            button.setDisable(true);
+            button.setTooltip(new Tooltip("还没有任何存档，先开始游戏吧"));
+        }
+        return button;
     }
 
     /**
@@ -313,13 +342,20 @@ public final class StartView {
         });
     }
 
-    /** 循环移动选中项（设计稿同款取模公式；未选中时按第一/第四项衔接）。 */
+    /** 循环移动选中项（取模公式；跳过置灰项，未选中时按首/尾项衔接）。 */
     private void moveActive(int delta) {
         int size = menuButtons.size();
         if (size == 0) {
             return;
         }
-        setActive((activeIndex + delta + size) % size);
+        int index = activeIndex;
+        for (int step = 0; step < size; step++) {
+            index = (index + delta + size) % size;
+            if (!menuButtons.get(index).isDisabled()) {
+                setActive(index);
+                return;
+            }
+        }
     }
 
     /** Enter 触发当前选中项（无选中项时不动作）。 */

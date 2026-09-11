@@ -10,8 +10,8 @@ import java.util.Objects;
 
 /**
  * 精灵种族（统一格式的精灵定义）。
- * <p>由数据文件/内建注册表提供，描述一种精灵：双属性、六项种族值、捕获率、默认技能集、
- * 进化目标（可能没有）与按等级习得技能表。</p>
+ * <p>由数据文件/内建注册表提供，描述一种精灵：双属性、六项种族值、种族经验值（baseExp）、
+ * 捕获率、默认技能集、进化目标（可能没有）与按等级习得技能表。</p>
  */
 public class Species {
 
@@ -20,6 +20,11 @@ public class Species {
     private final ElementType type1;
     private final ElementType type2;
     private final Stats baseStats;
+    /**
+     * 种族经验值 baseExp：击倒该族精灵时折算经验的基数（惯例见 {@code GrowthService}）。
+     * <p>{@code 0} 表示数据未提供该列，成长模块将退化为按六维种族值总和折算。</p>
+     */
+    private final int baseExpYield;
     /** 捕获率 0~255，越高越容易抓。 */
     private final int catchRate;
     /** 默认技能 id 列表（出生即会的技能，≤4）。 */
@@ -33,20 +38,38 @@ public class Species {
     /** 契约补充：可学习技能表（§2.9）。{@link #learnAt} 之外额外追加的条目。 */
     private final List<LearnableMove> extraLearnable = new ArrayList<>();
 
+    /**
+     * 注册一个带种族经验值的种族（推荐：经验折算需要 baseExp）。
+     *
+     * @param baseExpYield 种族经验值 baseExp（{@code 0} = 数据未提供）
+     */
     public Species(String id, String name, ElementType type1, ElementType type2,
-                   Stats baseStats, int catchRate, List<String> moveIds,
+                   Stats baseStats, int baseExpYield, int catchRate, List<String> moveIds,
                    String evolvesToId, int evolveLevel, Map<Integer, String> learnAt) {
         this.id = id;
         this.name = name;
         this.type1 = Objects.requireNonNull(type1, "type1");
         this.type2 = type2;
         this.baseStats = Objects.requireNonNull(baseStats);
+        this.baseExpYield = Math.max(0, baseExpYield);
         this.catchRate = catchRate;
         this.moveIds = Collections.unmodifiableList(new ArrayList<>(moveIds));
         this.evolvesToId = evolvesToId;
         this.evolveLevel = evolveLevel;
         this.learnAt = learnAt == null || learnAt.isEmpty()
                 ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(learnAt));
+    }
+
+    /**
+     * 注册一个种族经验值未知的种族（等价于 {@code baseExpYield = 0}）。
+     *
+     * @see #Species(String, String, ElementType, ElementType, Stats, int, int, List, String, int, Map)
+     */
+    public Species(String id, String name, ElementType type1, ElementType type2,
+                   Stats baseStats, int catchRate, List<String> moveIds,
+                   String evolvesToId, int evolveLevel, Map<Integer, String> learnAt) {
+        this(id, name, type1, type2, baseStats, 0, catchRate, moveIds,
+                evolvesToId, evolveLevel, learnAt);
     }
 
     public String getId() {
@@ -72,6 +95,15 @@ public class Species {
 
     public Stats getBaseStats() {
         return baseStats;
+    }
+
+    /**
+     * 种族经验值 baseExp：击倒该族精灵时折算经验的基数。
+     *
+     * @return baseExp；{@code 0} 表示数据未提供
+     */
+    public int getBaseExpYield() {
+        return baseExpYield;
     }
 
     public int getCatchRate() {

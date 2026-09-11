@@ -8,10 +8,11 @@ import java.util.UUID;
 
 /**
  * 精灵个体（等级 + 种族 + 技能槽 + 当前/最大 HP + 经验）。
- * <p>HP 上限与六项实际属性由种族值与等级演算而来，演算规则集中在 {@link #computeStats}。
+ * <p>HP 上限与六项实际属性由种族值、<b>个体值</b>与等级演算而来，演算规则集中在 {@link #computeStats}。
  * 个体可以积累经验升级（属性随之提升），达到条件时进化并更换种族。</p>
  * <p>契约补充（接口文档 v1.0 §2.11）：提供 uuid/IV/性格/异常状态 字段与读取方法。
- * 现有个体由 {@link #create} 创建时以随机 IV + 勤奋性格初始化；异常状态（主要异常 + 混乱）
+ * 现有个体由 {@link #create} 创建时以随机 IV + 勤奋性格初始化；个体值参与属性演算，
+ * 由局外成长机制提升的个体值会真实反映到面板上（种族值不变）。异常状态（主要异常 + 混乱）
  * 由战斗引擎按 {@link StatusCondition} 规则施加与结算，见 {@code BattleEngine}。</p>
  */
 public class Pokemon {
@@ -20,6 +21,9 @@ public class Pokemon {
     public static final int MAX_LEVEL = 100;
     /** 技能槽上限。 */
     public static final int MAX_MOVES = 4;
+
+    /** 个体值缺省值（全 0）：属性演算时等价于不叠加个体值。 */
+    private static final Stats ZERO_IV = new Stats(0, 0, 0, 0, 0, 0);
 
     private final String uuid;
     private Species species;
@@ -48,12 +52,12 @@ public class Pokemon {
      */
     private HeldItem heldItem;
 
-    private Pokemon(Species species, int level, Stats stats, int maxHp, List<MoveSlot> slots) {
+    private Pokemon(Species species, int level, Stats stats, Stats ivs, int maxHp, List<MoveSlot> slots) {
         this.uuid = UUID.randomUUID().toString();
         this.species = species;
         this.level = level;
         this.stats = stats;
-        this.ivs = Stats.randomIv();
+        this.ivs = ivs;
         this.nature = Nature.HARDY;
         this.maxHp = maxHp;
         this.currentHp = maxHp;
@@ -61,25 +65,80 @@ public class Pokemon {
         this.status = StatusCondition.NONE;
     }
 
-    /** 依据种族、等级创建满血个体。 */
+    /** 依据种族、等级创建满血个体（个体值随机 0~31）。 */
     public static Pokemon create(Species species, int level, List<Move> movePool) {
-        Stats actual = computeStats(species, level);
+        return create(species, level, movePool, Stats.randomIv());
+    }
+
+    /**
+     * 依据种族、等级与指定个体值创建满血个体。
+     *
+     * <p>个体值参与属性演算（见 {@link #computeStats}），因此由外部成长机制提升的个体值
+     * 会真实反映到战斗面板上；基种族值不变。</p>
+     *
+     * @param species  种族
+     * @param level    等级
+     * @param movePool 技能池（全部装入技能槽）
+     * @param ivs      个体值（0~31，六项）
+     */
+    public static Pokemon create(Species species, int level, List<Move> movePool, Stats ivs) {
+        Stats actual = computeStats(species, level, ivs);
         List<MoveSlot> slots = new ArrayList<>();
         for (Move move : movePool) {
             slots.add(new MoveSlot(move));
         }
-        return new Pokemon(species, level, actual, actual.getHp(), slots);
+        return new Pokemon(species, level, actual, ivs, actual.getHp(), slots);
     }
 
-    /** 由种族与等级演算六项实际属性（生命即 HP 上限）。 */
-    private static Stats computeStats(Species species, int level) {
+    /**
+     * 读档还原：以存档中记录的原始内部状态构造个体，不经过任何带副作用的 setter。
+     *
+     * <p>与 {@link #create} 的区别：{@code create} 只产出「满血、无异常、PP 全满」的新个体，
+     * 而本方法用于把存档里的中途状态（残血、异常状态与各计数、技能剩余 PP、当前经验）
+     * 精确还原。属性仍按 {@link #computeStats} 由种族/等级/个体值现算，因此个体值成长加成
+     * 在读档后依然生效。</p>
+     *
+     * @param species            种族
+     * @param level              等级
+     * @param ivs                个体值（0~31，六项）
+     * @param slots              技能槽（含各自剩余 PP），{@code null} 视为无技能
+     * @param exp                当前等级内累积的经验
+     * @param status             主要异常状态，{@code null} 视为无异常
+     * @param sleepTurns         睡眠剩余回合数
+     * @param badlyPoisonCounter 剧毒计数
+     * @param confusionTurns     混乱剩余回合数
+     * @param currentHp          当前 HP（裁剪到 {@code [0, 上限]}）
+     */
+    public static Pokemon restore(Species species, int level, Stats ivs, List<MoveSlot> slots,
+                                  long exp, StatusCondition status, int sleepTurns,
+                                  int badlyPoisonCounter, int confusionTurns, int currentHp) {
+        Stats actual = computeStats(species, level, ivs);
+        Pokemon pokemon = new Pokemon(species, level, actual, ivs, actual.getHp(),
+                slots == null ? new ArrayList<>() : new ArrayList<>(slots));
+        pokemon.exp = Math.max(0, exp);
+        pokemon.status = status == null ? StatusCondition.NONE : status;
+        pokemon.sleepTurns = Math.max(0, sleepTurns);
+        pokemon.badlyPoisonCounter = Math.max(0, badlyPoisonCounter);
+        pokemon.confusionTurns = Math.max(0, confusionTurns);
+        pokemon.currentHp = Math.max(0, Math.min(actual.getHp(), currentHp));
+        return pokemon;
+    }
+
+    /**
+     * 由种族、等级与个体值演算六项实际属性（生命即 HP 上限）。
+     *
+     * <p>采用标准公式：HP = (2×种族值 + 个体值) × 等级 / 100 + 等级 + 10，其余五项为
+     * (2×种族值 + 个体值) × 等级 / 100 + 5。个体值全 0 时与旧公式等价。</p>
+     */
+    private static Stats computeStats(Species species, int level, Stats ivs) {
         Stats base = species.getBaseStats();
-        int hp = (base.getHp() * 2 * level / 100) + level + 10;
-        int atk = (base.getAttack() * 2 * level / 100) + 5;
-        int def = (base.getDefense() * 2 * level / 100) + 5;
-        int spa = (base.getSpAttack() * 2 * level / 100) + 5;
-        int spd = (base.getSpDefense() * 2 * level / 100) + 5;
-        int spe = (base.getSpeed() * 2 * level / 100) + 5;
+        Stats iv = ivs == null ? ZERO_IV : ivs;
+        int hp = ((base.getHp() * 2 + iv.getHp()) * level) / 100 + level + 10;
+        int atk = ((base.getAttack() * 2 + iv.getAttack()) * level) / 100 + 5;
+        int def = ((base.getDefense() * 2 + iv.getDefense()) * level) / 100 + 5;
+        int spa = ((base.getSpAttack() * 2 + iv.getSpAttack()) * level) / 100 + 5;
+        int spd = ((base.getSpDefense() * 2 + iv.getSpDefense()) * level) / 100 + 5;
+        int spe = ((base.getSpeed() * 2 + iv.getSpeed()) * level) / 100 + 5;
         return new Stats(hp, atk, def, spa, spd, spe);
     }
 
@@ -293,9 +352,9 @@ public class Pokemon {
         return gained;
     }
 
-    /** 升级后按当前种族重算属性，并把新增长的上限 HP 补到当前 HP。 */
+    /** 升级后按当前种族与个体值重算属性，并把新增长的上限 HP 补到当前 HP。 */
     private void applyStatsOnLevelUp() {
-        stats = computeStats(species, level);
+        stats = computeStats(species, level, ivs);
         int oldMax = maxHp;
         maxHp = stats.getHp();
         if (currentHp > 0) {
