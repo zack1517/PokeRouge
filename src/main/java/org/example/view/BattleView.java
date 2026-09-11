@@ -831,7 +831,20 @@ public class BattleView {
         renderPartyGrid(party, activeIndex,
                 idx -> !party.get(idx).isFainted() && idx != activeIndex, // 可点：健康且非当前出战
                 idx -> party.get(idx).isFainted(),                        // 灰格：倒下
-                onPick, onBack, null);
+                onPick, onBack, null, "返回");
+    }
+
+    /**
+     * 放生面板（满队捕捉成功后）：与精灵面板同构的 3×2 六格，全部精灵均可点击放生
+     * （含倒下与当前出战），右侧卡悬停联动；顶部提示说明放生后果（装备返还），
+     * 「放弃捕捉」按钮回调 {@code onDiscard}。
+     */
+    public void showReleaseMenu(List<Pokemon> party, int activeIndex,
+                                IntConsumer onRelease, Runnable onDiscard, String hint) {
+        renderPartyGrid(party, activeIndex,
+                idx -> true, // 全部可点：放生任意队内精灵
+                idx -> false,
+                onRelease, onDiscard, hint, "放弃捕捉");
     }
 
     /**
@@ -848,7 +861,7 @@ public class BattleView {
      */
     public void showTargetMenu(List<Pokemon> party, int activeIndex, IntPredicate selectable,
                                IntConsumer onPick, Runnable onBack, String hint) {
-        renderPartyGrid(party, activeIndex, selectable, idx -> !selectable.test(idx), onPick, onBack, hint);
+        renderPartyGrid(party, activeIndex, selectable, idx -> !selectable.test(idx), onPick, onBack, hint, "返回");
     }
 
     /**
@@ -857,12 +870,13 @@ public class BattleView {
      *
      * @param selectable 某下标是否可点击选中
      * @param grey       某下标是否灰格呈现（不可点但可查看详情）
+     * @param backText   返回按钮文案（精灵/目标面板为「返回」，放生面板为「放弃捕捉」）
      */
     private void renderPartyGrid(List<Pokemon> party, int activeIndex,
                                  IntPredicate selectable, IntPredicate grey,
-                                 IntConsumer onPick, Runnable onBack, String hint) {
+                                 IntConsumer onPick, Runnable onBack, String hint, String backText) {
         leftPanel.setStyle("");
-        Button back = compactButton("返回");
+        Button back = compactButton(backText);
         back.setOnAction(e -> onBack.run());
         Region gap = new Region();
         HBox.setHgrow(gap, Priority.ALWAYS);

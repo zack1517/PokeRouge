@@ -1,5 +1,10 @@
 package org.example.battle;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+
 import org.example.model.ElementType;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
@@ -10,16 +15,10 @@ import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.Stats;
 import org.example.model.StatusCondition;
-
-import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * 捕捉判定测试：捕捉率公式为
@@ -174,5 +173,48 @@ class CaptureRateTest {
         assertTrue(engine.getPlayer().getParty().stream()
                         .anyMatch(p -> p.getSpecies().getId().equals("wild_sp")),
                 "被捕捉的精灵应入队");
+    }
+
+    /** 捕捉成功时向成长端口申报<b>捕捉结算</b>（经验奖励入口），而不是击倒结算。 */
+    @Test
+    void 捕捉成功时申报捕捉结算() {
+        Item masterBall = new Item("i_master_ball", "大师球", ItemCategory.POKE_BALL, 255, true);
+        Player player = new Player("玩家");
+        player.addPokemon(playerPokemon());
+        player.getBag().add(masterBall, 1);
+        Pokemon wild = wildPokemon();
+        RecordingGrowth growth = new RecordingGrowth();
+        BattleService engine = BattleServices.newBattle(player, wild, new FixedRandom(0.99),
+                BattleDataPorts.none(), growth);
+
+        engine.useItem(masterBall);
+
+        assertEquals(BattleService.Status.CAUGHT, engine.getStatus());
+        assertEquals(List.of(wild), growth.captured, "捕捉成功应申报捕捉结算（含 1.5 倍经验奖励）");
+        assertTrue(growth.defeated.isEmpty(), "捕捉成功不应走击倒结算");
+    }
+
+    /** 记录成长申报轨迹的端口桩：区分捕捉结算与击倒结算。 */
+    private static final class RecordingGrowth implements BattleGrowthPort {
+
+        final List<Pokemon> captured = new ArrayList<>();
+        final List<Pokemon> defeated = new ArrayList<>();
+
+        @Override
+        public Settlement settle(List<Pokemon> survivors, List<Pokemon> defeated) {
+            this.defeated.addAll(defeated);
+            return new Settlement(List.of(), List.of());
+        }
+
+        @Override
+        public Settlement settleCapture(List<Pokemon> survivors, Pokemon caught) {
+            captured.add(caught);
+            return new Settlement(List.of(), List.of());
+        }
+
+        @Override
+        public List<String> resolveLearn(BattleService.LearnChoice choice, int forgetSlotIndex) {
+            return List.of();
+        }
     }
 }

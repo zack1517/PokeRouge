@@ -1,5 +1,10 @@
 package org.example;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
 import org.example.growth.GrowthProgress;
 import org.example.model.Option;
 import org.example.model.OptionType;
@@ -8,11 +13,6 @@ import org.example.model.Pokemon;
 import org.example.model.PokemonInstance;
 import org.example.model.RogueTurnManager;
 import org.example.model.RunData;
-
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
 
 /**
  * 根包级会话对象：负责持有当前玩家状态，并充当 UI/控制器与底层模型之间的编排中心。
@@ -332,6 +332,14 @@ public class GameSession {
     /** 按失败规则扣金币，返回实际扣除数额（金币不足时扣到 0）。 */
     public int applyRogueDefeatPenalty(OptionType type) {
         return rogueTurnManager.applyDefeatPenalty(type);
+    }
+
+    /**
+     * 普通节点战败全灭救援：消耗 {@link org.example.model.RouteConfig#DEFEAT_RESCUE_AP_COST}
+     * 点行动点（不足置 0）。全队恢复由控制器执行。
+     */
+    public void applyRogueDefeatApPenalty() {
+        rogueTurnManager.applyDefeatApPenalty();
     }
 
     /** 必然节点（道馆战）当前待攻略节点；路线探索阶段为 {@code null}。 */

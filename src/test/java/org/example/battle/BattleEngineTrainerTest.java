@@ -1,5 +1,10 @@
 package org.example.battle;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+
 import org.example.model.ElementType;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
@@ -11,20 +16,13 @@ import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.Stats;
 import org.example.model.Trainer;
-
-import org.junit.jupiter.api.Test;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * 训练师轮战引擎测试：与训练家战斗时，只有<b>某一方所有精灵全部倒下</b>才结束战斗。
@@ -63,11 +61,20 @@ class BattleEngineTrainerTest {
     private static final class RecordingGrowth implements BattleGrowthPort {
 
         final List<Pokemon> defeated = new ArrayList<>();
+        final List<Integer> expNumerators = new ArrayList<>();
         int wins;
 
         @Override
         public Settlement settle(List<Pokemon> survivors, List<Pokemon> foes) {
             defeated.addAll(foes);
+            return new Settlement(List.of(), List.of());
+        }
+
+        @Override
+        public Settlement settle(List<Pokemon> survivors, List<Pokemon> foes,
+                                 int expNumerator, int expDenominator) {
+            defeated.addAll(foes);
+            expNumerators.add(expNumerator);
             return new Settlement(List.of(), List.of());
         }
 
@@ -243,6 +250,37 @@ class BattleEngineTrainerTest {
         assertEquals(BattleService.Status.PLAYER_WIN, battle.getStatus());
         assertEquals(1, growth.wins, "整场战斗只做一次获胜申报（图鉴对战次数按场次计）");
         assertTrue(growth.defeated.get(0).isFainted(), "申报的对手确实已倒下");
+    }
+
+    /** 训练师配置 1.5 倍率后，击倒申报随附倍率（3/2）；未配置的训练师仍为 1 倍。 */
+    @Test
+    void 训练师倍率随击倒申报传递() {
+        Player player = playerWith(strong("mine", 20));
+        Trainer trainer = trainerWith("路人训练家", weak("foe", 20));
+        trainer.setExpMultiplier(3, 2);
+        RecordingGrowth growth = new RecordingGrowth();
+        BattleService battle = BattleServices.newTrainerBattle(player, trainer, new Random(7),
+                BattleDataPorts.none(), growth);
+
+        battle.useMove(player.getActive().getMoveSlots().get(0));
+
+        assertEquals(BattleService.Status.PLAYER_WIN, battle.getStatus());
+        assertEquals(List.of(3), growth.expNumerators, "训练家对战击倒申报应随附 3/2 倍率");
+    }
+
+    /** 野生遭遇击倒申报为 1 倍（无训练师倍率）。 */
+    @Test
+    void 野生遭遇击倒申报为一倍() {
+        Player player = playerWith(strong("mine", 20));
+        Pokemon wild = weak("wild", 20);
+        RecordingGrowth growth = new RecordingGrowth();
+        BattleService battle = BattleServices.newBattle(player, wild, new Random(7),
+                BattleDataPorts.none(), growth);
+
+        battle.useMove(player.getActive().getMoveSlots().get(0));
+
+        assertEquals(BattleService.Status.PLAYER_WIN, battle.getStatus());
+        assertEquals(List.of(1), growth.expNumerators, "野生遭遇击倒申报应为 1 倍");
     }
 
     /** 野生遭遇仍是单只倒下即获胜，同时完成一次击倒申报与一次获胜申报。 */

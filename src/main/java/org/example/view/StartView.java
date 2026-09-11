@@ -31,9 +31,9 @@ import org.example.util.UiScale;
  * {@code /css/start-menu.css}，本类只负责结构与动效。</p>
  *
  * <p>功能接线与 dev 版一致（不受样式改编影响）：「开始游戏」进入初始宝可梦选择流程、
- * 「继续游戏」进入存档位选择页（无存档时置灰）、「自定义战斗」进入模式选择页
- * （均由 {@code MainController} 接线）；
- * 「宝可梦图鉴」「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
+ * 「继续游戏」进入存档位选择页（无存档时置灰）、「宝可梦图鉴」进入图鉴页、
+ * 「自定义战斗」进入模式选择页（均由 {@code MainController} 接线）；
+ * 「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
  *
  * <p>交互细节：鼠标悬停与方向键 ↑/↓ 切换选中项（黄描边蓝底胶囊 + 放大 1.05），
  * Enter 触发选中项、Esc 取消选中、M 切换主界面 BGM 静音；
@@ -89,6 +89,8 @@ public final class StartView {
     private final boolean canContinue;
 
     private final Runnable onCustomBattle;
+    /** 「宝可梦图鉴」回调。 */
+    private final Runnable onPokedex;
 
     /** 入场动画作用容器（Logo 外层）与无限浮动容器（Logo 内层）。 */
     private VBox logoEntrance;
@@ -97,11 +99,20 @@ public final class StartView {
     /** 静音状态跨场景保持：MusicPlayer 为全局单例，重进主界面时需恢复静音。 */
     private static boolean muted;
 
-    public StartView(Runnable onStartGame, Runnable onContinueGame, boolean canContinue, Runnable onCustomBattle) {
+    /**
+     * @param onStartGame    「开始游戏」回调
+     * @param onContinueGame 「继续游戏」回调
+     * @param canContinue    是否存在可继续的存档
+     * @param onCustomBattle 「自定义战斗」回调
+     * @param onPokedex      「宝可梦图鉴」回调
+     */
+    public StartView(Runnable onStartGame, Runnable onContinueGame, boolean canContinue,
+                     Runnable onCustomBattle, Runnable onPokedex) {
         this.onStartGame = onStartGame;
         this.onContinueGame = onContinueGame;
         this.canContinue = canContinue;
         this.onCustomBattle = onCustomBattle;
+        this.onPokedex = onPokedex;
     }
 
     public Scene createScene() {
@@ -159,8 +170,12 @@ public final class StartView {
 
         menu.addPill("yellow", "开始游戏", "START", ICON_PLAY, onStartGame);
         buildContinueButton(menu);
-        menu.addPill("blue", "宝可梦图鉴", "POKEDEX", ICON_BOOK,
-                () -> LogUtil.info("[StartView] 宝可梦图鉴：图鉴展示功能待实现（预留入口）"));
+        // 「宝可梦图鉴」进入图鉴页（PokedexView：宝可梦库 + 局外成长进度驱动）
+        menu.addPill("blue", "宝可梦图鉴", "POKEDEX", ICON_BOOK, () -> {
+            if (onPokedex != null) {
+                onPokedex.run();
+            }
+        });
         menu.addPill("crimson", "自定义战斗", "CUSTOM RUN", ICON_SWORDS, onCustomBattle);
         menu.addPill("violet", "成就系统", "ACHIEVEMENTS", ICON_TROPHY,
                 () -> LogUtil.info("[StartView] 成就系统：成就展示与管理功能待实现（预留入口）"));
