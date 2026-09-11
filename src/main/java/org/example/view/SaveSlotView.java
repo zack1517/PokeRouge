@@ -5,10 +5,12 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import org.example.save.SaveSlot;
 import org.example.save.SaveStore;
@@ -21,14 +23,29 @@ import java.util.function.Consumer;
 /**
  * 存档位选择页：一屏列出 4 个存档位，供「新游戏」「继续游戏」「保存游戏」三种用途复用。
  *
+ * <p>无卡片悬浮式布局（与启动页、自定义战斗页、初始宝可梦选择页同一套视觉体系：
+ * 背景插画 + 暗角遮罩，标题、档位行与「返回」胶囊入口直接悬浮其上）：档位行为白底
+ * 深蓝描边环的圆角面板，行内操作按钮为小号胶囊（禁用灰化），样式见
+ * {@code /css/start-menu.css} 的 .slot-* 系列；「返回」由 {@link FloatingMenu} 承载
+ * （胶囊结构与入场动画与启动页一致），Esc 亦返回。</p>
+ *
  * <p>每行展示档位名、{@link org.example.save.SaveSummary#describe()} 摘要与可用状态，
  * 按钮文案随 {@link Purpose} 变化。选择结果经 {@code onChoose} 回调交回控制器 ——
  * 视图自身不做任何读写，覆盖确认与失败提示也都由控制器负责。</p>
  */
 public final class SaveSlotView {
 
-    /** 与 {@link StartView} 同款主画面背景。 */
-    private static final String MAIN_BACKGROUND = "/images/background/bg_main.jpeg";
+    /** 页面背景（与启动页同款主画面）。 */
+    private static final String MAIN_BACKGROUND = "/images/background/bg_startpage.jpg";
+
+    /** 共享样式表（胶囊按钮/图标/暗角/标题/表单/档位行，与启动页同一份）。 */
+    private static final String STYLE_SHEET = "/css/start-menu.css";
+
+    /** 「返回」入口的 24 单位视口单色描边图标（lucide 风格手绘简化版）。 */
+    private static final String ICON_BACK = "M19 12 L5 12 M11 18 L5 12 L11 6";
+
+    /** 档位行统一宽度（设计画布 px，四行等宽对齐；宽度按常见摘要单行放下取舍）。 */
+    private static final double ROW_WIDTH = 480;
 
     /** 存档位用途：决定标题文案与按钮可用性。 */
     public enum Purpose {
@@ -82,65 +99,80 @@ public final class SaveSlotView {
     }
 
     public Scene createScene() {
-        BorderPane root = new BorderPane();
+        StackPane root = new StackPane();
         ImageBackgrounds.apply(root, MAIN_BACKGROUND);
-        root.setPadding(new Insets(12));
+
+        // 暗角遮罩：叠在背景图之上、内容层之下（与启动页同款，弱化背景保证悬浮元素可读）
+        Region vignette = new Region();
+        vignette.getStyleClass().add("start-vignette");
+        vignette.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        vignette.setMouseTransparent(true);
 
         Label title = new Label(purpose.title());
-        title.setMaxWidth(Double.MAX_VALUE);
-        title.setAlignment(Pos.CENTER);
-        title.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 22px; -fx-font-weight: bold;");
+        title.getStyleClass().add("subpage-title");
 
         Label hint = new Label(purpose.hint());
-        hint.setMaxWidth(Double.MAX_VALUE);
-        hint.setAlignment(Pos.CENTER);
-        hint.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-text-fill: #555555;");
+        hint.getStyleClass().add("starter-note");
 
-        VBox rows = new VBox(8);
+        VBox rows = new VBox(6);
+        rows.setAlignment(Pos.CENTER);
         for (SaveStore.SlotStatus status : statuses) {
             rows.getChildren().add(buildSlotRow(status));
         }
 
-        Button cancel = new Button("返回");
-        cancel.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 14px; -fx-padding: 6 24;");
-        cancel.setOnAction(e -> {
+        FloatingMenu menu = new FloatingMenu();
+        menu.addPill("slate", "返回", "BACK", ICON_BACK, () -> {
             if (onCancel != null) {
                 onCancel.run();
             }
         });
-        HBox cancelBar = new HBox(cancel);
-        cancelBar.setAlignment(Pos.CENTER);
 
-        VBox card = new VBox(12, title, hint, rows, cancelBar);
-        card.setMaxWidth(460);
-        // BorderPane 会拉满 center 子节点高度，用 USE_PREF_SIZE 让卡片按内容收拢并垂直居中
-        card.setMaxHeight(Region.USE_PREF_SIZE);
-        card.setPadding(new Insets(18));
-        card.setAlignment(Pos.CENTER);
-        card.setStyle("-fx-background-color: rgba(255, 255, 255, 0.65);"
-                + "-fx-border-color: #c9c9c9; -fx-border-radius: 10; -fx-background-radius: 10;");
-        root.setCenter(card);
-        return UiScale.scene(root);
+        // 三组垂直堆叠：标题+提示 / 四个档位行 / 胶囊入口（整列按内容收拢并垂直居中）
+        VBox header = new VBox(14, title, hint);
+        header.setAlignment(Pos.CENTER);
+        VBox column = new VBox(12, header, rows, menu.node());
+        column.setAlignment(Pos.CENTER);
+        // 关键：BorderPane 会把 center 子节点拉满可用高度，不设上限时整列会被垂直撑开；
+        // maxHeight 用内容首选高封顶后，整列按内容收拢并垂直居中。
+        column.setMaxHeight(Region.USE_PREF_SIZE);
+        column.setMaxWidth(Region.USE_PREF_SIZE);
+
+        BorderPane layout = new BorderPane();
+        layout.setCenter(column);
+        root.getChildren().addAll(vignette, layout);
+
+        Scene scene = UiScale.scene(root);
+        var css = SaveSlotView.class.getResource(STYLE_SHEET);
+        if (css != null) {
+            scene.getStylesheets().add(css.toExternalForm());
+        }
+        scene.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.ESCAPE && onCancel != null) {
+                onCancel.run(); // Esc 与「返回」同义
+            }
+        });
+        menu.playEntrance();
+        return scene;
     }
 
-    /** 单个档位一行：左侧档位名 + 摘要，右侧操作按钮。 */
+    /** 单个档位一行：左侧档位名 + 摘要，右侧操作按钮（白底圆角面板，四行等宽）。 */
     private HBox buildSlotRow(SaveStore.SlotStatus status) {
         SaveSlot slot = status.slot();
 
         Label name = new Label(slot.displayName() + (slot == currentSlot ? "（当前）" : ""));
-        name.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 15px; -fx-font-weight: bold;");
+        name.getStyleClass().add("slot-name");
 
         Label detail = new Label(describe(status));
+        detail.getStyleClass().add("slot-detail");
         detail.setWrapText(true);
-        detail.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 12px; -fx-text-fill: "
-                + detailColor(status) + ";");
+        detail.setStyle("-fx-text-fill: " + detailColor(status) + ";"); // 按档位状态着色（空档灰 / 正常深灰 / 损坏红）
 
-        VBox texts = new VBox(2, name, detail);
+        VBox texts = new VBox(1, name, detail);
         HBox.setHgrow(texts, Priority.ALWAYS);
 
         Button action = new Button(buttonText(status));
-        action.setPrefWidth(150);
-        action.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 6 12;");
+        action.getStyleClass().add("slot-action");
+        action.setPrefWidth(120);
         action.setDisable(!selectable(status));
         action.setOnAction(e -> {
             if (onChoose != null) {
@@ -150,9 +182,10 @@ public final class SaveSlotView {
 
         HBox row = new HBox(12, texts, action);
         row.setAlignment(Pos.CENTER_LEFT);
-        row.setPadding(new Insets(8, 10, 8, 10));
-        row.setStyle("-fx-background-color: rgba(255, 255, 255, 0.55);"
-                + "-fx-border-color: #dddddd; -fx-border-radius: 8; -fx-background-radius: 8;");
+        row.setPadding(new Insets(6, 12, 6, 14));
+        row.setPrefWidth(ROW_WIDTH);
+        row.setMaxWidth(ROW_WIDTH);
+        row.getStyleClass().add("slot-row");
         return row;
     }
 

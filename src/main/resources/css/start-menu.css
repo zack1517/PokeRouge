@@ -239,3 +239,73 @@
     -fx-text-fill: rgba(255, 255, 255, 0.96);
     -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.65), 10, 0.15, 0, 2);
 }
+
+/* ---------- 悬浮子页·存档位选择（SaveSlotView）：白底圆角档位行 + 小号胶囊按钮 ---------- */
+/* 与输入框同族：深蓝描边环 + 白底填充（先写的层在底层） */
+.slot-row {
+    -fx-background-color: #123c63, rgba(255, 255, 255, 0.92);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 14, 12.5;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 10, 0.08, 0, 3);
+}
+
+.slot-name {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+}
+
+.slot-detail {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    /* 文本颜色由代码按档位状态内联覆盖（空档灰 / 正常深灰 / 损坏红） */
+}
+
+/* 行内操作按钮：小号胶囊（与启动页胶囊同族配色；禁用灰化保留外形） */
+.slot-action {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #123c63,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.92) 0%,
+            #ffcb05 18%,
+            #eea800 78%,
+            #ffcb05 100%);
+    -fx-background-insets: 0, 2, 4;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-padding: 5 12;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 7, 0.05, 0, 2);
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.slot-action:hover {
+    -fx-background-color:
+        rgba(255, 255, 255, 1.0),
+        #2a75bb,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.95) 0%,
+            #ffd83d 18%,
+            #f0b000 78%,
+            #ffd83d 100%);
+}
+
+.slot-action:disabled,
+.slot-action:disabled > * {
+    -fx-opacity: 1; /* 覆盖 modena 0.4 透明度，用实色灰化 */
+}
+
+.slot-action:disabled {
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #7d8794,
+        linear-gradient(to bottom, #e9e9e9 0%, #c7c7c7 78%, #dfdfdf 100%);
+    -fx-text-fill: #7d8794;
+    -fx-cursor: default;
+}
