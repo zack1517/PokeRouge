@@ -299,6 +299,13 @@ public final class GameData {
         putItem("i_ultra_ball", "高级球", ItemCategory.POKE_BALL, 8);
         putItem("i_master_ball", "大师球", ItemCategory.POKE_BALL, 255, true);
 
+        // ---- 倍率固定（不依赖对手等级/体重/回合数等条件）的其它球种 ----
+        // 纪念球与贵重球在正作中是「基准倍率」的收藏球，这里保持 ×3（与精灵球同效）不作增强。
+        putItem("i_premier_ball", "纪念球", ItemCategory.POKE_BALL, 3);
+        putItem("i_cherish_ball", "贵重球", ItemCategory.POKE_BALL, 3);
+        putItem("i_safari_ball", "狩猎球", ItemCategory.POKE_BALL, 4.5);
+        putItem("i_sport_ball", "竞赛球", ItemCategory.POKE_BALL, 4.5);
+
         // ---- 异常状态解除道具：分别对应单种异常与全部主要异常（解毒药同时解除中毒与剧毒） ----
         putItem("i_antidote", "解毒药", "POISON|BADLY_POISON");
         putItem("i_paralyze_heal", "麻痹药", "PARALYSIS");

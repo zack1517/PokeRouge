@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Random;
 import java.util.Set;
+import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -44,11 +45,42 @@ class ShopStockTest {
 
     @Test
     void 只上架已解锁的商品() {
-        ShopStock first = ShopStock.forSegment(1, new Random(7));
+        Set<String> seen = sampledIds(1, 80);
 
-        for (ShopStock.Entry entry : first.entries()) {
-            assertTrue(FIRST_SEGMENT_ITEMS.contains(entry.itemId()),
-                    "第 1 段不应出现未解锁商品，实际：" + entry.itemId());
+        assertEquals(FIRST_SEGMENT_ITEMS, seen,
+                "第 1 段的商品池应恰为解锁的三件基础商品，实际：" + seen);
+    }
+
+    @Test
+    void 新增球种按解锁段位进入商品池() {
+        assertFalse(sampledIds(1, 80).contains("i_safari_ball"),
+                "狩猎球解锁段位为 2，不应出现在第 1 段");
+        assertTrue(sampledIds(2, 80).containsAll(Set.of("i_premier_ball", "i_safari_ball")),
+                "第 2 段应能上架纪念球与狩猎球，实际：" + sampledIds(2, 80));
+        assertTrue(sampledIds(3, 80).contains("i_sport_ball"), "竞赛球解锁段位为 3");
+        assertTrue(sampledIds(4, 80).contains("i_cherish_ball"), "贵重球解锁段位为 4");
+    }
+
+    @Test
+    void 球类商品倍率来自道具注册表() {
+        GameData data = GameData.instance();
+
+        assertEquals(4.5, data.item("i_safari_ball").getEffect(), "狩猎球为固定倍率 ×4.5");
+        assertEquals(4.5, data.item("i_sport_ball").getEffect(), "竞赛球为固定倍率 ×4.5");
+        assertEquals(3.0, data.item("i_premier_ball").getEffect(), "纪念球为基准倍率 ×3");
+        assertEquals(3.0, data.item("i_cherish_ball").getEffect(), "贵重球为基准倍率 ×3");
+        assertFalse(data.item("i_safari_ball").isAlwaysCatch(), "固定倍率球不应必定捕捉");
+    }
+
+    @Test
+    void 商品展示名与道具注册表一致() {
+        GameData data = GameData.instance();
+
+        for (int seed = 1; seed <= 80; seed++) {
+            for (ShopStock.Entry entry : ShopStock.forSegment(RouteConfig.TOTAL_SEGMENTS, new Random(seed)).entries()) {
+                assertEquals(data.item(entry.itemId()).getName(), entry.itemName(),
+                        "展示名必须取自道具注册表，避免两处各自维护后漂移：" + entry.itemId());
+            }
         }
     }
 
@@ -112,5 +144,16 @@ class ShopStockTest {
     @Test
     void 空随机源回退到默认随机() {
         assertFalse(ShopStock.forSegment(2, null).isEmpty(), "随机源为 null 时不应崩，也不应给出空商店");
+    }
+
+    /** 用多组固定随机源反复采样指定段位，返回出现过的全部商品 id（避免单次洗牌的偶然性）。 */
+    private static Set<String> sampledIds(int segment, int seeds) {
+        Set<String> ids = new TreeSet<>();
+        for (int seed = 1; seed <= seeds; seed++) {
+            for (ShopStock.Entry entry : ShopStock.forSegment(segment, new Random(seed)).entries()) {
+                ids.add(entry.itemId());
+            }
+        }
+        return ids;
     }
 }

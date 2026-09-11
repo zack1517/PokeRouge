@@ -307,6 +307,8 @@ FXML 重写，要求：
 - 构造参数 `ShopView(stock, gold, onBuy, onLeave)`，展示本次上架的 `ShopStock.Entry` 列表
   （名称 + 售价）、当前金币余额；买不起的条目禁用；购买成功后即时刷新余额；
 - 商品**按段解锁**、售价按段通胀，均为 `RouteConfig` 中的可调数值（见需求文档 §4.5）。
+- **展示名不在商店侧自存**：`ShopStock` 通过 `GameData.instance().item(id).getName()` 取名字，
+  只有注册表里查不到该 id 时才退回内置兜底名。这样即便道具表改名，商店也自动跟随。
 
 **`MainView` 标题栏**
 
