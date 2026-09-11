@@ -1,14 +1,10 @@
 package org.example.integration;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+
 import org.example.growth.GrowthProgress;
 import org.example.model.ElementType;
 import org.example.model.Move;
@@ -22,6 +18,10 @@ import org.example.pokemon.domain.Species;
 import org.example.pokemon.infrastructure.GameData;
 import org.example.pokemon.service.PokemonService;
 import org.example.pokemon.service.PokemonServiceImpl;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -32,6 +32,16 @@ class PokemonBattleAdapterTest {
 
     /** 使用隔离的成长进度，避免测试读到开发者本机的真实成长存档。 */
     private final PokemonService service = new PokemonServiceImpl(new GrowthProgress());
+
+    /** 精确等级创建应无 ±2 浮动：生成结果等级与目标一致（道馆主固定等级配置依赖此口径）。 */
+    @Test
+    void testCreateWildPokemonExact_levelMatchesExactly() {
+        for (int i = 0; i < 10; i++) {
+            Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemonExact(12, new GrowthProgress());
+            assertTrue(wild.isPresent());
+            assertEquals(12, wild.get().getLevel(), "精确等级创建不应有 ±2 浮动");
+        }
+    }
 
     /** 初始精灵转交战斗系统后，身份、属性与种族值应一一对应。 */
     @Test
@@ -80,7 +90,7 @@ class PokemonBattleAdapterTest {
         assertEquals(Math.min(Pokemon.MAX_MOVES, (int) eligible), battlePokemon.getMoves().size());
     }
 
-    /** 野生精灵应能在新系统图鉴中回查、等级在目标值 ±2 内且满足 BST 等级门槛（5 级遭遇仅出 BST ≤ 350 的基础形态）、技能转换有效。 */
+    /** 野生精灵应能在新系统图鉴中回查、等级在目标值 ±2 内且满足进化链合法性（前一进化型进化等级≤实际等级）、技能转换有效。 */
     @Test
     void testCreateWildPokemon_levelWithinOffsetAndMovesValid() {
         Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(5);
@@ -89,17 +99,48 @@ class PokemonBattleAdapterTest {
         Pokemon wildPokemon = wild.get();
         assertTrue(wildPokemon.getLevel() >= 3 && wildPokemon.getLevel() <= 7,
                 "野生等级应在 5±2 范围内，实际为 " + wildPokemon.getLevel());
-        // 野生精灵从新系统全图鉴按 BST 等级门槛抽取（低 BST 早出现），不再限定初始池
+        // 野生精灵从新系统全图鉴抽取，且不得是「前一进化型进化等级高于实际等级」的非法形态
         Species source = GameData.instance()
                 .getSpecies(wildPokemon.getSpecies().getId())
                 .orElseThrow(() -> new AssertionError(
                         "野生精灵种族不在新系统图鉴中: " + wildPokemon.getSpecies().getId()));
-        int bst = source.getBaseStats().getTotal();
-        int minLevel = bst <= 350 ? 1 : (bst <= 500 ? 12 : 20);
-        assertTrue(wildPokemon.getLevel() >= minLevel,
-                "野生精灵 " + source.getId() + "（BST " + bst + "）不应在等级 " + wildPokemon.getLevel()
-                        + " 出现，其最低出现等级为 " + minLevel);
+        assertEvolvedFormLegal(wildPokemon);
         assertMovesAreValid(wildPokemon);
+    }
+
+    /** 低等级遭遇多次也不应出现「前一进化型进化等级高于实际等级」的非法形态（如 10 级的耿鬼）。 */
+    @Test
+    void testCreateWildPokemon_lowLevelNeverYieldsIllegalEvolvedForms() {
+        for (int i = 0; i < 50; i++) {
+            Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(10);
+            assertTrue(wild.isPresent());
+            assertEvolvedFormLegal(wild.get());
+        }
+    }
+
+    /** 精确等级创建同样受进化链合法性约束（道馆主固定等级配置依赖此口径）。 */
+    @Test
+    void testCreateWildPokemonExact_respectsEvolutionLegality() {
+        for (int level : new int[]{12, 18, 25, 34}) {
+            for (int i = 0; i < 20; i++) {
+                Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemonExact(level, new GrowthProgress());
+                assertTrue(wild.isPresent());
+                assertEquals(level, wild.get().getLevel(), "精确等级创建不应有浮动");
+                assertEvolvedFormLegal(wild.get());
+            }
+        }
+    }
+
+    /** 断言该野生精灵不是非法进化形态：其前一进化型的进化等级必须不高于其实际等级。 */
+    private static void assertEvolvedFormLegal(Pokemon wild) {
+        for (Species pre : GameData.instance().getAllSpecies()) {
+            if (wild.getSpecies().getId().equals(pre.getEvolutionTarget())) {
+                assertTrue(pre.getEvolutionLevel() <= wild.getLevel(),
+                        "非法遭遇：" + wild.getSpecies().getId() + "（" + wild.getName() + "）出现在等级 "
+                                + wild.getLevel() + "，但其前一进化型 " + pre.getId() + " 在 "
+                                + pre.getEvolutionLevel() + " 级才进化");
+            }
+        }
     }
 
     /** 新体系全部属性必须能在旧战斗模型中解析（防枚举漂移）。 */

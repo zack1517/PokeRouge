@@ -7,9 +7,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
+
 import org.example.battle.BattleDataPort;
 import org.example.battle.BattleGrowthPort;
-import org.example.data.GameDataBattleDataPort;
 import org.example.growth.GrowthProgress;
 import org.example.growth.GrowthService;
 import org.example.model.ElementType;
@@ -19,10 +19,11 @@ import org.example.model.MoveEffect;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.Species;
-import org.example.model.StatusCondition;
 import org.example.model.Stats;
+import org.example.model.StatusCondition;
 import org.example.model.Trainer;
 import org.example.pokemon.domain.LearnableMove;
+import org.example.pokemon.domain.Nature;
 import org.example.pokemon.service.PokemonService;
 import org.example.pokemon.service.PokemonServiceImpl;
 
@@ -125,7 +126,16 @@ public final class PokemonBattleAdapter {
         }
     }
 
-    /** 使用新宝可梦库生成一只可交给 battle 模块的野生精灵（个体值已含局外成长加成）。 */
+    /** 野生等级浮动半宽：与宝可梦库 {@code createWildPokemon} 的 ±2 口径一致。 */
+    private static final int WILD_LEVEL_OFFSET = WildEncounter.LEVEL_SPREAD;
+
+    /**
+     * 使用新宝可梦库生成一只野生精灵（个体值已含局外成长加成）。
+     *
+     * <p><b>生成顺序</b>：先确定最终等级（目标等级 ±2 浮动），再按最终等级做进化链合法性筛选
+     * （见 {@link #wildCandidates(int)}），最后随机选种族并以该等级创建 —— 保证不会出现
+     * 「前一进化型进化等级高于实际等级」的非法形态（如 10 级的耿鬼）。</p>
+     */
     public static Optional<Pokemon> createWildPokemon(int aroundLevel) {
         return createWildPokemon(aroundLevel, GrowthProgress.instance());
     }
@@ -133,20 +143,49 @@ public final class PokemonBattleAdapter {
     /**
      * 使用新宝可梦库生成野生精灵，并指定成长进度来源（便于测试隔离）。
      *
-     * <p>候选池按遭遇等级做 BST 分级筛选（见 {@link #wildCandidates(int)}），
-     * 低等级只出基础形态，高强度宝可梦在游戏后期才出现。</p>
+     * <p>候选池按<b>最终确定等级</b>做进化链筛选（见 {@link #wildCandidates(int)}）：
+     * 低等级只出合法形态，进化形态到其前一进化型的进化等级之后才出现。</p>
      *
      * @param aroundLevel 目标等级
      * @param progress    局外成长进度（决定个体值加成）
      */
     public static Optional<Pokemon> createWildPokemon(int aroundLevel, GrowthProgress progress) {
         PokemonService source = new PokemonServiceImpl(progress);
-        List<org.example.pokemon.domain.Species> choices = wildCandidates(aroundLevel);
+        // 先确定最终等级（±2 浮动），再按最终等级筛选：避免筛选后又被浮动出非法等级
+        int level = Math.max(1, aroundLevel
+                + ThreadLocalRandom.current().nextInt(-WILD_LEVEL_OFFSET, WILD_LEVEL_OFFSET + 1));
+        List<org.example.pokemon.domain.Species> choices = wildCandidates(level);
         if (choices.isEmpty()) {
             return Optional.empty();
         }
         org.example.pokemon.domain.Species species = choices.get(ThreadLocalRandom.current().nextInt(choices.size()));
-        return Optional.of(toBattlePokemon(source.createWildPokemon(species.getId(), aroundLevel)));
+        return Optional.of(toBattlePokemon(source.createPokemon(species.getId(), level, randomNature(source))));
+    }
+
+    /**
+     * 使用新宝可梦库生成一只<b>精确等级</b>的对手精灵（无 ±2 浮动；个体值仍含局外成长加成）。
+     * 候选池同样按该等级做进化链合法性筛选（见 {@link #wildCandidates(int)}）。
+     *
+     * <p>适用于需要钉死等级的对手（如 1~4 段道馆馆主：12 / 18 / 25 / 34），避免
+     * {@code createWildPokemon} 的等级浮动把配置值漂移出去。</p>
+     *
+     * @param level    目标等级（生成结果即此等级）
+     * @param progress 局外成长进度（决定个体值加成）
+     */
+    public static Optional<Pokemon> createWildPokemonExact(int level, GrowthProgress progress) {
+        PokemonService source = new PokemonServiceImpl(progress);
+        List<org.example.pokemon.domain.Species> choices = wildCandidates(level);
+        if (choices.isEmpty()) {
+            return Optional.empty();
+        }
+        org.example.pokemon.domain.Species species = choices.get(ThreadLocalRandom.current().nextInt(choices.size()));
+        return Optional.of(toBattlePokemon(source.createPokemon(species.getId(), level, randomNature(source))));
+    }
+
+    /** 随机抽取一个性格（与野生遭遇口径一致）。 */
+    private static Nature randomNature(PokemonService source) {
+        List<Nature> natures = source.getAllNatures();
+        return natures.get(ThreadLocalRandom.current().nextInt(natures.size()));
     }
 
     /**
@@ -174,27 +213,35 @@ public final class PokemonBattleAdapter {
     }
 
     /**
-     * 按遭遇等级从宝可梦库全部种族中筛选候选。
+     * 按<b>确定后的遭遇等级</b>筛选合法候选：剔除「前一进化型进化等级高于该等级」的形态。
      *
-     * <p>种族值总和（BST）越低出现越早：≤350 的基础形态任意等级可遇；
-     * 350<BST≤500 的二段/中等形态需等级≥12；BST>500 的最终形态/强力宝可梦需等级≥20，
-     * 保证高强度宝可梦在游戏后期才出现。</p>
-     *
-     * @param aroundLevel 目标遭遇等级
-     * @return 符合条件的种族列表（数据缺失时为空列表）
+     * <p>进化链数据来自宝可梦库 species.csv：{@code evolutionTarget} 指向进化目标，
+     * {@code evolutionLevel} 为该物种进化成目标形态的等级。因此对候选形态 S，若存在某个
+     * 物种 T 满足 {@code T.evolutionTarget == S.id} 且 {@code T.evolutionLevel > level}，
+     * 则 S 在该等级不合法（例如 10 级遭遇不会出现需 32 级进化来的妙蛙花）。没有前一进化型的
+     * 基础形态任何等级都合法。</p>
      */
-    private static List<org.example.pokemon.domain.Species> wildCandidates(int aroundLevel) {
+    private static List<org.example.pokemon.domain.Species> wildCandidates(int level) {
         List<org.example.pokemon.domain.Species> all =
                 org.example.pokemon.infrastructure.GameData.instance().getAllSpecies();
         List<org.example.pokemon.domain.Species> candidates = new ArrayList<>();
         for (org.example.pokemon.domain.Species species : all) {
-            int bst = species.getBaseStats().getTotal();
-            int minLevel = bst <= 350 ? 1 : (bst <= 500 ? 12 : 20);
-            if (aroundLevel >= minLevel) {
+            if (legalAtLevel(species, level, all)) {
                 candidates.add(species);
             }
         }
         return candidates;
+    }
+
+    /** 该形态在指定等级下是否合法：任一前一进化型的进化等级超过该等级即不合法。 */
+    private static boolean legalAtLevel(org.example.pokemon.domain.Species species, int level,
+                                        List<org.example.pokemon.domain.Species> all) {
+        for (org.example.pokemon.domain.Species pre : all) {
+            if (species.getId().equals(pre.getEvolutionTarget()) && pre.getEvolutionLevel() > level) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
