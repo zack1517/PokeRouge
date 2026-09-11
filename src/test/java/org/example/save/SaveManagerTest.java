@@ -165,8 +165,10 @@ class SaveManagerTest {
 
         manager.save(SaveSlot.SLOT_1, player, session);
 
-        assertTrue(manager.load(SaveSlot.SLOT_1).orElseThrow()
-                .getRogueRunData().isGameOver());
+        GameSession restored = manager.load(SaveSlot.SLOT_1).orElseThrow();
+        assertTrue(restored.getRogueRunData().isGameOver());
+        // UI 读档时据 isRogueRunFinished 拒绝载入已结束的一轮（提示回去开新游戏），必须随存档保留
+        assertTrue(restored.isRogueRunFinished(), "已结束的一轮读档后仍应判定为已结束");
     }
 
     /** 空档位读档返回空，UI 据此提示「该档位没有存档」。 */
