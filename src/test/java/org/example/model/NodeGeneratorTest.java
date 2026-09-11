@@ -89,11 +89,12 @@ class NodeGeneratorTest {
     /** 特殊事件槽位只有一个：火箭队判定落空时退回通用特殊事件。 */
     @Test
     void 火箭队判定落空时特殊事件槽位退回通用特殊事件() {
-        // 段 1 的判定顺序：野外精灵免单 → 商店 → 火箭队 → 通用特殊事件
-        List<Option> options = new NodeGenerator(scripted(99, 0, 99, 0)).generateSegment(1).getRouteOptions();
+        // 段 1 的判定顺序：野外精灵免单 → 商店 → 火箭队 → 装备补给 → 通用特殊事件
+        List<Option> options = new NodeGenerator(scripted(99, 0, 99, 99, 0)).generateSegment(1).getRouteOptions();
 
         assertTrue(hasType(options, OptionType.SHOP), "商店判定命中");
         assertFalse(hasType(options, OptionType.ROCKET), "火箭队判定落空");
+        assertFalse(hasType(options, OptionType.REWARD), "装备补给判定落空");
         assertTrue(hasType(options, OptionType.SPECIAL), "此时才轮到通用特殊事件");
     }
 
