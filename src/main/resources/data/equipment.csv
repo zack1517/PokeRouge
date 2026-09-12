@@ -22,6 +22,12 @@
 #   / HEAL_HP(树果:HP 不高于阈值比例时回血,param 为 阈值比例|回复量,回复量<1 视为最大HP比例,>=1 视为固定点数)
 #   / HEAL_PP(树果:招式 PP 归零时回补,param 为回复点数)
 #   / RESIST_TYPE(树果:属性减伤,param 为 属性|承伤倍率[|ALWAYS],默认仅在效果拔群时触发,ALWAYS 时不看克制关系)
+#   / PUNCH_BOOST(拳类招式威力提升且不再视为接触,param 为倍率)
+#   / CONTACT_PUNISH(被接触类招式命中时攻击方按最大HP比例反伤,param 为比例)
+#   / POWDER_IMMUNE(免疫粉末类招式与沙暴/冰雹回合末伤害,param 忽略)
+#   / CRIT_BOOST(会心等级提升,param 为提升等级)
+#   / FLINCH_CHANCE(招式造成伤害后按概率使目标畏缩,param 为概率百分比)
+#   / CONSECUTIVE_BOOST(连续使用同一招式时逐次增伤,param 为每层增幅)
 id,name,effectType,param,description
 e_charcoal,木炭,DAMAGE_TYPE,FIRE|1.2,火属性招式威力提升 20%
 e_mystic_water,神秘水滴,DAMAGE_TYPE,WATER|1.2,水属性招式威力提升 20%
@@ -83,3 +89,10 @@ b_kasib,佛柑果,RESIST_TYPE,GHOST|0.5,受到效果拔群的幽灵属性招式�
 b_haban,刺耳果,RESIST_TYPE,DARK|0.5,受到效果拔群的恶属性招式时伤害减半
 b_roseli,洛玫果,RESIST_TYPE,FAIRY|0.5,受到效果拔群的妖精属性招式时伤害减半
 b_babiri,灯浆果,RESIST_TYPE,NORMAL|0.5|ALWAYS,受到一般属性招式时伤害减半（一般属性无克制关系，故不看效果拔群）
+# 批次④装备：招式标记 / 会心 / 畏缩
+e_punch_glove,拳击手套,PUNCH_BOOST,1.1,拳类招式威力提升 10%，且该招式不再视为接触类
+e_rocky_helmet,凸凸头盔,CONTACT_PUNISH,0.1667,被接触类招式命中时，攻击方失去最大 HP 的 1/6
+e_safety_goggles,防尘护目镜,POWDER_IMMUNE,,免疫粉末类招式与沙暴/冰雹的回合末伤害
+e_razor_claw,锐利之爪,CRIT_BOOST,1,会心等级 +1（会心率 1/24 → 1/8）
+e_kings_rock,王者之证,FLINCH_CHANCE,10,招式造成伤害后 10% 概率使目标畏缩
+e_metronome,节拍器,CONSECUTIVE_BOOST,0.2,连续使用同一招式时每次增伤 20%，上限 2 倍

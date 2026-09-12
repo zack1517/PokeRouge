@@ -6,6 +6,7 @@ import org.example.model.HeldItemEffect;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
+import org.example.model.MoveFlag;
 import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -899,5 +901,337 @@ class BattleEngineHeldItemTest {
         int without = damageDealt(BIG_HIT, null, null, ElementType.NORMAL, ElementType.NORMAL, null);
         int with = damageDealt(BIG_HIT, null, BABIRI, ElementType.NORMAL, ElementType.NORMAL, null);
         assertEquals(0.5, (double) with / without, 0.05, "灯浆果减伤不要求效果拔群");
+    }
+
+    // ------------------------------------------------------------------
+    // 批次④：招式标记（接触 / 拳 / 粉末）与装备
+    // ------------------------------------------------------------------
+
+    /** 接触类物理招（无拳标记）：凸凸头盔反伤与拳击手套的对照组。 */
+    private static final Move CONTACT_HIT = new Move("m_contact", "猛撞", ElementType.NORMAL,
+            MoveCategory.PHYSICAL, 500, 100, 40, 0, MoveEffect.NONE,
+            StatusCondition.NONE, 0, Set.of(MoveFlag.CONTACT));
+
+    /** 拳类物理招（拳类招式同时具备接触标记）：拳击手套增伤、免疫凸凸头盔反伤。 */
+    private static final Move PUNCH_HIT = new Move("m_punch", "雷电拳", ElementType.NORMAL,
+            MoveCategory.PHYSICAL, 500, 100, 40, 0, MoveEffect.NONE,
+            StatusCondition.NONE, 0, Set.of(MoveFlag.CONTACT, MoveFlag.PUNCH));
+
+    /** 粉末类变化招（必定中毒）：防尘护目镜免疫对象。 */
+    private static final Move POWDER_MOVE = new Move("m_powder", "毒粉", ElementType.POISON,
+            MoveCategory.STATUS, 0, 100, 40, 0, MoveEffect.NONE,
+            StatusCondition.POISON, 100, Set.of(MoveFlag.POWDER));
+
+    /** 非粉末的变化招（必定中毒）：防尘护目镜的对照组，验证只免疫粉末类。 */
+    private static final Move POISON_GAS_MOVE = new Move("m_gas", "毒瓦斯", ElementType.POISON,
+            MoveCategory.STATUS, 0, 100, 40, 0, MoveEffect.NONE, StatusCondition.POISON, 100);
+
+    /** 开启沙暴的变化招：防尘护目镜的回合末免伤用例。 */
+    private static final Move SANDSTORM_MOVE = new Move("m_sand", "沙暴", ElementType.ROCK,
+            MoveCategory.STATUS, 0, 100, 40, MoveEffect.SANDSTORM);
+
+    /** 与 {@link #BIG_HIT} 数值相同但 id 不同的招式：节拍器「换招归零」的对照招。 */
+    private static final Move BIG_HIT_ALT = new Move("m_big_alt", "重击·改", ElementType.NORMAL,
+            MoveCategory.PHYSICAL, 500, 100, 40);
+
+    private static final HeldItem PUNCH_GLOVE = item("e_punch_glove", "拳击手套", HeldItemEffect.PUNCH_BOOST, "1.1");
+    private static final HeldItem ROCKY_HELMET = item("e_rocky_helmet", "凸凸头盔", HeldItemEffect.CONTACT_PUNISH, "0.1667");
+    private static final HeldItem SAFETY_GOGGLES = item("e_safety_goggles", "防尘护目镜", HeldItemEffect.POWDER_IMMUNE, "");
+    private static final HeldItem RAZOR_CLAW = item("e_razor_claw", "锐利之爪", HeldItemEffect.CRIT_BOOST, "1");
+    private static final HeldItem KINGS_ROCK = item("e_kings_rock", "王者之证", HeldItemEffect.FLINCH_CHANCE, "10");
+    private static final HeldItem METRONOME_ITEM = item("e_metronome", "节拍器", HeldItemEffect.CONSECUTIVE_BOOST, "0.2");
+
+    /**
+     * 玩家（高速、血厚）用指定招式打一个回合，返回引擎：对手血厚不死、按 {@code foeMove} 行动。
+     * 用于凸凸头盔反伤、王者之证畏缩这类需要观测双方状态的用例；除装备与种子外配置完全一致。
+     */
+    private static BattleEngine engineAfterPlayerAttack(Move move, HeldItem attackerItem,
+                                                        HeldItem defenderItem, Move foeMove, long seed) {
+        Pokemon mine = poke(
+                species("p_sp", ElementType.NORMAL, 1000, 100, 50, 200, null), 50, List.of(move));
+        if (attackerItem != null) {
+            mine.setHeldItem(attackerItem);
+        }
+        Pokemon foe = poke(
+                species("f_sp", ElementType.NORMAL, 5000, 100, 50, 10, null), 50, List.of(foeMove));
+        if (defenderItem != null) {
+            foe.setHeldItem(defenderItem);
+        }
+        Player player = new Player("玩家");
+        player.addPokemon(mine);
+        BattleEngine engine = new BattleEngine(player, foe, new Random(seed));
+        engine.useMove(mine.getMoveSlots().get(0));
+        return engine;
+    }
+
+    /** 同 {@link #damageDealt}，但可指定随机种子（会心/畏缩等需要扫描种子的确定性用例）。 */
+    private static int damageDealtWithSeed(Move move, HeldItem attackerItem, long seed) {
+        Pokemon attacker = poke(
+                species("atk_sp", ElementType.NORMAL, 1000, 100, 100, 200, null), 50, List.of(move));
+        if (attackerItem != null) {
+            attacker.setHeldItem(attackerItem);
+        }
+        Pokemon defender = poke(
+                species("def_sp", ElementType.NORMAL, 5000, 10, 50, 10, null), 50, List.of(WEAK_HIT));
+        Player player = new Player("玩家");
+        player.addPokemon(attacker);
+        BattleEngine engine = new BattleEngine(player, defender, new Random(seed));
+        engine.useMove(attacker.getMoveSlots().get(0));
+        return defender.getMaxHp() - defender.getCurrentHp();
+    }
+
+    @Test
+    void 拳击手套提升拳类招式伤害一成() {
+        assertDamageMultiplier(PUNCH_HIT, PUNCH_GLOVE, ElementType.NORMAL, 1.1);
+    }
+
+    @Test
+    void 拳击手套对非拳类招式无效() {
+        int without = damageDealt(CONTACT_HIT, null, null, ElementType.NORMAL, ElementType.NORMAL, null);
+        int with = damageDealt(CONTACT_HIT, PUNCH_GLOVE, null, ElementType.NORMAL, ElementType.NORMAL, null);
+        assertEquals(without, with, "接触但非拳类的招式不应被拳击手套增伤");
+    }
+
+    @Test
+    void 凸凸头盔按最大Hp六分之一反伤接触类招式使用者() {
+        BattleEngine without = engineAfterPlayerAttack(CONTACT_HIT, null, null, IDLE_MOVE, 42);
+        BattleEngine with = engineAfterPlayerAttack(CONTACT_HIT, null, ROCKY_HELMET, IDLE_MOVE, 42);
+        int maxHp = with.playerActive().getMaxHp();
+        int lost = without.playerActive().getCurrentHp() - with.playerActive().getCurrentHp();
+        assertEquals((int) (maxHp * 0.1667), lost, "反伤应为攻击方最大 HP 的 1/6");
+        assertEquals(ROCKY_HELMET, with.foeActive().getHeldItem(), "反伤不应消耗凸凸头盔");
+        assertTrue(with.getLog().stream().anyMatch(line -> line.contains("凸凸头盔")),
+                "日志应包含凸凸头盔反伤");
+    }
+
+    @Test
+    void 凸凸头盔对非接触类招式不反伤() {
+        BattleEngine without = engineAfterPlayerAttack(WATER_MOVE, null, null, IDLE_MOVE, 42);
+        BattleEngine with = engineAfterPlayerAttack(WATER_MOVE, null, ROCKY_HELMET, IDLE_MOVE, 42);
+        assertEquals(without.playerActive().getCurrentHp(), with.playerActive().getCurrentHp(),
+                "非接触类招式不应触发凸凸头盔反伤");
+    }
+
+    @Test
+    void 凸凸头盔对拳击手套的拳类招式不反伤() {
+        BattleEngine gloved = engineAfterPlayerAttack(PUNCH_HIT, PUNCH_GLOVE, ROCKY_HELMET, IDLE_MOVE, 42);
+        BattleEngine bare = engineAfterPlayerAttack(PUNCH_HIT, null, ROCKY_HELMET, IDLE_MOVE, 42);
+        assertTrue(bare.playerActive().getCurrentHp() < bare.playerActive().getMaxHp(),
+                "未戴拳击手套时拳类招式仍属接触，应被反伤");
+        assertEquals(gloved.playerActive().getMaxHp(), gloved.playerActive().getCurrentHp(),
+                "拳击手套让拳类招式不视为接触，不应被反伤");
+    }
+
+    @Test
+    void 锐利之爪会心时伤害提升五成() {
+        long seed = seedWhereClawCrits();
+        int plain = damageDealtWithSeed(BIG_HIT, null, seed);
+        int crit = damageDealtWithSeed(BIG_HIT, RAZOR_CLAW, seed);
+        assertEquals(1.5, (double) crit / plain, 0.02,
+                "会心伤害应为 1.5 倍（无装备 " + plain + "、锐利之爪 " + crit + "）");
+        assertTrue(damageLog(BIG_HIT, RAZOR_CLAW, seed).contains("击中要害"), "携带锐利之爪时应会心一击");
+        assertFalse(damageLog(BIG_HIT, null, seed).contains("击中要害"), "无装备时该种子不应会心");
+    }
+
+    @Test
+    void 锐利之爪把会心概率从二十四分之一提升到八分之一() {
+        int rounds = 400;
+        int plain = 0;
+        int claw = 0;
+        for (long index = 0; index < rounds; index++) {
+            long seed = scatteredSeed(index);
+            if (damageLog(BIG_HIT, null, seed).contains("击中要害")) {
+                plain++;
+            }
+            if (damageLog(BIG_HIT, RAZOR_CLAW, seed).contains("击中要害")) {
+                claw++;
+            }
+        }
+        assertEquals(1.0 / 24.0, (double) plain / rounds, 0.03,
+                "无装备时会心率应为 1/24，实测 " + plain + "/" + rounds);
+        assertEquals(1.0 / 8.0, (double) claw / rounds, 0.04,
+                "锐利之爪（1 级）会心率应为 1/8，实测 " + claw + "/" + rounds);
+    }
+
+    /**
+     * 打散后的随机种子：小整数（0、1、2…）作种子时 {@link Random} 首个 {@code next(31)} 的高位
+     * 比特随种子线性缓慢变化（实测 {@code nextInt(8)} 连续多个种子恒为同值），统计型用例会得到
+     * 严重偏差的会心率，故一律用黄金比例乘子打散后再做二次哈希。
+     */
+    private static long scatteredSeed(long index) {
+        return new Random(index * 0x9E3779B97F4A7C15L + 0x9E3779B97F4A7C15L).nextLong();
+    }
+
+    /**
+     * 一个回合内玩家（高速）攻击造成的伤害日志：对手空转，因此日志中的「击中要害」必属玩家。
+     */
+    private static String damageLog(Move move, HeldItem attackerItem, long seed) {
+        return String.join("|", engineAfterPlayerAttack(move, attackerItem, null, IDLE_MOVE, seed).getLog());
+    }
+
+    /**
+     * 运行时扫描种子：令首个随机调用（会心判定）在 1 级（{@code nextInt(8)}）命中、0 级
+     * （{@code nextInt(24)}）不命中。两种分母都只消耗一次内部随机数，后续伤害浮动因此完全一致，
+     * 两份伤害之比即会心倍率本身。
+     */
+    private static long seedWhereClawCrits() {
+        for (long index = 0; index < 10_000; index++) {
+            long seed = scatteredSeed(index);
+            if (new Random(seed).nextInt(8) == 0 && new Random(seed).nextInt(24) != 0) {
+                return seed;
+            }
+        }
+        throw new AssertionError("找不到锐利之爪会心而无装备不会心的随机种子");
+    }
+
+    @Test
+    void 王者之证按概率使目标畏缩从而无法行动() {
+        BattleEngine flinched = engineAfterPlayerAttack(BIG_HIT, KINGS_ROCK, null, MED_HIT, seedWhereFlinchTriggers());
+        assertTrue(flinched.getLog().stream().anyMatch(line -> line.contains("畏缩了")),
+                "触发时日志应播报目标畏缩");
+        assertTrue(flinched.getLog().stream().anyMatch(line -> line.contains("无法行动")),
+                "畏缩目标本回合无法行动");
+        assertEquals(flinched.playerActive().getMaxHp(), flinched.playerActive().getCurrentHp(),
+                "目标畏缩未出手，玩家不应受到伤害");
+
+        BattleEngine plain = engineAfterPlayerAttack(BIG_HIT, KINGS_ROCK, null, MED_HIT, seedWhereFlinchFails());
+        assertFalse(plain.getLog().stream().anyMatch(line -> line.contains("畏缩了")),
+                "未触发时不应有畏缩日志");
+        assertTrue(plain.playerActive().getCurrentHp() < plain.playerActive().getMaxHp(),
+                "未触发时敌方正常行动并造成伤害");
+    }
+
+    @Test
+    void 王者之证对变化招不触发畏缩() {
+        for (long seed = 0; seed < 30; seed++) {
+            BattleEngine engine = engineAfterPlayerAttack(IDLE_MOVE, KINGS_ROCK, null, IDLE_MOVE, seed);
+            assertFalse(engine.getLog().stream().anyMatch(line -> line.contains("畏缩了")),
+                    "变化招不应触发王者之证（种子 " + seed + "）");
+        }
+    }
+
+    /**
+     * 运行时扫描种子：令首个随机调用（会心判定 {@code nextInt(24)}）、第二次（伤害浮动
+     * {@code nextDouble()}）之后的畏缩判定 {@code nextInt(100)} 落在触发区间 [0,10)。
+     */
+    private static long seedWhereFlinchTriggers() {
+        for (long s = 0; s < 100_000; s++) {
+            Random probe = new Random(s);
+            probe.nextInt(24);
+            probe.nextDouble();
+            if (probe.nextInt(100) < 10) {
+                return s;
+            }
+        }
+        throw new AssertionError("找不到触发王者之证的随机种子");
+    }
+
+    /** 同 {@link #seedWhereFlinchTriggers()}，但畏缩判定落在非触发区间 [10,100)。 */
+    private static long seedWhereFlinchFails() {
+        for (long s = 0; s < 100_000; s++) {
+            Random probe = new Random(s);
+            probe.nextInt(24);
+            probe.nextDouble();
+            if (probe.nextInt(100) >= 10) {
+                return s;
+            }
+        }
+        throw new AssertionError("找不到不触发王者之证的随机种子");
+    }
+
+    @Test
+    void 节拍器连续使用同一招式逐次增伤且封顶两倍() {
+        int[] same = damageSequence(METRONOME_ITEM, false, 10);
+        int[] alternating = damageSequence(METRONOME_ITEM, true, 10);
+        int[] alternatingPlain = damageSequence(null, true, 10);
+        assertEquals(alternating[0], same[0], "首次使用（连续次数 1）不应有增伤");
+        assertEquals(1.2, (double) same[1] / alternating[1], 0.05, "连续第 2 次应增伤至 1.2 倍");
+        assertEquals(1.4, (double) same[2] / alternating[2], 0.05, "连续第 3 次应增伤至 1.4 倍");
+        assertEquals(2.0, (double) same[6] / alternating[6], 0.05, "连续第 7 次应封顶 2.0 倍");
+        assertEquals(2.0, (double) same[9] / alternating[9], 0.05, "连续第 10 次应保持封顶 2.0 倍");
+        assertEquals(1.0, (double) alternating[2] / alternatingPlain[2], 0.05,
+                "换招后连续次数归零，节拍器不应再有增伤");
+    }
+
+    @Test
+    void 未携带节拍器时连续使用同一招式不增伤() {
+        int[] same = damageSequence(null, false, 3);
+        int[] alternating = damageSequence(null, true, 3);
+        assertEquals(alternating[2], same[2], "未携带节拍器时连续使用不应增伤");
+    }
+
+    /**
+     * 连打 {@code rounds} 个回合，返回每回合对防守方造成的伤害。
+     * {@code alternating} 为 {@code true} 时严格交替两个数值相同但 id 不同的招式（连续次数恒为 1），
+     * 否则一直使用同一招式（连续次数逐回合累加）。两场除出招顺序外配置一致、种子相同，
+     * 因此每回合的会心与伤害浮动完全一致，伤害之比即节拍器倍率差。
+     */
+    private static int[] damageSequence(HeldItem item, boolean alternating, int rounds) {
+        Pokemon mine = poke(
+                species("p_sp", ElementType.NORMAL, 5000, 100, 50, 200, null), 50,
+                List.of(BIG_HIT, BIG_HIT_ALT));
+        if (item != null) {
+            mine.setHeldItem(item);
+        }
+        Pokemon foe = poke(
+                species("f_sp", ElementType.NORMAL, 200000, 100, 50, 10, null), 50, List.of(WEAK_HIT));
+        Player player = new Player("玩家");
+        player.addPokemon(mine);
+        BattleEngine engine = new BattleEngine(player, foe, new Random(42));
+        int[] damage = new int[rounds];
+        for (int round = 0; round < rounds; round++) {
+            int before = foe.getCurrentHp();
+            engine.useMove(mine.getMoveSlots().get(alternating ? round % 2 : 0));
+            damage[round] = before - foe.getCurrentHp();
+        }
+        return damage;
+    }
+
+    @Test
+    void 防尘护目镜免疫粉末类招式且不消耗() {
+        assertEquals(StatusCondition.POISON, statusInflictedDefender(POWDER_MOVE, null).getStatus(),
+                "前置条件：无护目镜时应中毒");
+        Pokemon goggled = statusInflictedDefender(POWDER_MOVE, SAFETY_GOGGLES);
+        assertEquals(StatusCondition.NONE, goggled.getStatus(), "护目镜应免疫粉末类招式");
+        assertEquals(SAFETY_GOGGLES, goggled.getHeldItem(), "免疫粉末招式不应消耗护目镜");
+    }
+
+    @Test
+    void 防尘护目镜只免疫粉末类招式() {
+        Pokemon gassed = statusInflictedDefender(POISON_GAS_MOVE, SAFETY_GOGGLES);
+        assertEquals(StatusCondition.POISON, gassed.getStatus(), "非粉末类招式不应被护目镜免疫");
+    }
+
+    @Test
+    void 防尘护目镜免疫沙暴回合末伤害() {
+        BattleEngine without = sandstormRounds(null);
+        BattleEngine with = sandstormRounds(SAFETY_GOGGLES);
+        int maxHp = with.playerActive().getMaxHp();
+        assertEquals(maxHp, with.playerActive().getCurrentHp(), "护目镜应完全免疫沙暴回合末伤害");
+        assertEquals(Math.max(1, (int) (maxHp * 0.0625)) * 3,
+                maxHp - without.playerActive().getCurrentHp(),
+                "无护目镜时自开启当回合起每回合应扣除最大 HP 的 1/16（共 3 回合）");
+        assertTrue(with.getLog().stream().anyMatch(line -> line.contains("不受沙暴影响")),
+                "日志应播报护目镜免疫沙暴");
+    }
+
+    /** 开启沙暴后连打 3 个回合（首回合开天气，随后空转 2 回合）：用于护目镜的回合末免伤断言。 */
+    private static BattleEngine sandstormRounds(HeldItem goggles) {
+        Pokemon mine = poke(
+                species("p_sp", ElementType.NORMAL, 1000, 100, 50, 200, null), 50,
+                List.of(SANDSTORM_MOVE, IDLE_MOVE));
+        if (goggles != null) {
+            mine.setHeldItem(goggles);
+        }
+        Pokemon foe = poke(
+                species("f_sp", ElementType.NORMAL, 5000, 100, 50, 10, null), 50, List.of(IDLE_MOVE));
+        Player player = new Player("玩家");
+        player.addPokemon(mine);
+        BattleEngine engine = new BattleEngine(player, foe, new Random(42));
+        engine.useMove(mine.getMoveSlots().get(0));
+        for (int round = 0; round < 2; round++) {
+            engine.useMove(mine.getMoveSlots().get(1));
+        }
+        return engine;
     }
 }

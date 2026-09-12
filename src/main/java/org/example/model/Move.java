@@ -1,10 +1,15 @@
 package org.example.model;
 
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.Set;
+
 /**
  * 技能。
  * <p>一个精灵最多携带 4 个技能。技能具有元素属性、类别（物/特）、威力、命中率、PP（使用次数）
  * 与先制度；变化类技能可附带天气/场地效果（{@link MoveEffect}）或按概率施加异常状态
- * （{@link StatusCondition}，见 {@link #getInflicts()}）。</p>
+ * （{@link StatusCondition}，见 {@link #getInflicts()}）。招式还可以带形式标记
+ * （{@link MoveFlag}，见 {@link #getFlags()}），供携带装备挂钩。</p>
  */
 public class Move {
 
@@ -26,6 +31,8 @@ public class Move {
     private final StatusCondition inflicts;
     /** 施加异常状态的触发概率（0~100，百分比）；{@link #inflicts} 为 NONE 时无意义。 */
     private final int inflictionChance;
+    /** 招式标记（接触/拳/粉末等）；无标记为空集合。 */
+    private final Set<MoveFlag> flags;
 
     public Move(String id, String name, ElementType type, MoveCategory category, int power, int accuracy, int maxPp) {
         this(id, name, type, category, power, accuracy, maxPp, 0, MoveEffect.NONE);
@@ -51,6 +58,18 @@ public class Move {
     public Move(String id, String name, ElementType type, MoveCategory category, int power, int accuracy,
                 int maxPp, int priority, MoveEffect effect,
                 StatusCondition inflicts, int inflictionChance) {
+        this(id, name, type, category, power, accuracy, maxPp, priority, effect, inflicts, inflictionChance,
+                Set.of());
+    }
+
+    /**
+     * 完整构造（含异常状态与招式标记）。
+     *
+     * @param flags 招式标记；{@code null} 视为无标记
+     */
+    public Move(String id, String name, ElementType type, MoveCategory category, int power, int accuracy,
+                int maxPp, int priority, MoveEffect effect,
+                StatusCondition inflicts, int inflictionChance, Set<MoveFlag> flags) {
         this.id = id;
         this.name = name;
         this.type = type;
@@ -62,6 +81,8 @@ public class Move {
         this.effect = effect == null ? MoveEffect.NONE : effect;
         this.inflicts = inflicts == null ? StatusCondition.NONE : inflicts;
         this.inflictionChance = Math.max(0, Math.min(100, inflictionChance));
+        this.flags = flags == null || flags.isEmpty()
+                ? Set.of() : Collections.unmodifiableSet(EnumSet.copyOf(flags));
     }
 
     public String getId() {
@@ -130,5 +151,30 @@ public class Move {
     /** 是否为特殊技能（{@link MoveCategory#SPECIAL}）。 */
     public boolean isSpecial() {
         return category == MoveCategory.SPECIAL;
+    }
+
+    /** 招式标记（接触/拳/粉末等）；无标记返回空集合。 */
+    public Set<MoveFlag> getFlags() {
+        return flags;
+    }
+
+    /** 是否带指定招式标记。 */
+    public boolean hasFlag(MoveFlag flag) {
+        return flag != null && flags.contains(flag);
+    }
+
+    /** 是否为接触类招式（{@link MoveFlag#CONTACT}）。 */
+    public boolean isContact() {
+        return flags.contains(MoveFlag.CONTACT);
+    }
+
+    /** 是否为拳类招式（{@link MoveFlag#PUNCH}）；拳类招式同时具备接触标记。 */
+    public boolean isPunch() {
+        return flags.contains(MoveFlag.PUNCH);
+    }
+
+    /** 是否为粉末类招式（{@link MoveFlag#POWDER}）。 */
+    public boolean isPowder() {
+        return flags.contains(MoveFlag.POWDER);
     }
 }

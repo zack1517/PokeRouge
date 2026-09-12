@@ -34,6 +34,11 @@ class HeldItemTest {
             "b_shuca", "b_coba", "b_payapa", "b_tanga", "b_charti", "b_kasib", "b_haban",
             "b_roseli", "b_babiri");
 
+    /** 批次④新增的 6 件装备（招式标记 / 会心 / 畏缩）。 */
+    private static final List<String> BATCH4_IDS = List.of(
+            "e_punch_glove", "e_rocky_helmet", "e_safety_goggles",
+            "e_razor_claw", "e_kings_rock", "e_metronome");
+
     // ------------------------------------------------------------------
     // equipment.csv 加载
     // ------------------------------------------------------------------
@@ -41,11 +46,12 @@ class HeldItemTest {
     @Test
     void 装备Csv全部可查询() {
         GameData data = GameData.instance();
-        assertEquals(56, data.allEquipment().size(), "equipment.csv 应注册 26 件装备 + 30 种树果");
+        assertEquals(62, data.allEquipment().size(), "equipment.csv 应注册 32 件装备 + 30 种树果");
         List<String> all = new java.util.ArrayList<>(List.of("e_charcoal", "e_mystic_water", "e_magnet",
                 "e_expert_belt", "e_leftovers", "e_shell_bell", "e_quick_claw", "e_eviolite"));
         all.addAll(BATCH1_IDS);
         all.addAll(BATCH2_IDS);
+        all.addAll(BATCH4_IDS);
         for (String id : all) {
             HeldItem item = data.equipment(id);
             assertNotNull(item, "缺少装备 " + id);
@@ -204,6 +210,39 @@ class HeldItemTest {
         assertEquals("NORMAL", babiri.resistTypeParam());
         assertEquals(0.5, babiri.resistMultiplier(), 1e-9);
         assertTrue(babiri.resistUnconditional(), "灯浆果对一般属性招式无条件减伤");
+    }
+
+    // ------------------------------------------------------------------
+    // 批次④ 装备参数解析
+    // ------------------------------------------------------------------
+
+    @Test
+    void 批次四装备效果类型与参数正确() {
+        GameData data = GameData.instance();
+
+        HeldItem glove = data.equipment("e_punch_glove");
+        assertEquals(HeldItemEffect.PUNCH_BOOST, glove.getEffectType());
+        assertEquals(1.1, glove.doubleParam(), 1e-9);
+
+        HeldItem helmet = data.equipment("e_rocky_helmet");
+        assertEquals(HeldItemEffect.CONTACT_PUNISH, helmet.getEffectType());
+        assertEquals(0.1667, helmet.doubleParam(), 1e-9, "反伤比例为最大 HP 的 1/6");
+
+        HeldItem goggles = data.equipment("e_safety_goggles");
+        assertEquals(HeldItemEffect.POWDER_IMMUNE, goggles.getEffectType());
+        assertTrue(goggles.getParam().isEmpty(), "防尘护目镜无参数");
+
+        HeldItem claw = data.equipment("e_razor_claw");
+        assertEquals(HeldItemEffect.CRIT_BOOST, claw.getEffectType());
+        assertEquals(1, claw.doubleParam(), 1e-9, "会心等级 +1");
+
+        HeldItem rock = data.equipment("e_kings_rock");
+        assertEquals(HeldItemEffect.FLINCH_CHANCE, rock.getEffectType());
+        assertEquals(10, rock.chanceParam(), 1e-9);
+
+        HeldItem metronome = data.equipment("e_metronome");
+        assertEquals(HeldItemEffect.CONSECUTIVE_BOOST, metronome.getEffectType());
+        assertEquals(0.2, metronome.doubleParam(), 1e-9, "每层增幅 20%");
     }
 
     @Test

@@ -8,6 +8,7 @@ import org.example.model.ItemCategory;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
+import org.example.model.MoveFlag;
 import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.Stats;
@@ -21,11 +22,13 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -35,12 +38,13 @@ import java.util.function.Consumer;
  *
  * <p>CSV 统一格式（首行为表头，自动跳过，# 开头视为注释）：</p>
  * <ul>
- *     <li>moves.csv：id,name,type,category,power,accuracy,maxPp,priority,inflicts,inflictionChance[,effect]
+ *     <li>moves.csv：id,name,type,category,power,accuracy,maxPp,priority,inflicts,inflictionChance,effect,flags
  *     —— type 用属性英文名，category 取 PHYSICAL/SPECIAL/STATUS（变化类 power 为 0）；
  *     accuracy 为命中率（-1 表示必中）；priority 为先制度；inflicts 为命中后可能施加的异常状态
  *     （POISON/BADLY_POISON/PARALYSIS/BURN/SLEEP/FREEZE/CONFUSION，留空表示无），
  *     inflictionChance 为触发概率百分比（0~100）；
- *     effect 为可选的技能效果英文名（如 SUNNY_DAY/GRASSY_TERRAIN），不填为无效果</li>
+ *     effect 为可选的技能效果英文名（如 SUNNY_DAY/GRASSY_TERRAIN），不填为无效果；
+ *     flags 为可选的招式标记（CONTACT 接触 / PUNCH 拳 / POWDER 粉末，多标记用 “|” 分隔），不填为无标记</li>
  *     <li>species.csv：id,name,type1,type2,hp,atk,def,spatk,spdef,speed,catchRate,wild,evolvesTo,evolveLevel,moves,learns
  *     —— type2 可为空；wild 1/0 决定是否进野怪池；evolvesTo 为进化目标 id（可空），
  *     evolveLevel 为进化等级（0/空 = 不进化）；moves 为出生即会的技能（“;”分隔、最多 4 个）；
@@ -183,15 +187,15 @@ public final class GameData {
     }
 
     private void registerBuiltinMoves() {
-        putMove("m_tackle", "撞击", ElementType.NORMAL, MoveCategory.PHYSICAL, 40, 35);
-        putMove("m_quick", "电光一闪", ElementType.NORMAL, MoveCategory.PHYSICAL, 40, 30);
+        putMove("m_tackle", "撞击", ElementType.NORMAL, MoveCategory.PHYSICAL, 40, 35, MoveFlag.CONTACT);
+        putMove("m_quick", "电光一闪", ElementType.NORMAL, MoveCategory.PHYSICAL, 40, 30, MoveFlag.CONTACT);
         putMove("m_ember", "火花", ElementType.FIRE, MoveCategory.SPECIAL, 40, 25);
         putMove("m_flamethrower", "喷射火焰", ElementType.FIRE, MoveCategory.SPECIAL, 90, 15);
-        putMove("m_flame_wheel", "火焰轮", ElementType.FIRE, MoveCategory.PHYSICAL, 60, 25);
+        putMove("m_flame_wheel", "火焰轮", ElementType.FIRE, MoveCategory.PHYSICAL, 60, 25, MoveFlag.CONTACT);
         putMove("m_bubble", "水枪", ElementType.WATER, MoveCategory.SPECIAL, 40, 25);
         putMove("m_hydro_pump", "水炮", ElementType.WATER, MoveCategory.SPECIAL, 110, 5);
-        putMove("m_aqua_jet", "水流喷射", ElementType.WATER, MoveCategory.PHYSICAL, 40, 20);
-        putMove("m_vine_whip", "藤鞭", ElementType.GRASS, MoveCategory.PHYSICAL, 45, 25);
+        putMove("m_aqua_jet", "水流喷射", ElementType.WATER, MoveCategory.PHYSICAL, 40, 20, MoveFlag.CONTACT);
+        putMove("m_vine_whip", "藤鞭", ElementType.GRASS, MoveCategory.PHYSICAL, 45, 25, MoveFlag.CONTACT);
         putMove("m_razor_leaf", "飞叶快刀", ElementType.GRASS, MoveCategory.PHYSICAL, 55, 25);
         putMove("m_giga_drain", "终极吸取", ElementType.GRASS, MoveCategory.SPECIAL, 75, 10);
         putMove("m_thunder_shock", "电击", ElementType.ELECTRIC, MoveCategory.SPECIAL, 40, 30);
@@ -202,13 +206,13 @@ public final class GameData {
         putMove("m_rock_throw", "落石", ElementType.ROCK, MoveCategory.PHYSICAL, 50, 15);
         putMove("m_mud_slap", "掷泥", ElementType.GROUND, MoveCategory.SPECIAL, 20, 10);
         putMove("m_earthquake", "地震", ElementType.GROUND, MoveCategory.PHYSICAL, 100, 10);
-        putMove("m_wing_attack", "翅膀攻击", ElementType.FLYING, MoveCategory.PHYSICAL, 60, 35);
-        putMove("m_cross_poison", "十字毒刃", ElementType.POISON, MoveCategory.PHYSICAL, 70, 20);
+        putMove("m_wing_attack", "翅膀攻击", ElementType.FLYING, MoveCategory.PHYSICAL, 60, 35, MoveFlag.CONTACT);
+        putMove("m_cross_poison", "十字毒刃", ElementType.POISON, MoveCategory.PHYSICAL, 70, 20, MoveFlag.CONTACT);
         // 进化形态的招牌技能
         putMove("m_fire_blast", "大字爆炎", ElementType.FIRE, MoveCategory.SPECIAL, 110, 5);
         putMove("m_muddy_water", "浊流", ElementType.WATER, MoveCategory.SPECIAL, 90, 10);
-        putMove("m_leaf_blade", "叶刃", ElementType.GRASS, MoveCategory.PHYSICAL, 90, 15);
-        putMove("m_volt_tackle", "伏特冲击", ElementType.ELECTRIC, MoveCategory.PHYSICAL, 120, 15);
+        putMove("m_leaf_blade", "叶刃", ElementType.GRASS, MoveCategory.PHYSICAL, 90, 15, MoveFlag.CONTACT);
+        putMove("m_volt_tackle", "伏特冲击", ElementType.ELECTRIC, MoveCategory.PHYSICAL, 120, 15, MoveFlag.CONTACT);
 
         // ---- 天气/场地变化技能：power=0、STATUS，效果开启对应天气/场地 ----
         putMove("m_sunny_day", "大晴天", ElementType.FIRE, MoveCategory.STATUS, 0, 5, MoveEffect.SUNNY_DAY);
@@ -224,11 +228,11 @@ public final class GameData {
         putMove("m_thunder_wave", "电磁波", ElementType.ELECTRIC, MoveCategory.STATUS, 0, 20, 90,
                 StatusCondition.PARALYSIS, 100);
         putMove("m_poison_powder", "毒粉", ElementType.POISON, MoveCategory.STATUS, 0, 35, 75,
-                StatusCondition.POISON, 100);
+                StatusCondition.POISON, 100, MoveFlag.POWDER);
         putMove("m_toxic", "剧毒", ElementType.POISON, MoveCategory.STATUS, 0, 10, 90,
                 StatusCondition.BADLY_POISON, 100);
         putMove("m_sleep_powder", "催眠粉", ElementType.GRASS, MoveCategory.STATUS, 0, 15, 75,
-                StatusCondition.SLEEP, 100);
+                StatusCondition.SLEEP, 100, MoveFlag.POWDER);
         putMove("m_will_o_wisp", "鬼火", ElementType.FIRE, MoveCategory.STATUS, 0, 15, 85,
                 StatusCondition.BURN, 100);
         putMove("m_confuse_ray", "奇异之光", ElementType.GHOST, MoveCategory.STATUS, 0, 10, 100,
@@ -236,9 +240,9 @@ public final class GameData {
 
         // ---- 附带异常状态的攻击技能：按概率触发 ----
         putMove("m_body_slam", "泰山压顶", ElementType.NORMAL, MoveCategory.PHYSICAL, 85, 15, 100,
-                StatusCondition.PARALYSIS, 30);
+                StatusCondition.PARALYSIS, 30, MoveFlag.CONTACT);
         putMove("m_ice_fang", "冰冻牙", ElementType.ICE, MoveCategory.PHYSICAL, 65, 15, 95,
-                StatusCondition.FREEZE, 10);
+                StatusCondition.FREEZE, 10, MoveFlag.CONTACT);
     }
 
     private void registerBuiltinSpecies() {
@@ -316,14 +320,15 @@ public final class GameData {
     }
 
     private void putMove(String id, String name, ElementType type, MoveCategory category,
-                         int power, int pp) {
-        putMove(id, name, type, category, power, pp, MoveEffect.NONE);
+                         int power, int pp, MoveFlag... flags) {
+        putMove(id, name, type, category, power, pp, MoveEffect.NONE, flags);
     }
 
     /** 带效果注册技能（天气/场地变化类技能使用）。 */
     private void putMove(String id, String name, ElementType type, MoveCategory category,
-                         int power, int pp, MoveEffect effect) {
-        moveMap.put(id, new Move(id, name, type, category, power, 100, pp, effect));
+                         int power, int pp, MoveEffect effect, MoveFlag... flags) {
+        moveMap.put(id, new Move(id, name, type, category, power, 100, pp, 0, effect,
+                StatusCondition.NONE, 0, flagSet(flags)));
     }
 
     /**
@@ -332,11 +337,18 @@ public final class GameData {
      * @param accuracy 命中率（-1 表示必中）
      * @param inflicts 命中后可能施加的异常状态
      * @param chance   触发概率百分比（0~100）
+     * @param flags    招式标记（接触/拳/粉末），可省略
      */
     private void putMove(String id, String name, ElementType type, MoveCategory category,
-                         int power, int pp, int accuracy, StatusCondition inflicts, int chance) {
+                         int power, int pp, int accuracy, StatusCondition inflicts, int chance,
+                         MoveFlag... flags) {
         moveMap.put(id, new Move(id, name, type, category, power, accuracy, pp, 0,
-                MoveEffect.NONE, inflicts, chance));
+                MoveEffect.NONE, inflicts, chance, flagSet(flags)));
+    }
+
+    /** 把内建注册用的可变参数标记转为不可变集合；无标记返回空集合。 */
+    private static Set<MoveFlag> flagSet(MoveFlag... flags) {
+        return flags.length == 0 ? Set.of() : EnumSet.copyOf(List.of(flags));
     }
 
     /**
@@ -437,6 +449,19 @@ public final class GameData {
                 "特殊招式伤害提升 50%，但只能使用第一个招式");
         putEquipment("e_choice_scarf", "讲究围巾", HeldItemEffect.CHOICE, "SPEED|1.5",
                 "速度提升 50%，但只能使用第一个招式");
+        // 批次④装备：招式标记 / 会心 / 畏缩
+        putEquipment("e_punch_glove", "拳击手套", HeldItemEffect.PUNCH_BOOST, "1.1",
+                "拳类招式威力提升 10%，且该招式不再视为接触类");
+        putEquipment("e_rocky_helmet", "凸凸头盔", HeldItemEffect.CONTACT_PUNISH, "0.1667",
+                "被接触类招式命中时，攻击方失去最大 HP 的 1/6");
+        putEquipment("e_safety_goggles", "防尘护目镜", HeldItemEffect.POWDER_IMMUNE, "",
+                "免疫粉末类招式与沙暴/冰雹的回合末伤害");
+        putEquipment("e_razor_claw", "锐利之爪", HeldItemEffect.CRIT_BOOST, "1",
+                "会心等级 +1（会心率 1/24 → 1/8）");
+        putEquipment("e_kings_rock", "王者之证", HeldItemEffect.FLINCH_CHANCE, "10",
+                "招式造成伤害后 10% 概率使目标畏缩");
+        putEquipment("e_metronome", "节拍器", HeldItemEffect.CONSECUTIVE_BOOST, "0.2",
+                "连续使用同一招式时每次增伤 20%，上限 2 倍");
         // 批次②树果：异常治疗（陷入对应异常时立即治愈并消耗）
         putEquipment("b_cheri", "樱子果", HeldItemEffect.CURE_STATUS, "PARALYSIS", "陷入麻痹时立即治愈");
         putEquipment("b_pecha", "桃桃果", HeldItemEffect.CURE_STATUS, "POISON|BADLY_POISON", "陷入中毒时立即治愈");
@@ -537,9 +562,10 @@ public final class GameData {
         StatusCondition inflicts = c.length > 8 ? StatusCondition.parse(c[8]) : StatusCondition.NONE;
         int chance = c.length > 9 ? parseInt(c[9]) : 0;
         MoveEffect effect = c.length > 10 ? MoveEffect.parse(c[10]) : MoveEffect.NONE;
+        Set<MoveFlag> flags = c.length > 11 ? MoveFlag.parseFlags(c[11]) : Set.of();
         String id = c[0].trim();
         moveMap.put(id, new Move(id, c[1].trim(), type, category, power, accuracy, maxPp, priority,
-                effect, inflicts, chance));
+                effect, inflicts, chance, flags));
     }
 
     /**

@@ -42,6 +42,8 @@ public class Pokemon {
     private int badlyPoisonCounter;
     /** 混乱剩余回合数（0 表示未混乱），换宠或倒下即清零。 */
     private int confusionTurns;
+    /** 畏缩（挥发性状态）：为 true 时本回合无法行动，回合末自动清除。 */
+    private boolean flinched;
     /** 当前等级内累积的经验（跨级归零后进入下一级）。 */
     private long exp;
     /**
@@ -239,6 +241,23 @@ public class Pokemon {
     public void clearAllStatus() {
         cureStatus();
         clearConfusion();
+    }
+
+    /** 是否处于畏缩（挥发性状态，回合末清除）。 */
+    public boolean isFlinched() {
+        return flinched;
+    }
+
+    /** 设置畏缩状态（战斗引擎在被招式命中后按概率施加）。 */
+    public void setFlinch(boolean value) {
+        flinched = value;
+    }
+
+    /** 清除畏缩（回合末或换宠时调用），返回本次是否真的清除了畏缩。 */
+    public boolean clearFlinch() {
+        boolean had = flinched;
+        flinched = false;
+        return had;
     }
 
     /** 睡眠剩余回合数（0 表示未睡眠）。 */

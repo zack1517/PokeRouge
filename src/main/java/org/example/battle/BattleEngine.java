@@ -98,6 +98,13 @@ public class BattleEngine implements BattleService {
      * 仅本场战斗内有效（换宠、战斗结束即失效），不落入存档。
      */
     private final Map<String, String> choiceLocks = new HashMap<>();
+    /**
+     * 节拍器（{@link HeldItemEffect#CONSECUTIVE_BOOST}）的连续使用记录：
+     * 精灵 uuid → 上一次使用过的招式 id，配合 {@link #consecutiveUses} 计算连续次数。
+     */
+    private final Map<String, String> lastMoves = new HashMap<>();
+    /** 节拍器连续使用次数表：精灵 uuid → 连续使用同一招式的次数（换招即归 1）。 */
+    private final Map<String, Integer> consecutiveUses = new HashMap<>();
 
     public BattleEngine(Player player, Pokemon wild) {
         this(player, wild, null, new Random(), BattleDataPorts.none(), BattleGrowthPort.none());
@@ -592,6 +599,7 @@ public class BattleEngine implements BattleService {
         if (current.clearConfusion()) {
             append(current.getName() + " 的混乱解除了！");
         }
+        current.clearFlinch();
         append("你派出了 " + target.getName() + "！");
         events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, target.getName()));
         if (!foeActive().isFainted() && !target.isFainted()) {
@@ -687,8 +695,16 @@ public class BattleEngine implements BattleService {
 
     /**
      * 执行一次行动：变化类技能应用天气/场地效果并按概率施加异常状态，其余（物理/特殊）技能正常造成伤害。
+     *
+     * <p>粉末类招式（{@link MoveFlag#POWDER}）在入口处统一拦截，携带防尘护目镜的防守方不受影响 ——
+     * 催眠粉/毒粉都是变化招，若只在伤害路径里判定会漏掉它们。</p>
      */
     private void executeMove(Pokemon attacker, Pokemon defender, Move move) {
+        if (move.isPowder() && holds(defender, HeldItemEffect.POWDER_IMMUNE)) {
+            append(defender.getName() + " 借助" + defender.getHeldItem().getName()
+                    + "，粉末类招式没有命中！");
+            return;
+        }
         if (move.isStatus()) {
             // 纯变化招：天气/场地效果与异常状态互不排斥；两者都没有时提示无效果
             if (move.getEffect() != MoveEffect.NONE || !move.hasInfliction()) {
@@ -713,6 +729,10 @@ public class BattleEngine implements BattleService {
      */
     private boolean canAct(Pokemon p) {
         if (p == null || p.isFainted()) {
+            return false;
+        }
+        if (p.isFlinched()) {
+            append(p.getName() + " 畏缩了，无法行动！");
             return false;
         }
         if (p.getStatus() == StatusCondition.SLEEP) {
@@ -903,7 +923,9 @@ public class BattleEngine implements BattleService {
             return;
         }
         double resist = resistBerryMultiplier(defender, move, effectiveness);
-        int damage = computeDamage(attacker, defender, move, effectiveness);
+        int critStage = critStage(attacker);
+        boolean critical = rollCritical(critStage);
+        int damage = computeDamage(attacker, defender, move, effectiveness, critical);
         // 属性减伤树果：受对应属性（默认要求效果拔群）招式时减伤并消耗，必须在保命判定之前生效
         String resistMessage = null;
         if (resist < 1.0) {
@@ -920,6 +942,9 @@ public class BattleEngine implements BattleService {
         applyLifeOrbRecoil(attacker, dealt);
         StringBuilder sb = new StringBuilder();
         sb.append("造成 ").append(dealt).append(" 点伤害");
+        if (critical) {
+            sb.append("，击中要害！");
+        }
         if (effectiveness > 1.0) {
             sb.append("，效果拔群！");
         } else if (effectiveness < 1.0) {
@@ -932,14 +957,93 @@ public class BattleEngine implements BattleService {
         if (surviveMessage != null) {
             append(surviveMessage);
         }
+        // 凸凸头盔：携带者被接触类招式命中时反伤攻击方（攻击方倒下也照常结算）
+        applyContactPunish(attacker, defender, move);
         if (defender.isFainted()) {
             events.add(BattleEvent.faint(sideOf(defender), nameOf(defender)));
             append(defender.getName() + " 倒下了！");
             return;
         }
         tryInflict(move, defender);
+        // 王者之证：命中造成伤害后按概率使目标畏缩（变化招不触发）
+        applyFlinchItem(attacker, defender, move);
         // 受击后立即结算 HP 回复树果（未倒下才触发）
         healHpWithBerry(defender);
+    }
+
+    /** 会心率分档的分母：索引即会心等级（0 级 1/24、1 级 1/8、2 级 1/2）。 */
+    private static final int[] CRIT_DENOMINATORS = {24, 8, 2};
+
+    /** 会心等级达到该值时必定会心。 */
+    private static final int CRIT_ALWAYS_STAGE = 3;
+
+    /** 会心一击的伤害倍率（{@value}）。 */
+    public static final double CRIT_MULTIPLIER = 1.5;
+
+    /**
+     * 会心等级：默认 0 级；携带锐利之爪（{@link HeldItemEffect#CRIT_BOOST}，param 为提升等级）
+     * 时按参数提升。
+     */
+    private static int critStage(Pokemon attacker) {
+        if (attacker == null || !holds(attacker, HeldItemEffect.CRIT_BOOST)) {
+            return 0;
+        }
+        return Math.max(0, (int) attacker.getHeldItem().doubleParam());
+    }
+
+    /**
+     * 会心判定：0 级 {@value #CRIT_DENOMINATORS} 分之一…按等级取分母，等级达到
+     * {@value #CRIT_ALWAYS_STAGE} 时必定会心。
+     */
+    private boolean rollCritical(int stage) {
+        if (stage >= CRIT_ALWAYS_STAGE) {
+            return true;
+        }
+        int denominator = CRIT_DENOMINATORS[Math.max(0, stage)];
+        return random.nextInt(denominator) == 0;
+    }
+
+    /**
+     * 凸凸头盔（{@link HeldItemEffect#CONTACT_PUNISH}）反伤：携带者被接触类招式命中后，
+     * 攻击方按最大 HP 比例扣血（param 为比例，通常 1/6）。
+     *
+     * <p>拳击手套（{@link HeldItemEffect#PUNCH_BOOST}）会让携带者使用拳类招式时不视为接触，
+     * 因此拳类招式不会触发反伤。反伤不消耗装备、也不受攻击方保命装备保护。</p>
+     */
+    private void applyContactPunish(Pokemon attacker, Pokemon defender, Move move) {
+        if (!move.isContact() || !holds(defender, HeldItemEffect.CONTACT_PUNISH)) {
+            return;
+        }
+        if (move.isPunch() && holds(attacker, HeldItemEffect.PUNCH_BOOST)) {
+            return;
+        }
+        HeldItem helmet = defender.getHeldItem();
+        int recoil = Math.max(1, (int) (attacker.getMaxHp() * helmet.doubleParam()));
+        int lost = attacker.takeDamage(recoil);
+        if (lost > 0) {
+            append(attacker.getName() + " 因" + defender.getName() + " 的" + helmet.getName()
+                    + " 受到了 " + lost + " 点伤害！");
+        }
+        if (attacker.isFainted()) {
+            events.add(BattleEvent.faint(sideOf(attacker), nameOf(attacker)));
+            append(attacker.getName() + " 倒下了！");
+        }
+    }
+
+    /**
+     * 王者之证（{@link HeldItemEffect#FLINCH_CHANCE}）判定：造成伤害后按参数概率使目标畏缩。
+     * 畏缩在回合末清除，因此只有「目标本回合尚未行动」时才会实际生效（与正作一致）。
+     */
+    private void applyFlinchItem(Pokemon attacker, Pokemon defender, Move move) {
+        if (move.isStatus() || defender.isFainted() || !holds(attacker, HeldItemEffect.FLINCH_CHANCE)) {
+            return;
+        }
+        HeldItem item = attacker.getHeldItem();
+        if (random.nextInt(100) >= item.chanceParam()) {
+            return;
+        }
+        defender.setFlinch(true);
+        append(defender.getName() + " 因" + attacker.getName() + " 的" + item.getName() + " 畏缩了！");
     }
 
     /**
@@ -997,7 +1101,8 @@ public class BattleEngine implements BattleService {
         }
     }
 
-    private int computeDamage(Pokemon attacker, Pokemon defender, Move move, double effectiveness) {
+    private int computeDamage(Pokemon attacker, Pokemon defender, Move move, double effectiveness,
+                             boolean critical) {
         double atk;
         double def;
         if (move.getCategory() == MoveCategory.PHYSICAL) {
@@ -1022,9 +1127,34 @@ public class BattleEngine implements BattleService {
                 * terrain.moveTypeMultiplier(move.getType());
         // 携带装备加成：属性强化道具（木炭等）、达人带、力量头带/博识眼镜、生命宝珠、讲究眼镜
         double equipment = heldItemDamageMultiplier(attacker, move, effectiveness);
+        // 节拍器：连续使用同一招式时逐次增伤（换招即归零重算）
+        equipment *= consecutiveMoveMultiplier(attacker, move);
+        double crit = critical ? CRIT_MULTIPLIER : 1.0;
         double randomFactor = 0.85 + random.nextDouble() * 0.15;
-        int raw = (int) Math.floor(base * stab * effectiveness * field * equipment * randomFactor);
+        int raw = (int) Math.floor(base * stab * effectiveness * field * equipment * crit * randomFactor);
         return Math.max(1, raw);
+    }
+
+    /** 节拍器（{@link HeldItemEffect#CONSECUTIVE_BOOST}）增伤上限（{@value}）。 */
+    public static final double CONSECUTIVE_MAX_MULTIPLIER = 2.0;
+
+    /**
+     * 节拍器增伤倍率：连续使用同一招式时每层增加 param 比例的威力，上限
+     * {@value #CONSECUTIVE_MAX_MULTIPLIER} 倍；一旦换招，连续次数归 1（无加成）。
+     *
+     * <p>本方法同时维护连续使用记录，因此每次攻击只应调用一次。</p>
+     */
+    private double consecutiveMoveMultiplier(Pokemon attacker, Move move) {
+        String uuid = attacker.getUuid();
+        int count = move.getId().equals(lastMoves.get(uuid))
+                ? consecutiveUses.getOrDefault(uuid, 1) + 1 : 1;
+        lastMoves.put(uuid, move.getId());
+        consecutiveUses.put(uuid, count);
+        if (!holds(attacker, HeldItemEffect.CONSECUTIVE_BOOST)) {
+            return 1.0;
+        }
+        double step = attacker.getHeldItem().doubleParam();
+        return Math.min(CONSECUTIVE_MAX_MULTIPLIER, 1.0 + step * (count - 1));
     }
 
     /**
@@ -1049,6 +1179,8 @@ public class BattleEngine implements BattleService {
             case LIFE_ORB -> item.damageMultiplier();
             case CHOICE -> "SPECIAL".equals(item.choiceKind())
                     && move.getCategory() == MoveCategory.SPECIAL ? item.choiceMultiplier() : 1.0;
+            // 拳击手套：拳类招式威力提升
+            case PUNCH_BOOST -> move.isPunch() ? item.doubleParam() : 1.0;
             default -> 1.0;
         };
     }
@@ -1151,13 +1283,26 @@ public class BattleEngine implements BattleService {
         if (bothStanding) {
             applyFieldEndEffects(pa);
         }
+        // 畏缩只持续到本回合结束：双方都已行动，下一回合恢复正常
+        clearFlinch(pa);
+        clearFlinch(foe);
         resolveRoundEnd();
         if (status == Status.ONGOING) {
             tickFields();
         }
     }
 
-    /** 回合末天气/场地效果：沙暴/冰雹对双方扣血，青草场地对双方回复；随后结算携带装备与异常状态。 */
+    /** 清除指定精灵的畏缩状态（为空或未畏缩时无操作）。 */
+    private static void clearFlinch(Pokemon p) {
+        if (p != null) {
+            p.clearFlinch();
+        }
+    }
+
+    /**
+     * 回合末天气/场地效果：沙暴/冰雹对双方扣血（防尘护目镜携带者免疫），青草场地对双方回复；
+     * 随后结算携带装备与异常状态。
+     */
     private void applyFieldEndEffects(Pokemon pa) {
         Pokemon foe = foeActive();
         weatherChip(pa);
@@ -1390,6 +1535,12 @@ public class BattleEngine implements BattleService {
             default -> false;
         };
         if (immune) {
+            return;
+        }
+        // 防尘护目镜：携带者不受沙暴/冰雹的回合末伤害（与粉末招式免疫同源）
+        if (holds(p, HeldItemEffect.POWDER_IMMUNE)) {
+            append(p.getName() + " 借助" + p.getHeldItem().getName() + "，不受"
+                    + weather.getDisplayName() + "影响！");
             return;
         }
         int dealt = p.takeDamage(Math.max(1, (int) (p.getMaxHp() * weather.chipRatio())));

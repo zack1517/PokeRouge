@@ -76,6 +76,22 @@ package org.example.model;
  *         （param 为 {@code 属性|倍率[|ALWAYS]}，属性减伤树果统一 {@code 0.5}；
  *         第 3 段填 {@code ALWAYS} 时不看克制关系，用于一般属性的灯浆果）</li>
  * </ul>
+ *
+ * <p><b>招式标记与判定类</b>（依赖 {@link MoveFlag} 招式标记、会心与畏缩判定）</p>
+ * <ul>
+ *     <li>{@link #PUNCH_BOOST}：携带者使用拳类招式（{@link MoveFlag#PUNCH}）时威力提升，
+ *         且该招式不再视为接触（param 为倍率，拳击手套 {@code 1.1}）</li>
+ *     <li>{@link #CONTACT_PUNISH}：携带者被接触类招式（{@link MoveFlag#CONTACT}）命中后，
+ *         攻击方按最大 HP 比例反伤（param 为比例，凸凸头盔 {@code 0.1667}）</li>
+ *     <li>{@link #POWDER_IMMUNE}：携带者免疫粉末类招式（{@link MoveFlag#POWDER}）
+ *         与沙暴/冰雹的回合末伤害（防尘护目镜）</li>
+ *     <li>{@link #CRIT_BOOST}：携带者的会心等级提升（param 为提升等级，锐利之爪 {@code 1}）</li>
+ *     <li>{@link #FLINCH_CHANCE}：携带者的招式造成伤害后按概率使目标畏缩
+ *         （param 为概率百分比，王者之证 {@code 10}）</li>
+ *     <li>{@link #CONSECUTIVE_BOOST}：连续使用同一招式时每次提升威力，上限 {@value
+ *         org.example.battle.BattleEngine#CONSECUTIVE_MAX_MULTIPLIER} 倍
+ *         （param 为每层增幅，节拍器 {@code 0.2}）</li>
+ * </ul>
  */
 public enum HeldItemEffect {
     DAMAGE_TYPE,
@@ -102,5 +118,12 @@ public enum HeldItemEffect {
     CURE_STATUS,
     HEAL_HP,
     HEAL_PP,
-    RESIST_TYPE
+    RESIST_TYPE,
+
+    PUNCH_BOOST,
+    CONTACT_PUNISH,
+    POWDER_IMMUNE,
+    CRIT_BOOST,
+    FLINCH_CHANCE,
+    CONSECUTIVE_BOOST
 }
