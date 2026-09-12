@@ -44,9 +44,11 @@ import java.util.function.Consumer;
  *
  * <p>呈现方式（2026-09-12 按设计稿 EncounterPage / EventCard 改版：仅样式与布局调整，行为不变）：</p>
  * <ul>
- *   <li>头部一行 —— 左「◀ 返回主菜单」胶囊、右段位信息卡（段号 / 阶段 / 行动点 / 金币，均沿用
- *       「初始主界面」（启动页）胶囊族样式的小号版本，见 start-menu.css 的 .rogue-back / .rogue-info）
- *       分贴行内两侧；「事件遭遇 ENCOUNTER EVENT」横幅（启动页胶囊族同款：黄→金渐变芯 + 深蓝描边环，
+ *   <li>头部一行 —— 左「返回 BACK」胶囊（直接复用 {@link FloatingMenu} 共享胶囊菜单组，
+ *       与「开始游戏」后各子页的返回按钮完全同款：外观 / 悬停上浮与选中放大动画 / 选中变色 /
+ *       错峰入场动画）、右段位信息卡（段号 / 阶段 / 行动点 / 金币，沿用「初始主界面」（启动页）
+ *       胶囊族样式的小号版本，见 start-menu.css 的 .rogue-info）分贴行内两侧；
+ *       「事件遭遇 ENCOUNTER EVENT」横幅（启动页胶囊族同款：黄→金渐变芯 + 深蓝描边环，
  *       无黑框、深蓝字，+ 副提示胶囊）贴页面最上方、水平居中于画布；</li>
  *   <li>节点卡 —— 最多 3 列 × 2 行网格：上排固定三位常驻节点（野生宝可梦 → 路人训练师 → 医院，
  *       从左到右位置恒定），随机事件保持生成顺序排在下排；只渲染已刷新出来的事件、不做占位补格
@@ -65,8 +67,11 @@ public class RogueFloorView {
     /** 设计稿字体（正文中文统一微软雅黑）。 */
     private static final String FONT = "-fx-font-family: 'Microsoft YaHei';";
 
-    /** 启动页共用样式表（顶栏返回胶囊与信息卡沿用「初始主界面」胶囊族视觉）。 */
+    /** 启动页共用样式表（胶囊按钮组件与信息卡沿用「初始主界面」胶囊族视觉）。 */
     private static final String STYLE_SHEET = "/css/start-menu.css";
+
+    /** 「返回」入口的 24 单位视口单色描边图标（lucide 风格手绘简化版，与各子页返回按钮一致）。 */
+    private static final String ICON_BACK = "M19 12 L5 12 M11 18 L5 12 L11 6";
 
     /** 事件卡尺寸（设计画布 640×426.67 内按 3 列 × 2 行铺排）。 */
     private static final double CARD_W = 198;
@@ -117,6 +122,9 @@ public class RogueFloorView {
     /** 入场动画进行中（期间忽略悬停上浮位移，避免与入场位移争抢 translateY）。 */
     private boolean entrancePlaying = true;
 
+    /** 左上角返回胶囊（FloatingMenu 共享胶囊菜单组）；每次构建场景时重建，供入场动画调用。 */
+    private FloatingMenu backMenu;
+
     public RogueFloorView(GameSession session, Consumer<Option> onOptionSelected, Runnable onBack) {
         this.session = session;
         this.onOptionSelected = onOptionSelected;
@@ -152,6 +160,9 @@ public class RogueFloorView {
             scene.getStylesheets().add(css.toExternalForm());
         }
         playEntrance(); // 卡片按从左到右、从上到下的顺序错峰上浮淡入（与启动页入场动效同参数）
+        if (backMenu != null) {
+            backMenu.playEntrance(); // 返回胶囊与各子页返回按钮同款的错峰上浮淡入
+        }
         return scene;
     }
 
@@ -166,7 +177,7 @@ public class RogueFloorView {
     private StackPane buildHeader(RunData data) {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox sides = new HBox(8, buildBackButton(), spacer, buildInfoPanel(data));
+        HBox sides = new HBox(8, buildBackMenu(), spacer, buildInfoPanel(data));
         sides.setAlignment(Pos.TOP_LEFT);
         StackPane header = new StackPane(buildBanner(), sides); // sides 在上层：保证两侧控件可点击
         header.setAlignment(Pos.TOP_CENTER);
@@ -736,19 +747,13 @@ public class RogueFloorView {
         };
     }
 
-    /** 返回胶囊：启动页胶囊族的小号版本（样式见 start-menu.css 的 .rogue-back，回调与旧版一致）。 */
-    private Button buildBackButton() {
-        Label arrow = new Label("◀");
-        arrow.setStyle("-fx-font-size: 7.5px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
-
-        StackPane iconWrap = new StackPane(arrow);
-        iconWrap.getStyleClass().add("rogue-back-icon");
-        fixedSize(iconWrap, 18, 18);
-
-        Button back = new Button("返回主菜单", iconWrap);
-        back.getStyleClass().add("rogue-back");
-        back.setOnAction(e -> onBack.run());
-        return back;
+    /** 返回入口：直接复用 {@link FloatingMenu} 共享胶囊菜单组——与「开始游戏」后各子页的
+     *  「返回 BACK」按钮完全同款（外观 / 悬停上浮 / 选中放大与变色 / 入场动画），回调不变。 */
+    private VBox buildBackMenu() {
+        FloatingMenu menu = new FloatingMenu();
+        menu.addPill("slate", "返回", "BACK", ICON_BACK, onBack);
+        backMenu = menu;
+        return menu.node();
     }
 
     /** 深蓝主按钮（挑战类动作）。 */
