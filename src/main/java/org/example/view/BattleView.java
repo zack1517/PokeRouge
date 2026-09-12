@@ -194,7 +194,7 @@ public class BattleView {
 
     // ---- 精灵面板：右块精灵信息卡（随面板显示，悬停/默认联动刷新文本）----
     private final Label partyInfoName = new Label("—");
-    private final Label partyInfoType = new Label();
+    private final HBox partyInfoTypeBox = new HBox(TYPE_BADGE_GAP); // 属性徽章组：多属性逐枚独立显示
     private final Label partyInfoLv = new Label();
     private final ProgressBar partyInfoHpBar = new ProgressBar();
     private final Label partyInfoHpText = new Label();
@@ -545,12 +545,6 @@ public class BattleView {
         return YH + "-fx-background-color: " + type.getColorCode() + "; -fx-background-radius: 9;"
                 + "-fx-padding: 1 8; -fx-font-size: 12px; -fx-text-fill: " + badgeTextColor(type) + ";"
                 + "-fx-font-weight: bold;";
-    }
-
-    /** 取精灵主属性（无则 null；供单徽章场景，如精灵详情卡）。 */
-    private static ElementType primaryTypeOf(Pokemon p) {
-        return p == null || p.getSpecies() == null ? null
-                : p.getSpecies().getTypes().stream().findFirst().orElse(null);
     }
 
     /** 浅色属性（亮底）用深海军蓝字，其余用白字。 */
@@ -1046,9 +1040,9 @@ public class BattleView {
         HBox line1 = new HBox(6);
         line1.setAlignment(Pos.CENTER_LEFT);
         partyInfoName.setStyle(YH + "-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #1a2a3a;");
-        partyInfoType.setStyle(chip());
+        partyInfoTypeBox.setAlignment(Pos.CENTER_LEFT);
         partyInfoLv.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #4a5b70;");
-        line1.getChildren().addAll(partyInfoName, partyInfoType, partyInfoLv);
+        line1.getChildren().addAll(partyInfoName, partyInfoTypeBox, partyInfoLv);
         HBox line2 = new HBox(6);
         line2.setAlignment(Pos.CENTER_LEFT);
         partyInfoHpBar.setPrefWidth(118);
@@ -1072,7 +1066,7 @@ public class BattleView {
     private void updatePartyInfo(Pokemon p) {
         if (p == null) {
             partyInfoName.setText("—");
-            partyInfoType.setText("");
+            refreshTypeBadges(partyInfoTypeBox, null);
             partyInfoLv.setText("");
             partyInfoHpBar.setProgress(0);
             partyInfoHpText.setText("HP - / -");
@@ -1083,8 +1077,7 @@ public class BattleView {
             return;
         }
         partyInfoName.setText(p.getName());
-        partyInfoType.setText(typeOf(p));
-        partyInfoType.setStyle(chipFor(primaryTypeOf(p))); // 属性徽章按主属性分色
+        refreshTypeBadges(partyInfoTypeBox, p); // 属性逐枚独立显示（各自专属配色）
         partyInfoLv.setText("Lv." + p.getLevel());
         refreshHp(partyInfoHpBar, partyInfoHpText, p);
         String badge = statusBadgeText(p);
@@ -1663,12 +1656,6 @@ public class BattleView {
         if (onFinished != null) {
             onFinished.run();
         }
-    }
-
-    private static String typeOf(Pokemon p) {
-        List<String> types = p.getSpecies().getTypes().stream()
-                .map(t -> t.getDisplayName()).toList();
-        return String.join(" / ", types);
     }
 
     private static void refreshHp(ProgressBar bar, Label text, Pokemon p) {
