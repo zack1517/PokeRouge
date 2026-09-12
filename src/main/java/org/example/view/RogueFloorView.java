@@ -77,7 +77,7 @@ public class RogueFloorView {
             "-fx-effect: dropshadow(gaussian, rgba(21,101,192,0.18), 12, 0.0, 0, 4);";
     private static final String CARD_SHADOW_HOVER =
             "-fx-effect: dropshadow(gaussian, rgba(21,101,192,0.30), 16, 0.0, 0, 7);";
-    /** 空位 / 已走过卡（灰底虚线，设计稿 isEmpty 样式）。 */
+    /** 已走过卡（灰底 + 虚线框，设计稿 isEmpty 样式；整卡与顶区分层用 Region 绘制）。 */
     private static final String IDLE_CARD_STYLE =
             "-fx-background-color: rgba(200,210,230,0.55); -fx-background-radius: 12;"
                     + " -fx-border-color: #90aac8; -fx-border-width: 2; -fx-border-radius: 12;"
@@ -288,12 +288,9 @@ public class RogueFloorView {
         int cost = option.apCostForNextEntry();
         boolean affordable = cost <= data.getAp();
 
-        // ── 卡面：上部图片预留区（渐变 + 类型 emoji + 精灵球装饰）──
+        // ── 卡面内容：上部图片预留区（类型 emoji + 精灵球装饰；渐变底由卡片背景层绘制）──
         StackPane top = new StackPane();
         fixedSize(top, CARD_W, CARD_TOP_H);
-        top.setStyle("-fx-background-color: linear-gradient(to bottom right, #dbeafe 0%, #bfdbfe 55%, #93c5fd 100%);"
-                + " -fx-background-radius: 10 10 0 0;"
-                + " -fx-border-color: #1565C0; -fx-border-width: 0 0 2 0; -fx-border-radius: 10 10 0 0;");
 
         Label icon = new Label(emojiFor(option));
         icon.setStyle("-fx-font-size: 24px;");
@@ -322,12 +319,11 @@ public class RogueFloorView {
             top.getChildren().add(visits);
         }
 
-        // ── 卡面：下部「类型 · 名称」+ 金色行动点徽章 + 进入提示 ──
+        // ── 卡面内容：下部「类型 · 名称」+ 金色行动点徽章 + 进入提示（白底由卡片背景层绘制）──
         VBox bottom = new VBox(2);
         fixedSize(bottom, CARD_W, CARD_BOTTOM_H);
         bottom.setPadding(new Insets(3, 8, 3, 8));
         bottom.setAlignment(Pos.CENTER_LEFT);
-        bottom.setStyle("-fx-background-color: rgba(255,255,255,0.97); -fx-background-radius: 0 0 10 10;");
 
         Label name = new Label(option.getTypeDisplayName() + " · " + option.getName());
         name.setStyle(FONT + " -fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #1A1A1A;");
@@ -347,21 +343,32 @@ public class RogueFloorView {
         meta.setAlignment(Pos.CENTER_LEFT);
         bottom.getChildren().addAll(name, meta);
 
-        VBox body = new VBox(top, bottom);
-        fixedSize(body, CARD_W, CARD_H);
+        VBox content = new VBox(top, bottom);
+        fixedSize(content, CARD_W, CARD_H);
+        content.setMouseTransparent(true); // 内容只是装饰与文字，点击统一交给下面的按钮
 
-        // 行动点不足：沿用「不可进入」行为（setDisable），但保留悬停查看描述
-        final String idleSuffix = affordable ? "" : " -fx-opacity: 0.62;";
-        final String baseStyle = "-fx-background-color: rgba(255,255,255,0.90); -fx-background-radius: 12;"
-                + " -fx-border-color: #1565C0; -fx-border-width: 2.5; -fx-border-radius: 12;"
-                + CARD_SHADOW;
-        final String hoverStyle = "-fx-background-color: rgba(255,255,255,0.96); -fx-background-radius: 12;"
-                + " -fx-border-color: #1565C0; -fx-border-width: 2.5; -fx-border-radius: 12;"
+        // 卡片底色：单节点多层背景（白底 / 顶区分隔线 / 顶区渐变）+ 边框 + 投影。
+        // 底色元素全部绘制在同一个无子节点的 Region 上——JavaFX 会给带边框容器的
+        // 子节点叠加 insets 偏移，撑满卡面的子块会压掉右侧与下侧边框。
+        // 背景层列表第一个在最底层：白底 → 分隔线（top 高 79 的下沿 2px）→ 顶区渐变。
+        Region bg = new Region();
+        fixedSize(bg, CARD_W, CARD_H);
+        final String layers = "-fx-background-color: rgba(255,255,255,0.90), #1565C0,"
+                + " linear-gradient(to bottom right, #dbeafe 0%, #bfdbfe 55%, #93c5fd 100%);"
+                + " -fx-background-insets: 0, " + (int) (CARD_TOP_H - 2) + " 0 " + (int) CARD_BOTTOM_H + " 0,"
+                + " 0 0 " + (int) (CARD_BOTTOM_H + 2) + " 0;"
+                + " -fx-background-radius: 12, 0, 12 12 0 0;"
+                + " -fx-border-color: #1565C0; -fx-border-width: 2.5; -fx-border-radius: 12;";
+        final String baseStyle = layers + CARD_SHADOW;
+        final String hoverStyle = layers.replace("rgba(255,255,255,0.90)", "rgba(255,255,255,0.96)")
                 + CARD_SHADOW_HOVER;
-        body.setStyle(baseStyle + idleSuffix);
+        bg.setStyle(baseStyle);
+
+        StackPane face = new StackPane(bg, content);
+        fixedSize(face, CARD_W, CARD_H);
 
         Button card = new Button();
-        card.setGraphic(body);
+        card.setGraphic(face);
         card.setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
         card.setDisable(!affordable);
         card.setStyle("-fx-background-color: transparent; -fx-background-insets: 0;"
@@ -373,21 +380,25 @@ public class RogueFloorView {
         wrapper.getStyleClass().add("event-card"); // 供截图 / 冒烟测试定位（无样式表依赖）
         fixedSize(wrapper, CARD_W, CARD_H);
         wrapper.setCursor(affordable ? Cursor.HAND : Cursor.DEFAULT);
+        // 行动点不足：沿用「不可进入」行为（setDisable），整卡降透明度，但保留悬停查看描述
+        if (!affordable) {
+            wrapper.setOpacity(0.62);
+        }
         wrapper.setOnMouseEntered(e -> {
             wrapper.setTranslateY(-3);
-            body.setStyle(hoverStyle + idleSuffix);
+            bg.setStyle(hoverStyle);
             showDescription(option, wrapper, overlay);
         });
         wrapper.setOnMouseExited(e -> {
             wrapper.setTranslateY(0);
-            body.setStyle(baseStyle + idleSuffix);
+            bg.setStyle(baseStyle);
             hideDescription(overlay);
         });
         return wrapper;
     }
 
     /** 已走过的一次性节点：灰底虚线只读卡（无悬停、无点击，语义与旧版灰色条目一致）。 */
-    private VBox buildUsedCard(Option option) {
+    private StackPane buildUsedCard(Option option) {
         Label icon = new Label(emojiFor(option));
         icon.setStyle("-fx-font-size: 22px; -fx-opacity: 0.35;");
         Label tag = new Label("已走过");
@@ -402,22 +413,31 @@ public class RogueFloorView {
         return buildIdleCard(centerCol, name);
     }
 
-    /** 灰底虚线卡：上部内容区 + 下部居中标题（已走过的一次性节点）。 */
-    private VBox buildIdleCard(Node topCenter, Label bottomLabel) {
-        VBox body = new VBox();
-        fixedSize(body, CARD_W, CARD_H);
-        body.setStyle(IDLE_CARD_STYLE);
+    /** 灰底虚线卡：整卡灰底 + 虚线外框 + 顶区分隔虚线 + 内容（已走过的一次性节点）。 */
+    private StackPane buildIdleCard(Node topCenter, Label bottomLabel) {
+        // 整卡底色与虚线外框：单节点绘制，子节点不会盖住边框
+        Region bg = new Region();
+        fixedSize(bg, CARD_W, CARD_H);
+        bg.setStyle(IDLE_CARD_STYLE);
 
+        // 顶区：半透明灰底 + 底部虚线分隔（单节点，位置不受子节点影响）
+        Region topArea = new Region();
+        fixedSize(topArea, CARD_W, CARD_TOP_H);
+        topArea.setStyle(IDLE_TOP_STYLE);
+
+        // 内容层：透明，不参与拾取
         StackPane top = new StackPane(topCenter);
         fixedSize(top, CARD_W, CARD_TOP_H);
-        top.setStyle(IDLE_TOP_STYLE);
-
         VBox bottom = new VBox(bottomLabel);
         fixedSize(bottom, CARD_W, CARD_BOTTOM_H);
         bottom.setAlignment(Pos.CENTER);
+        VBox content = new VBox(top, bottom);
+        fixedSize(content, CARD_W, CARD_H);
+        content.setMouseTransparent(true);
 
-        body.getChildren().addAll(top, bottom);
-        return body;
+        StackPane face = new StackPane(bg, topArea, content);
+        fixedSize(face, CARD_W, CARD_H);
+        return face;
     }
 
     // ------------------------------------------------------------------
