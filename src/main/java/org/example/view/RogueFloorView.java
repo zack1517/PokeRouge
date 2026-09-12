@@ -1,5 +1,11 @@
 package org.example.view;
 
+import javafx.animation.FadeTransition;
+import javafx.animation.Interpolator;
+import javafx.animation.ParallelTransition;
+import javafx.animation.PauseTransition;
+import javafx.animation.SequentialTransition;
+import javafx.animation.TranslateTransition;
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
@@ -17,6 +23,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 import org.example.GameSession;
 import org.example.config.AppConfig;
 import org.example.model.Option;
@@ -72,6 +79,12 @@ public class RogueFloorView {
     private static final int GRID_COLS = 3;
     private static final double GRID_GAP = 10;
 
+    /** 卡片入场动效（与启动页胶囊按钮入场动画同参数：错峰上浮淡入；错峰顺序 = 从左到右、从上到下）。 */
+    private static final double ENTRANCE_RISE = 11;
+    private static final double ENTRANCE_FADE_MS = 620;
+    private static final double ENTRANCE_DELAY_BASE_MS = 120;
+    private static final double ENTRANCE_DELAY_STEP_MS = 95;
+
     /** 描述弹窗尺寸（设计稿 260px 等比适配到 640 画布）。 */
     private static final double POPUP_W = 208;
     private static final double POPUP_ARROW_W = 10;
@@ -96,6 +109,12 @@ public class RogueFloorView {
     private final Consumer<Option> onOptionSelected;
     private final Runnable onBack;
 
+    /** 本次场景构建出的网格卡片，按展示顺序（从左到右、从上到下）收集，供入场动画错峰播放。 */
+    private final List<Node> entranceCards = new ArrayList<>();
+
+    /** 入场动画进行中（期间忽略悬停上浮位移，避免与入场位移争抢 translateY）。 */
+    private boolean entrancePlaying = true;
+
     public RogueFloorView(GameSession session, Consumer<Option> onOptionSelected, Runnable onBack) {
         this.session = session;
         this.onOptionSelected = onOptionSelected;
@@ -103,6 +122,8 @@ public class RogueFloorView {
     }
 
     public Scene createScene() {
+        entranceCards.clear();
+
         StackPane root = new StackPane();
         root.setAlignment(Pos.TOP_LEFT);
         ImageBackgrounds.apply(root, session.mapBackgroundPath()); // 与主菜单同款地图背景
@@ -128,6 +149,7 @@ public class RogueFloorView {
         if (css != null) {
             scene.getStylesheets().add(css.toExternalForm());
         }
+        playEntrance(); // 卡片按从左到右、从上到下的顺序错峰上浮淡入（与启动页入场动效同参数）
         return scene;
     }
 
@@ -245,10 +267,46 @@ public class RogueFloorView {
 
         int index = 0;
         for (Option option : orderedOptions(data)) {
-            grid.add(buildOptionCard(option, data, overlay), index % GRID_COLS, index / GRID_COLS);
+            Node card = buildOptionCard(option, data, overlay);
+            grid.add(card, index % GRID_COLS, index / GRID_COLS);
+            entranceCards.add(card); // 序号即展示顺序：从左到右、从上到下
             index++;
         }
         return grid;
+    }
+
+    /** 网格卡片入场：与启动页胶囊按钮同一组动效参数（错峰上浮淡入）；
+     *  不可进入卡的降透明度作为各自淡入终点，不被动画覆盖成 1。 */
+    private void playEntrance() {
+        if (entranceCards.isEmpty()) {
+            return;
+        }
+        Interpolator spline = Interpolator.SPLINE(0.16, 1, 0.3, 1);
+        entrancePlaying = true;
+        for (int i = 0; i < entranceCards.size(); i++) {
+            Node card = entranceCards.get(i);
+            double target = card.getOpacity(); // 入场前原态透明度（行动点不足卡为 0.62）
+            card.setOpacity(0);
+            card.setTranslateY(ENTRANCE_RISE);
+
+            FadeTransition fade = new FadeTransition(Duration.millis(ENTRANCE_FADE_MS), card);
+            fade.setFromValue(0);
+            fade.setToValue(target);
+            fade.setInterpolator(spline);
+
+            TranslateTransition rise = new TranslateTransition(Duration.millis(ENTRANCE_FADE_MS), card);
+            rise.setFromY(ENTRANCE_RISE);
+            rise.setToY(0);
+            rise.setInterpolator(spline);
+
+            SequentialTransition sequence = new SequentialTransition(
+                    new PauseTransition(Duration.millis(ENTRANCE_DELAY_BASE_MS + i * ENTRANCE_DELAY_STEP_MS)),
+                    new ParallelTransition(fade, rise));
+            if (i == entranceCards.size() - 1) {
+                sequence.setOnFinished(e -> entrancePlaying = false); // 最后一张入座后放行悬停位移
+            }
+            sequence.play();
+        }
     }
 
     /** 展示顺序：三个常驻节点固定位（野生宝可梦 → 路人训练师 → 医院，从左到右），
@@ -389,7 +447,9 @@ public class RogueFloorView {
             wrapper.setOpacity(0.62);
         }
         wrapper.setOnMouseEntered(e -> {
-            wrapper.setTranslateY(-3);
+            if (!entrancePlaying) {
+                wrapper.setTranslateY(-3); // 入场位移进行中不叠加悬停上浮（与启动页胶囊一致）
+            }
             bg.setStyle(hoverStyle);
             showDescription(option, wrapper, overlay);
         });
