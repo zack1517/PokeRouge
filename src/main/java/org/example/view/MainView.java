@@ -98,6 +98,9 @@ public class MainView {
     /** 中栏进度条宽度（设计像素；适配 3:3:2 的中栏宽度）。 */
     private static final double BAR_WIDTH = 170;
 
+    /** 中栏插画高度（设计像素；约合中栏可视高度 290 的 2/5，即页面顶部的「图标部分」）。 */
+    private static final double PORTRAIT_HEIGHT = 116;
+
     /** 道具插图目录（classpath；文件名与道具名一致，如「精灵球.png」）。 */
     private static final String ITEM_IMAGE_DIR = "/images/tool/";
 
@@ -392,8 +395,8 @@ public class MainView {
         Node portrait;
         if (image != null) {
             ImageView view = new ImageView(image);
-            view.setFitWidth(64);
-            view.setFitHeight(64);
+            view.setFitWidth(PORTRAIT_HEIGHT);
+            view.setFitHeight(PORTRAIT_HEIGHT);
             view.setPreserveRatio(true);
             view.setSmooth(true);
             portrait = view;
@@ -403,7 +406,8 @@ public class MainView {
             portrait = fallback;
         }
         StackPane portraitBox = new StackPane(portrait);
-        portraitBox.setMinHeight(64);
+        portraitBox.setMinHeight(PORTRAIT_HEIGHT);
+        portraitBox.getStyleClass().add("detail-portrait");
 
         Label name = new Label(pokemon.getName());
         name.setStyle(YH + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #222;");
