@@ -51,10 +51,10 @@ import org.example.util.UiScale;
  *     <li><b>上</b>：左上角「返回主界面」按钮；中间训练家标题（无背景框，白晕保证地图背景上可读）；
  *     右侧为段位信息框（段号 / 金币 / 存档位分多行排列）。</li>
  *     <li><b>中</b>：左中右三栏，宽度约 3:3:2 —— 左栏为六格队伍位（首发格左侧标 ★、第二行
- *     右侧为灰色「已设首发」标识；非首发格第二行右侧附蓝色「设为首发」小按钮；点格子其余区域进详情）；
+ *     右侧为灰色「已设首发」标识；非首发格第二行右侧附蓝色「设为首发」小按钮；悬停格子看中栏信息）；
  *     右栏为背包列表（精灵球恒置顶、按捕捉强度降序，其余保持原序）；中栏为简要信息框，随光标在
  *     左/右栏按钮上悬停切换内容（精灵：插画/名称/属性/等级与状态同行/图鉴描述/性格/HP/EXP/
- *     六项能力值/出战技能与技能库/装备与装备库，顺序与详情页右侧信息框一致；
+ *     六项能力值/出战技能与技能库/装备与装备库，一次展示完整信息；
  *     道具：插图/数量/功能表述）。中栏保持最后一次悬停内容，方便移开光标阅读。</li>
  *     <li><b>下</b>：进入层内事件 / 保存游戏 / 读取存档三个按钮居中排列（「返回主界面」已上移至顶部）。</li>
  * </ul>
@@ -83,9 +83,6 @@ public class MainView {
 
         /** 回到初始主界面（启动页）：不退出程序。 */
         void onExit();
-
-        /** 打开 index 对应精灵的详情页（立绘/属性/技能/装备；装备穿脱后返回主菜单自动同步）。 */
-        void onShowPokemonDetail(int index);
 
         /** 返回游戏启动页（第一屏；重新「开始游戏」将重新创建训练家）。 */
         void onBackToStart();
@@ -236,7 +233,7 @@ public class MainView {
         return grid;
     }
 
-    /** 左栏：六个队伍位纵排（空位画虚线占位），点击任意精灵进入详情页。 */
+    /** 左栏：六个队伍位纵排（空位画虚线占位），悬停任意精灵在中栏查看信息。 */
     private VBox buildPartyColumn() {
         VBox column = new VBox(4);
         List<Pokemon> party = player.getParty();
@@ -253,7 +250,7 @@ public class MainView {
 
     /**
      * 单个精灵位：上行「[★]名称 · Lv.X」，下行「HP cur/max · EXP a/b +『设为首发』/『已设首发』按钮」；
-     * 悬停联动中栏、点击（按钮以外区域）进详情。
+     * 悬停联动中栏展示完整信息；点击格子不跳转页面。
      */
     private Button buildPartySlot(Pokemon pokemon, Pokemon active, int index) {
         boolean isActive = pokemon == active;
@@ -300,7 +297,6 @@ public class MainView {
             showPokemonDetail(pokemon);
         });
         slot.setOnMouseExited(e -> slot.setStyle(slotStyle(isActive, false)));
-        slot.setOnAction(e -> actions.onShowPokemonDetail(index));
 
         // 第二行右侧：非首发格为蓝色「设为首发」按钮；首发格为灰色「已设首发」标识
         Region gap = new Region();
@@ -318,7 +314,7 @@ public class MainView {
         fire.setStyle(fireStyle(false));
         fire.setDisable(pokemon.isFainted());
         fire.setOnAction(e -> {
-            // ActionEvent 会沿父链冒泡到外层格子（触发其「进详情」），这里必须消费掉
+            // 防御性消费：避免 ActionEvent 冒泡到外层格子按钮引发未知动作
             actions.onSetActive(index);
             e.consume();
         });
@@ -406,7 +402,7 @@ public class MainView {
         detailBox.getChildren().add(hint);
     }
 
-    /** 中栏内容：精灵完整信息（插画 → 名称/属性 → 等级与状态同行 → 详情页信息框全量信息，序一致）。 */
+    /** 中栏内容：精灵完整信息（插画 → 名称/属性 → 等级与状态同行 → 图鉴/性格/HP·EXP → 能力值 → 技能库 → 装备）。 */
     private void showPokemonDetail(Pokemon pokemon) {
         detailBox.getChildren().clear();
         detailBox.setAlignment(Pos.TOP_LEFT);
@@ -447,7 +443,7 @@ public class MainView {
         HBox levelStatus = new HBox(14, level, status);
         levelStatus.setAlignment(Pos.CENTER_LEFT);
 
-        // 图鉴描述（详情页信息卡同款；宝可梦库无数据时省略）
+        // 图鉴描述（宝可梦库无数据时省略）
         org.example.pokemon.domain.Species library =
                 org.example.pokemon.infrastructure.GameData.instance()
                         .getSpecies(pokemon.getSpecies().getId()).orElse(null);
@@ -481,7 +477,7 @@ public class MainView {
         exp.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #222;");
         StackPane expBar = bar(expRatio, "#4F8FD9", BAR_WIDTH, 8);
 
-        // 出战技能（详情页同款两行式：名称+PP ／ 属性徽章+分类·威力·命中）
+        // 出战技能（两行式：名称+PP ／ 属性徽章+分类·威力·命中）
         VBox moves = new VBox(4);
         if (pokemon.getMoveSlots().isEmpty()) {
             Label none = new Label("尚未携带技能。");
@@ -540,7 +536,7 @@ public class MainView {
                 divider(), sectionLabel("装备"), equipment);
     }
 
-    /** 能力值 6 行（详情页同款）：名称 + 当前值 + 比例条 + 种族值。 */
+    /** 能力值 6 行：名称 + 当前值 + 比例条 + 种族值。 */
     private static VBox statsRows(Pokemon pokemon) {
         Stats actual = pokemon.getStats();
         Stats base = pokemon.getSpecies().getBaseStats();
@@ -575,7 +571,7 @@ public class MainView {
         return row;
     }
 
-    /** 出战技能单行（详情页同款）：名称 + PP ／ 属性徽章 + 分类·威力·命中。 */
+    /** 出战技能单行：名称 + PP ／ 属性徽章 + 分类·威力·命中。 */
     private static VBox battleMoveRow(MoveSlot slot) {
         Label name = new Label(slot.getMove().getName());
         name.setStyle(YH + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #222;");

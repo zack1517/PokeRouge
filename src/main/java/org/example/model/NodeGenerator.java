@@ -156,7 +156,7 @@ public class NodeGenerator {
     /** 装备补给：随机节点，低概率出现；随机获得一件可携带装备（结算由控制器执行）。 */
     public Option createReward() {
         return new Option("装备补给", OptionType.REWARD, OptionType.REWARD.getApCost(),
-                "拾获一件随机可携带装备；获得后在主菜单的精灵详情页中穿戴");
+                "拾获一件随机可携带装备");
     }
 
     /**

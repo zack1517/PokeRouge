@@ -34,7 +34,6 @@ import org.example.view.CustomBattleSetupView;
 import org.example.view.CustomBattleView;
 import org.example.view.MainView;
 import org.example.view.PokedexView;
-import org.example.view.PokemonDetailView;
 import org.example.view.RogueFloorView;
 import org.example.view.SaveSlotView;
 import org.example.view.ShopView;
@@ -294,11 +293,6 @@ public class MainController {
             }
 
             @Override
-            public void onShowPokemonDetail(int index) {
-                showPokemonDetail(index);
-            }
-
-            @Override
             public void onBackToStart() {
                 showStartScreen();
             }
@@ -306,12 +300,6 @@ public class MainController {
                 session.getRogueRunData().isNotStarted() ? -1 : session.getRogueRunData().getGold(),
                 activeSlot == null ? null : activeSlot.displayName());
         stage.setScene(view.createScene());
-    }
-
-    /** 精灵详情页：由主菜单点击精灵名进入；左列表切换精灵、右侧属性/技能/装备（穿戴立即生效）；「返回」重建主菜单。 */
-    public void showPokemonDetail(int initialIndex) {
-        stage.setScene(new PokemonDetailView(player, initialIndex, session.mapBackgroundPath(), this::showMainMenu)
-                .createScene());
     }
 
     /**
@@ -507,8 +495,7 @@ public class MainController {
             infoAlert("装备补给", "你已经拥有【" + reward.getName() + "】了，补给落空。");
             return;
         }
-        infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription()
-                + "\n可在主菜单点击精灵名，在详情页中穿戴。");
+        infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription());
     }
 
     /** 非战斗节点：当场效果（医院治疗 / 特殊事件金币）结算后走节点收尾。 */
