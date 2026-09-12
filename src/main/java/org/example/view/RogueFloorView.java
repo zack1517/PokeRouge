@@ -45,8 +45,8 @@ import java.util.function.Consumer;
  * <p>呈现方式（2026-09-12 按设计稿 EncounterPage / EventCard 改版：仅样式与布局调整，行为不变）：</p>
  * <ul>
  *   <li>头部一行 —— 左「返回」胶囊（复用 {@link FloatingMenu} 共享胶囊菜单组，紧凑尺寸：
- *       图标圆底 + 单行中文、无英文副标签与右指示符；外观 / 悬停上浮与选中放大动画 /
- *       悬停变色（移开恢复黄色）/ 错峰入场动画与子页一致）、
+ *       纯文字、无图标圆底 / 英文副标签 / 右指示符，与右信息卡顶部对齐；外观 / 悬停上浮与
+ *       选中放大动画 / 悬停变色（移开恢复黄色）/ 错峰入场动画与子页一致）、
  *       右段位信息卡（段号 / 阶段 / 行动点 / 金币，沿用「初始主界面」（启动页）
  *       胶囊族样式的小号版本，见 start-menu.css 的 .rogue-info）分贴行内两侧；
  *       「事件遭遇 ENCOUNTER EVENT」横幅（启动页胶囊族同款：黄→金渐变芯 + 深蓝描边环，
@@ -70,9 +70,6 @@ public class RogueFloorView {
 
     /** 启动页共用样式表（胶囊按钮组件与信息卡沿用「初始主界面」胶囊族视觉）。 */
     private static final String STYLE_SHEET = "/css/start-menu.css";
-
-    /** 「返回」入口的 24 单位视口单色描边图标（lucide 风格手绘简化版，与各子页返回按钮一致）。 */
-    private static final String ICON_BACK = "M19 12 L5 12 M11 18 L5 12 L11 6";
 
     /** 事件卡尺寸（设计画布 640×426.67 内按 3 列 × 2 行铺排）。 */
     private static final double CARD_W = 198;
@@ -748,17 +745,19 @@ public class RogueFloorView {
         };
     }
 
-    /** 返回入口：复用 {@link FloatingMenu} 共享胶囊菜单组——与「开始游戏」后各子页的
-     *  返回按钮同款（外观 / 悬停上浮 / 选中放大与变色 / 入场动画），回调不变；
-     *  按顶栏场景取紧凑尺寸（单行中文、无英文副标签与右指示符，横向贴内容收紧），
-     *  且鼠标移开后恢复黄色常态（悬停变色不驻留）。 */
+    /** 返回入口：复用 {@link FloatingMenu} 共享胶囊菜单组（外观 / 悬停上浮 / 选中放大与变色 /
+     *  入场动画与子页一致），回调不变；按顶栏场景取紧凑尺寸：纯文字「返回」胶囊（无图标 /
+     *  英文副标签 / 右指示符），鼠标移开后恢复黄色常态（悬停变色不驻留）；容器高度封顶，
+     *  与右上信息卡顶部对齐（头部行高由「事件遭遇」横幅决定，不封顶会被拉伸偏低）。 */
     private VBox buildBackMenu() {
         FloatingMenu menu = new FloatingMenu();
         menu.setCompact(true);        // 缩小至原有小号尺寸（仅尺寸 / 字号变，配色与动效不变）
         menu.setDeselectOnExit(true); // 移出取消选中：悬停深蓝 → 移开恢复黄色
-        menu.addPill("slate", "返回", "", ICON_BACK, onBack); // 副标签传空：不生成英文行
+        menu.addPill("slate", "返回", "", "", onBack); // 图标与副标签留空：纯文字胶囊
         backMenu = menu;
-        return menu.node();
+        VBox pane = menu.node();
+        pane.setMaxHeight(Region.USE_PREF_SIZE); // 不被头部行高拉伸，与信息卡顶部对齐
+        return pane;
     }
 
     /** 深蓝主按钮（挑战类动作）。 */

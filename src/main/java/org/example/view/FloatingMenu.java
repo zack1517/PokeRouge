@@ -35,7 +35,8 @@ import java.util.function.Consumer;
  * 交互动效完全一致；纯视觉由 {@code /css/start-menu.css} 承担，使用方需在场景中挂载该样式表。</p>
  *
  * <p>可选项：{@link #setCompact} 切换紧凑尺寸（顶栏返回按钮等小号场景：图标圆底 + 单行
- * 中文相邻居中、无右指示符，仅缩尺寸与字号，配色 / 动效不变）；{@link #setDeselectOnExit}
+ * 中文相邻居中、无右指示符，仅缩尺寸与字号，配色 / 动效不变）；{@code addPill} 的图标参数
+ * 可留空（不生成图标圆底，如纯文字胶囊）；{@link #setDeselectOnExit}
  * 让悬停变色不驻留（鼠标移开后恢复常态色，适合单按钮顶栏场景）。</p>
  */
 public final class FloatingMenu {
@@ -54,7 +55,7 @@ public final class FloatingMenu {
     private static final double MENU_PADDING_H = 24;
 
     /** 紧凑尺寸（顶栏返回胶囊等小号场景；与 CSS .menu-pill.menu-compact 配套）。 */
-    private static final double COMPACT_WIDTH = 78;
+    private static final double COMPACT_WIDTH = 56;
     private static final double COMPACT_HEIGHT = 24;
     private static final double COMPACT_ICON_WRAP_SIZE = 18;
     /** 紧凑版图标圆底与文字的间距。 */
@@ -139,15 +140,19 @@ public final class FloatingMenu {
         double pillHeight = compact ? COMPACT_HEIGHT : MENU_HEIGHT;
         double paddingH = compact ? COMPACT_PADDING_H : MENU_PADDING_H;
 
-        StackPane iconWrap = new StackPane();
-        iconWrap.getStyleClass().addAll("menu-icon-wrap", "menu-tone-" + tone);
-        iconWrap.setMinSize(wrapSize, wrapSize);
-        iconWrap.setPrefSize(wrapSize, wrapSize);
-        iconWrap.setMaxSize(wrapSize, wrapSize);
-        SVGPath iconPath = new SVGPath();
-        iconPath.setContent(icon);
-        iconPath.getStyleClass().add("menu-icon");
-        iconWrap.getChildren().add(iconPath);
+        // 图标圆底可省略（icon 留空时只呈现文字，如顶栏返回胶囊）
+        StackPane iconWrap = null;
+        if (icon != null && !icon.isBlank()) {
+            iconWrap = new StackPane();
+            iconWrap.getStyleClass().addAll("menu-icon-wrap", "menu-tone-" + tone);
+            iconWrap.setMinSize(wrapSize, wrapSize);
+            iconWrap.setPrefSize(wrapSize, wrapSize);
+            iconWrap.setMaxSize(wrapSize, wrapSize);
+            SVGPath iconPath = new SVGPath();
+            iconPath.setContent(icon);
+            iconPath.getStyleClass().add("menu-icon");
+            iconWrap.getChildren().add(iconPath);
+        }
 
         Label title = new Label(label);
         title.getStyleClass().add("menu-title");
@@ -164,14 +169,23 @@ public final class FloatingMenu {
         // 紧凑模式：图标圆底与单行文字相邻居中——无右指示符，横向贴内容收紧
         Region content;
         if (compact) {
-            HBox row = new HBox(COMPACT_ICON_GAP, iconWrap, texts);
+            HBox row = new HBox(COMPACT_ICON_GAP);
+            if (iconWrap != null) {
+                row.getChildren().add(iconWrap);
+            }
+            row.getChildren().add(texts);
             row.setAlignment(Pos.CENTER);
             content = row;
         } else {
             Label caret = new Label(">>>");
             caret.getStyleClass().add("menu-caret");
-            StackPane layers = new StackPane(iconWrap, texts, caret);
-            StackPane.setAlignment(iconWrap, Pos.CENTER_LEFT);
+            StackPane layers = new StackPane();
+            if (iconWrap != null) {
+                layers.getChildren().add(iconWrap);
+                StackPane.setAlignment(iconWrap, Pos.CENTER_LEFT);
+            }
+            layers.getChildren().add(texts);
+            layers.getChildren().add(caret);
             StackPane.setAlignment(caret, Pos.CENTER_RIGHT);
             content = layers;
         }
