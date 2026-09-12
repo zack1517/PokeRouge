@@ -73,7 +73,7 @@ import java.util.function.IntPredicate;
  * 见 {@link org.example.GameSession#battleBackgroundFor(org.example.model.OptionType)}）；未指定时默认野外图。</p>
  *
  * <p>2026-09-11 样式改版（整合「临时/react」Web 版战斗页设计）：信息卡为奶油米色芯 + 外蓝内黄双层描边硬阴影（2026-09-12 起双层描边与日志框统一）、
- * 行动按钮与道具 / 精灵格为马卡龙四色（黄 / 蓝 / 绿 / 红）硬底按钮（技能格自 2026-09-12 起改为随技能属性本色配色、普通属性用灰）、日志与详情卡为金框米色芯（芯色与信息卡同底色）、
+ * 行动按钮与道具格为马卡龙四色（黄 / 蓝 / 绿 / 红）硬底按钮，技能格自 2026-09-12 起随技能属性本色配色（普通属性用灰白）、精灵格自 2026-09-12 起仅黄（在场）/ 蓝（不在场）/ 灰（倒下）三色、日志与详情卡为金框米色芯（芯色与信息卡同底色）、
  * HP 条为棕底 + 绿 / 黄 / 红渐变填充、属性徽章按属性分色。仅调整配色 / 描边 / 圆角 / 阴影等视觉样式：
  * 全部描边改由背景层内缩模拟（不占 padding），各按钮、文本、贴图（宝可梦立绘区域）的大小与位置均不变；
  * HP 条内部轨道样式在 {@code /css/battle.css}。</p>
@@ -518,7 +518,7 @@ public class BattleView {
     private static final PokeTone TONE_RED = new PokeTone("#f85888", "#a01840", "#ffffff", "#a01840");
     /** 技能格灰色按钮配色（问题3补充）：普通（NORMAL）属性技能不用灰褐本色（#A8A878），改用带灰的白色：底=灰白 #eef1f5、描边/硬阴影=中灰 #98a4b3、深字。 */
     private static final PokeTone TONE_GREY = new PokeTone("#eef1f5", "#98a4b3", POKE_INK, "#98a4b3");
-    /** 马卡龙四色轮换表（道具 / 精灵格按格索引取色；技能格自 2026-09-12 起改按技能属性本色，见 {@link #typeTone}）。 */
+    /** 马卡龙四色轮换表（仅道具格按格索引取色；技能格按属性本色、精灵格按在场状态取色，均见各自构造处）。 */
     private static final PokeTone[] TONE_CYCLE = {TONE_YELLOW, TONE_BLUE, TONE_GREEN, TONE_RED};
 
     /**
@@ -941,6 +941,7 @@ public class BattleView {
      * 精灵面板（点主菜单「精灵」后）：与技能面板同构 —— 左块 [状态行 + 3×2 固定六格]，右块精灵信息卡。
      * 格内只显示 名称/等级/血量；悬停格子右侧联动显示该精灵完整信息（等级/属性/HP/异常状态/能力值/经验），
      * 点击健康且非当前出战的精灵即切换上场（倒下的灰格可看详情不可点，当前出战带 ★ 亦不可点）。
+     * 格色统一三色（2026-09-12 问题4）：黄=当前出战、蓝=其余在队、灰=倒下。
      * 队伍不足 6 只时空槽位置灰占位（固定六格保证布局不随队伍数量变化）。
      * 格宽较技能格窄（115 vs 168）：底栏内容区总宽 616 预算下，右卡需 235 才能完整容纳能力值最长行，
      * 三列网格 3×115+2×13=371 恰等于左块宽度（与技能格 2 列宽格互补）。
@@ -948,7 +949,6 @@ public class BattleView {
     public void showPartyMenu(List<Pokemon> party, int activeIndex, IntConsumer onPick, Runnable onBack) {
         renderPartyGrid(party, activeIndex,
                 idx -> !party.get(idx).isFainted() && idx != activeIndex, // 可点：健康且非当前出战
-                idx -> party.get(idx).isFainted(),                        // 灰格：倒下
                 onPick, onBack, null, "返回");
     }
 
@@ -961,13 +961,12 @@ public class BattleView {
                                 IntConsumer onRelease, Runnable onDiscard, String hint) {
         renderPartyGrid(party, activeIndex,
                 idx -> true, // 全部可点：放生任意队内精灵
-                idx -> false,
                 onRelease, onDiscard, hint, "放弃捕捉");
     }
 
     /**
      * 目标选择面板（背包用药后）：与精灵面板同构的 3×2 六格，格子可否点击由 {@code selectable} 决定
-     * （如伤药只能选未满血且未倒下的精灵），不可选格以灰格呈现（仍可悬停查看详情）。
+     * （如伤药只能选未满血且未倒下的精灵），不可选格仅不可点击、仍可悬停查看详情（格色不随可选性变化，恒为三色：黄=当前出战 / 蓝=在队 / 灰=倒下）。
      * 点中合法目标即回调其队伍下标（由控制器转交 {@code useItem(item, partyIndex)}）。
      *
      * @param party       玩家队伍
@@ -979,19 +978,19 @@ public class BattleView {
      */
     public void showTargetMenu(List<Pokemon> party, int activeIndex, IntPredicate selectable,
                                IntConsumer onPick, Runnable onBack, String hint) {
-        renderPartyGrid(party, activeIndex, selectable, idx -> !selectable.test(idx), onPick, onBack, hint, "返回");
+        renderPartyGrid(party, activeIndex, selectable, onPick, onBack, hint, "返回");
     }
 
     /**
-     * 队伍六格面板通用渲染（精灵面板 / 道具目标面板共用）：
+     * 队伍六格面板通用渲染（精灵面板 / 道具目标面板 / 放生面板共用）：
      * 左块 [状态行 + 3×2 固定六格]（有提示文案时提示顶替场况文本显示在状态行内），右块精灵信息卡（悬停联动）。
+     * 格色统一三色（2026-09-12 问题4）：黄=当前出战 / 蓝=其余在队 / 灰=倒下；{@code selectable} 只决定点击行为，不影响配色。
      *
      * @param selectable 某下标是否可点击选中
-     * @param grey       某下标是否灰格呈现（不可点但可查看详情）
      * @param backText   返回按钮文案（精灵/目标面板为「返回」，放生面板为「放弃捕捉」）
      */
     private void renderPartyGrid(List<Pokemon> party, int activeIndex,
-                                 IntPredicate selectable, IntPredicate grey,
+                                 IntPredicate selectable,
                                  IntConsumer onPick, Runnable onBack, String hint, String backText) {
         leftPanel.setStyle("");
         Button back = compactButton(backText);
@@ -1017,7 +1016,7 @@ public class BattleView {
             int index = i;
             Pokemon p = index < party.size() ? party.get(index) : null;
             if (p == null) {
-                grid.add(partyCell("—", "空位", true, true, index), index % 3, index / 3);
+                grid.add(partyCell("—", "空位", true, false, true), index % 3, index / 3); // 空位：灰占位 + 真禁用
                 continue;
             }
             boolean fainted = p.isFainted();
@@ -1029,7 +1028,7 @@ public class BattleView {
                 sub = sub + "  " + badge;
             }
             Button b = partyCell((active ? "★ " : "") + p.getName(), "Lv." + p.getLevel() + "  " + sub,
-                    grey.test(index), false, index);
+                    fainted, active, false);
             // 悬停联动：详情卡切换（倒下/出战也可查看）；点击仅合法目标可选中
             b.setOnMouseEntered(e -> updatePartyInfo(p));
             if (selectable.test(index)) {
@@ -1044,13 +1043,18 @@ public class BattleView {
         updatePartyInfo(party.isEmpty() ? null : party.get(0)); // 打开面板默认展示第一只
     }
 
-    /** 精灵格（两行：名称 / 等级+血量）：grey=倒下（可悬停查看详情、点击无动作）；空位真禁用（无详情可看）；colorIndex 取马卡龙轮换色。 */
-    private Button partyCell(String name, String sub, boolean grey, boolean disabled, int colorIndex) {
+    /**
+     * 精灵格（两行：名称 / 等级+血量）：仅三色（2026-09-12 问题4）—— 黄=在场（当前出战）、
+     * 蓝=不在场（在队未出战）、灰=倒下（可悬停查看详情、点击无动作）；倒下优先于在场（出战场倒下也是灰格）；
+     * 空位以灰占位真禁用（无详情可看）。
+     */
+    private Button partyCell(String name, String sub, boolean fainted, boolean active, boolean disabled) {
         Button b = new Button(name + "\n" + sub);
         b.setFocusTraversable(false);
         String size = "-fx-font-size: 11px; -fx-pref-width: 115px; -fx-pref-height: 32px;"
                 + "-fx-line-spacing: 1; -fx-padding: 1 4;";
-        b.setStyle(grey ? greyToneCss(size) : toneCss(TONE_CYCLE[colorIndex % TONE_CYCLE.length], size));
+        b.setStyle(fainted ? greyToneCss(size)
+                : toneCss(active ? TONE_YELLOW : TONE_BLUE, size));
         b.setDisable(disabled);
         return b;
     }
