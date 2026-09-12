@@ -2,14 +2,19 @@ package org.example.model;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 精灵个体（等级 + 种族 + 技能槽 + 当前/最大 HP + 经验）。
+ * 精灵个体（等级 + 种族 + 技能槽 + 技能库 + 当前/最大 HP + 经验）。
  * <p>HP 上限与六项实际属性由种族值、<b>个体值</b>与等级演算而来，演算规则集中在 {@link #computeStats}。
  * 个体可以积累经验升级（属性随之提升），达到条件时进化并更换种族。</p>
+ * <p><b>技能库</b>（{@link #knownMoves}）：升学到招时学到的所有技能全部保留进技能库（无上限），
+ * 出战只携带技能槽中的最多 {@value #MAX_MOVES} 招（{@link #getMoveSlots}）；玩家可在宝可梦详情
+ * 界面经 {@link #swapBattleMove} 自由更换出战技能，被换下的技能仍留在库中。</p>
  * <p>契约补充（接口文档 v1.0 §2.11）：提供 uuid/IV/性格/异常状态 字段与读取方法。
  * 现有个体由 {@link #create} 创建时以随机 IV + 勤奋性格初始化；个体值参与属性演算，
  * 由局外成长机制提升的个体值会真实反映到面板上（种族值不变）。异常状态（主要异常 + 混乱）
@@ -33,6 +38,8 @@ public class Pokemon {
     private Nature nature;
     private int maxHp;
     private final List<MoveSlot> moveSlots;
+    /** 已学会技能库（含出战技能，按学习顺序，无上限）；出战只携带 moveSlots 中的最多 4 招。 */
+    private final List<Move> knownMoves;
     private int currentHp;
     /** 异常状态（主要异常；混乱为挥发性状态，另见 {@link #confusionTurns}）。 */
     private StatusCondition status;
@@ -51,6 +58,20 @@ public class Pokemon {
      * 同一件装备同时只能被一只精灵持有，穿戴唯一性由 {@link Player#equip} 保证。</p>
      */
     private HeldItem heldItem;
+    /**
+     * 能力等级（-6 ~ +6），由战斗引擎按 {@link StatChange} 施加。
+     * <p>这是<b>挥发性</b>状态：离场（换宠、倒下）或战斗开始即清零，因此不写入存档，
+     * {@link #restore} 恢复的个体一律从中立等级开始。</p>
+     */
+    private final Map<Stat, Integer> statStages = new EnumMap<>(Stat.class);
+    /**
+     * 本回合是否受「守住」保护（挥发性：回合结束或离场即失效）。
+     */
+    private boolean protectedThisTurn;
+    /** 连续使用「守住」的次数（改用其他招式即归零），决定成功率递减幅度。 */
+    private int protectStreak;
+    /** 是否被「寄生种子」寄生（挥发性：离场即清除）。 */
+    private boolean seeded;
 
     private Pokemon(Species species, int level, Stats stats, Stats ivs, int maxHp, List<MoveSlot> slots) {
         this.uuid = UUID.randomUUID().toString();
@@ -62,6 +83,13 @@ public class Pokemon {
         this.maxHp = maxHp;
         this.currentHp = maxHp;
         this.moveSlots = slots;
+        this.knownMoves = new ArrayList<>();
+        for (MoveSlot slot : slots) {
+            if (poolContains(slot.getMove().getId())) {
+                continue;
+            }
+            this.knownMoves.add(slot.getMove());
+        }
         this.status = StatusCondition.NONE;
     }
 
@@ -78,16 +106,25 @@ public class Pokemon {
      *
      * @param species  种族
      * @param level    等级
-     * @param movePool 技能池（全部装入技能槽）
+     * @param movePool 技能池（全部收入技能库，其中前 {@value #MAX_MOVES} 招装入出战技能槽）
      * @param ivs      个体值（0~31，六项）
      */
     public static Pokemon create(Species species, int level, List<Move> movePool, Stats ivs) {
         Stats actual = computeStats(species, level, ivs);
         List<MoveSlot> slots = new ArrayList<>();
         for (Move move : movePool) {
+            if (slots.size() >= MAX_MOVES) {
+                break;
+            }
             slots.add(new MoveSlot(move));
         }
-        return new Pokemon(species, level, actual, ivs, actual.getHp(), slots);
+        Pokemon pokemon = new Pokemon(species, level, actual, ivs, actual.getHp(), slots);
+        for (Move move : movePool) {
+            if (!pokemon.poolContains(move.getId())) {
+                pokemon.knownMoves.add(move);
+            }
+        }
+        return pokemon;
     }
 
     /**
@@ -112,9 +149,30 @@ public class Pokemon {
     public static Pokemon restore(Species species, int level, Stats ivs, List<MoveSlot> slots,
                                   long exp, StatusCondition status, int sleepTurns,
                                   int badlyPoisonCounter, int confusionTurns, int currentHp) {
+        return restore(species, level, ivs, slots, null, exp, status, sleepTurns,
+                badlyPoisonCounter, confusionTurns, currentHp);
+    }
+
+    /**
+     * 读档还原（含技能库）：{@code knownMoves} 为空或 {@code null} 时退化为「技能库 = 出战技能」
+     * （兼容未持久化技能库的旧档）。
+     *
+     * @param knownMoves 技能库（按学习顺序的完整技能列表，含出战技能）；{@code null}/空列表按出战技能兜底
+     */
+    public static Pokemon restore(Species species, int level, Stats ivs, List<MoveSlot> slots,
+                                  List<Move> knownMoves, long exp, StatusCondition status,
+                                  int sleepTurns, int badlyPoisonCounter, int confusionTurns,
+                                  int currentHp) {
         Stats actual = computeStats(species, level, ivs);
         Pokemon pokemon = new Pokemon(species, level, actual, ivs, actual.getHp(),
                 slots == null ? new ArrayList<>() : new ArrayList<>(slots));
+        if (knownMoves != null) {
+            for (Move move : knownMoves) {
+                if (move != null && !pokemon.poolContains(move.getId())) {
+                    pokemon.knownMoves.add(move);
+                }
+            }
+        }
         pokemon.exp = Math.max(0, exp);
         pokemon.status = status == null ? StatusCondition.NONE : status;
         pokemon.sleepTurns = Math.max(0, sleepTurns);
@@ -283,14 +341,127 @@ public class Pokemon {
         return confusionTurns <= 0;
     }
 
-    /** 计入异常状态后的实际速度（麻痹减半，最低 1）。 */
+    /** 计入能力等级与异常状态后的实际速度（麻痹减半，最低 1）。 */
     public int effectiveSpeed() {
-        return Math.max(1, (int) Math.round(stats.getSpeed() * status.speedMultiplier()));
+        return applyModifiers(stats.getSpeed(), Stat.SPEED, status.speedMultiplier());
     }
 
-    /** 计入异常状态后的实际物理攻击（灼伤减半，最低 1）。 */
+    /** 计入能力等级与异常状态后的实际物理攻击（灼伤减半，最低 1）。 */
     public int effectiveAttack() {
-        return Math.max(1, (int) Math.round(stats.getAttack() * status.attackMultiplier()));
+        return applyModifiers(stats.getAttack(), Stat.ATTACK, status.attackMultiplier());
+    }
+
+    /** 计入能力等级后的实际物理防御（最低 1）。 */
+    public int effectiveDefense() {
+        return applyModifiers(stats.getDefense(), Stat.DEFENSE, 1.0);
+    }
+
+    /** 计入能力等级后的实际特殊攻击（最低 1）。 */
+    public int effectiveSpAttack() {
+        return applyModifiers(stats.getSpAttack(), Stat.SP_ATTACK, 1.0);
+    }
+
+    /** 计入能力等级后的实际特殊防御（最低 1）。 */
+    public int effectiveSpDefense() {
+        return applyModifiers(stats.getSpDefense(), Stat.SP_DEFENSE, 1.0);
+    }
+
+    /** 能力等级的最大值。 */
+    public static final int MAX_STAT_STAGE = 6;
+
+    /** 能力等级的最小值。 */
+    public static final int MIN_STAT_STAGE = -6;
+
+    /**
+     * 计算某项能力的实际数值：{@code 面板值 × 能力等级倍率 × 异常状态倍率}，下限 1。
+     *
+     * @param base           面板值（{@link #getStats()} 中的对应项）
+     * @param stat           能力项（决定能力等级倍率）
+     * @param statusMultiplier 异常状态倍率（无影响为 {@code 1.0}）
+     */
+    private int applyModifiers(int base, Stat stat, double statusMultiplier) {
+        double value = base * stageMultiplier(getStatStage(stat)) * statusMultiplier;
+        return Math.max(1, (int) Math.round(value));
+    }
+
+    /**
+     * 能力等级 {@code -6 ~ +6} 对应的数值倍率：正等级为 {@code (2 + n) / 2}，
+     * 负等级为 {@code 2 / (2 - n)}（即 0 级 1.0、+2 级 2.0、-2 级 0.5，与正作一致）。
+     */
+    public static double stageMultiplier(int stage) {
+        int clamped = Math.max(MIN_STAT_STAGE, Math.min(MAX_STAT_STAGE, stage));
+        return clamped >= 0 ? (2.0 + clamped) / 2.0 : 2.0 / (2.0 - clamped);
+    }
+
+    /** 当前能力等级（未变化为 0）。 */
+    public int getStatStage(Stat stat) {
+        return stat == null ? 0 : statStages.getOrDefault(stat, 0);
+    }
+
+    /**
+     * 增减能力等级，结果裁剪到 {@code [-6, +6]}。
+     *
+     * @return 本次<b>实际</b>变化量（已受上下限裁剪；例如已 +6 时再 +1 返回 0）
+     */
+    public int changeStatStage(Stat stat, int delta) {
+        if (stat == null || delta == 0) {
+            return 0;
+        }
+        int before = getStatStage(stat);
+        int after = Math.max(MIN_STAT_STAGE, Math.min(MAX_STAT_STAGE, before + delta));
+        statStages.put(stat, after);
+        return after - before;
+    }
+
+    /** 是否所有能力等级均为 0（中立）。 */
+    public boolean hasNoStatStages() {
+        return statStages.isEmpty();
+    }
+
+    /** 清空全部能力等级（离场/倒下/战斗开始时调用）。 */
+    public void clearStatStages() {
+        statStages.clear();
+    }
+
+    /** 本回合是否受「守住」保护（挥发性：回合结束或离场即失效）。 */
+    public boolean isProtected() {
+        return protectedThisTurn;
+    }
+
+    /** 设置本回合的「守住」保护（回合末由战斗引擎统一清除）。 */
+    public void setProtected(boolean value) {
+        protectedThisTurn = value;
+    }
+
+    /** 连续使用「守住」的次数（改用其他招式或离场即归零）。 */
+    public int getProtectStreak() {
+        return protectStreak;
+    }
+
+    /** 记录连续使用「守住」的次数（负数视为 0）。 */
+    public void setProtectStreak(int streak) {
+        protectStreak = Math.max(0, streak);
+    }
+
+    /** 是否被「寄生种子」寄生（挥发性：离场即清除）。 */
+    public boolean isSeeded() {
+        return seeded;
+    }
+
+    /** 设置寄生种子状态。 */
+    public void setSeeded(boolean value) {
+        seeded = value;
+    }
+
+    /**
+     * 清除全部<b>挥发性</b>战斗状态：能力等级、守住保护与连续次数、寄生种子。
+     * <p>离场（换宠、倒下）与战斗开始时调用；这些状态不写入存档。</p>
+     */
+    public void clearVolatileState() {
+        clearStatStages();
+        protectedThisTurn = false;
+        protectStreak = 0;
+        seeded = false;
     }
 
     public String getName() {
@@ -384,19 +555,21 @@ public class Pokemon {
         return real;
     }
 
-    /** 完全恢复：HP 回满、补满全部技能 PP，并清除异常状态与混乱。 */
+    /** 完全恢复：HP 回满、补满全部技能 PP，并清除异常状态、混乱、能力等级与寄生种子。 */
     public void fullRestore() {
         currentHp = maxHp;
         for (MoveSlot slot : moveSlots) {
             slot.restore(slot.getMove().getMaxPp());
         }
         clearAllStatus();
+        clearVolatileState();
     }
 
-    /** 契约补充：仅回满 HP 并清除异常状态（§2.11 fullHeal；混乱一并清除）。 */
+    /** 契约补充：仅回满 HP 并清除异常状态（§2.11 fullHeal；混乱、能力等级与寄生种子一并清除）。 */
     public void fullHeal() {
         currentHp = maxHp;
         clearAllStatus();
+        clearVolatileState();
     }
 
     /** 是否满足进化条件（定义了进化目标且达到等级）。 */
@@ -420,16 +593,83 @@ public class Pokemon {
     }
 
     /**
-     * 学会一个技能：仅当有空槽且尚未学过该技能时加入，绝不覆盖已有技能。
+     * 学会一个技能：仅当有空槽且尚未学过该技能时加入出战槽，绝不覆盖已有技能；
+     * 无论是否装入出战槽，学到的技能都会保留在技能库中。
      *
-     * @return 是否成功学会（空槽且未重复）
+     * @return 是否成功装入出战槽（空槽且未重复）
      */
     public boolean learnMove(Move move) {
-        if (move == null || hasMove(move) || moveSlotsFull()) {
+        if (move == null || moveSlotsFull()) {
+            return false;
+        }
+        if (!poolContains(move.getId())) {
+            knownMoves.add(move);
+        }
+        if (hasMove(move)) {
             return false;
         }
         moveSlots.add(new MoveSlot(move));
         return true;
+    }
+
+    /**
+     * 技能库中是否已学会指定技能（不限出战槽，含被换下或未出战的技能）。
+     *
+     * @param moveId 技能 id
+     */
+    public boolean knowsMove(String moveId) {
+        return moveId != null && poolContains(moveId);
+    }
+
+    /**
+     * 学会一个技能并保留进技能库：技能库无上限，学到即永久保留；
+     * 若出战槽有空位且该技能未出战，则同时自动装入出战槽。
+     *
+     * @return 技能是否已进入技能库（{@code null} 技能返回 {@code false}）
+     */
+    public boolean learnMoveToPool(Move move) {
+        if (move == null) {
+            return false;
+        }
+        if (!poolContains(move.getId())) {
+            knownMoves.add(move);
+        }
+        if (!moveSlotsFull() && !hasMove(move)) {
+            moveSlots.add(new MoveSlot(move));
+        }
+        return true;
+    }
+
+    /**
+     * 把技能库中的技能换到指定出战槽（被换下的技能仍留在技能库中）。
+     *
+     * @param slotIndex 出战槽下标（0~3）
+     * @param move      技能库中已学会的技能
+     * @return 被换下的技能；槽位越界、技能无效、技能不在库中或已在出战槽时返回 {@code null}
+     */
+    public Move swapBattleMove(int slotIndex, Move move) {
+        if (slotIndex < 0 || slotIndex >= moveSlots.size()
+                || move == null || !poolContains(move.getId()) || hasMove(move)) {
+            return null;
+        }
+        Move replaced = moveSlots.get(slotIndex).getMove();
+        moveSlots.set(slotIndex, new MoveSlot(move));
+        return replaced;
+    }
+
+    /** 已学会技能库（含出战技能，按学习顺序，不可变视图）。 */
+    public List<Move> getKnownMoves() {
+        return Collections.unmodifiableList(knownMoves);
+    }
+
+    /** 技能库中是否已包含该技能（按 id 判断，注册表每次查询返回的实例可能不同）。 */
+    private boolean poolContains(String moveId) {
+        for (Move known : knownMoves) {
+            if (known.getId().equals(moveId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

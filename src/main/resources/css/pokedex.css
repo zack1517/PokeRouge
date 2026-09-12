@@ -1,0 +1,401 @@
+/* =========================================================
+   宝可梦图鉴（手绘冒险风）样式表
+   视觉：木桌上的打开的纸质图鉴 —— 米白 / 浅棕 / 森林绿 / 暖木色。
+   仅图鉴页使用（PokedexView 加载）；不影响其它页面。
+   ========================================================= */
+
+/* ---------- 根：木桌底色 ---------- */
+.pokedex-root {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-background-color: linear-gradient(to bottom, #6d5136, #523b26 55%, #44301e);
+}
+
+/* ---------- 顶部：返回按钮与木牌标题 ---------- */
+.dex-back-button {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 12px;
+    -fx-text-fill: #f3e8d2;
+    -fx-background-color: linear-gradient(to bottom, #8a6a45, #6f5334);
+    -fx-background-radius: 8;
+    -fx-border-color: #4c3620;
+    -fx-border-radius: 8;
+    -fx-border-width: 1.5;
+    -fx-padding: 5 10;
+    -fx-pref-width: 74;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.30), 5, 0, 0, 2);
+}
+
+.dex-back-button:hover {
+    -fx-background-color: linear-gradient(to bottom, #9a7850, #7d5e3c);
+}
+
+.dex-sign {
+    -fx-background-color: linear-gradient(to bottom, #8f6c45, #6d5134);
+    -fx-background-radius: 9;
+    -fx-border-color: #4a3420;
+    -fx-border-radius: 9;
+    -fx-border-width: 2;
+    -fx-padding: 4 26 6 26;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.40), 8, 0.10, 0, 3);
+}
+
+.dex-sign-title {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f9efd9;
+}
+
+.dex-sign-sub {
+    -fx-font-size: 8px;
+    -fx-text-fill: #dcc69c;
+}
+
+/* ---------- 书页与书脊 ---------- */
+.dex-page-left {
+    -fx-background-color: linear-gradient(to right, #f7f0dd, #f1e8cf);
+    -fx-background-radius: 12 3 3 12;
+    -fx-border-color: #c3ab7f;
+    -fx-border-radius: 12 3 3 12;
+    -fx-border-width: 1.5;
+    -fx-effect: dropshadow(gaussian, rgba(25, 15, 5, 0.45), 14, 0.08, 0, 6);
+}
+
+.dex-page-right {
+    -fx-background-color: linear-gradient(to left, #f8f2e1, #f1e8cf);
+    -fx-background-radius: 3 12 12 3;
+    -fx-border-color: #c3ab7f;
+    -fx-border-radius: 3 12 12 3;
+    -fx-border-width: 1.5;
+    -fx-effect: dropshadow(gaussian, rgba(25, 15, 5, 0.45), 14, 0.08, 0, 6);
+}
+
+.dex-spine {
+    -fx-background-color: linear-gradient(to right, #3a2a1a, #6b4e30 45%, #3a2a1a);
+    -fx-background-radius: 2;
+    -fx-effect: innershadow(gaussian, rgba(0, 0, 0, 0.60), 8, 0.20, 0, 0);
+}
+
+/* ---------- 左页：图鉴索引 ---------- */
+.dex-page-caption {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #5d4a2f;
+}
+
+.dex-page-progress {
+    -fx-font-size: 10px;
+    -fx-text-fill: #8a7550;
+}
+
+.dex-list {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-control-inner-background: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 1;
+}
+
+.dex-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-background-radius: 7;
+    -fx-border-radius: 7;
+    -fx-border-width: 1;
+    -fx-border-color: transparent;
+    -fx-padding: 3 6 3 6;
+}
+
+.dex-list .list-cell:filled:hover {
+    -fx-background-color: rgba(214, 193, 148, 0.38);
+}
+
+.dex-list .list-cell:filled:selected {
+    -fx-background-color: linear-gradient(to right, #f2e3bd, #f8efd6);
+    -fx-border-color: #cda861;
+    -fx-effect: dropshadow(gaussian, rgba(122, 95, 52, 0.35), 6, 0, 0, 2);
+}
+
+.dex-cell-number {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #8a7550;
+}
+
+.dex-cell-name {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 12.5px;
+    -fx-text-fill: #4a3b28;
+}
+
+.dex-cell-name-locked {
+    -fx-text-fill: #9a8a70;
+}
+
+.dex-cell-icon {
+    -fx-background-color: rgba(238, 228, 202, 0.65);
+    -fx-background-radius: 8;
+    -fx-border-color: #dcc9a0;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+}
+
+.dex-cell-noicon {
+    -fx-font-size: 11px;
+    -fx-text-fill: #b3a284;
+}
+
+.dex-caught-dot {
+    -fx-min-width: 8;
+    -fx-pref-width: 8;
+    -fx-max-width: 8;
+    -fx-min-height: 8;
+    -fx-pref-height: 8;
+    -fx-max-height: 8;
+    -fx-background-color: linear-gradient(to bottom right, #e8836f, #c04a3e);
+    -fx-background-radius: 6;
+    -fx-border-color: #fdf6e6;
+    -fx-border-radius: 6;
+    -fx-border-width: 1;
+}
+
+/* ---------- 右页：名称与立绘 ---------- */
+.dex-number {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #a08a5f;
+}
+
+.dex-name {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 19px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #43331f;
+}
+
+.dex-english {
+    -fx-font-size: 10px;
+    -fx-text-fill: #98835c;
+}
+
+.dex-sprite-fallback {
+    -fx-font-size: 12px;
+    -fx-text-fill: #a5947a;
+}
+
+.dex-sprite-pad {
+    -fx-background-color: radial-gradient(center 50% 50%, radius 50%, rgba(176, 146, 98, 0.40), rgba(176, 146, 98, 0.0));
+    -fx-background-radius: 8;
+}
+
+/* ---------- 右页：内容区（随标签切换） ---------- */
+.dex-content-scroll {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-padding: 0;
+}
+
+.dex-content-scroll .viewport {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+.dex-desc-card {
+    -fx-background-color: rgba(255, 252, 240, 0.78);
+    -fx-background-radius: 7;
+    -fx-border-color: #dcc9a0;
+    -fx-border-radius: 7;
+    -fx-border-width: 1;
+    -fx-padding: 5 8 6 8;
+}
+
+.dex-desc-category {
+    -fx-font-size: 9.5px;
+    -fx-text-fill: #9a8a70;
+}
+
+.dex-desc {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: #5c4b31;
+    -fx-line-spacing: 1.5;
+}
+
+.dex-stat-name {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: #6b5a3f;
+}
+
+.dex-stat-value {
+    -fx-font-size: 10.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #4a3b28;
+}
+
+.dex-stat-track {
+    -fx-background-color: #e7dcc2;
+    -fx-background-radius: 4;
+    -fx-border-color: #d3c4a0;
+    -fx-border-radius: 4;
+    -fx-border-width: 0.8;
+}
+
+.dex-stat-fill {
+    -fx-background-color: linear-gradient(to right, #a9c88a, #6f9a5c);
+    -fx-background-radius: 4;
+}
+
+.dex-size-text {
+    -fx-font-size: 11px;
+    -fx-text-fill: #5c4b31;
+    -fx-padding: 2 0 0 2;
+}
+
+/* ---------- 右页：技能标签 ---------- */
+.dex-move-level {
+    -fx-font-size: 10px;
+    -fx-text-fill: #8a7550;
+}
+
+.dex-move-name {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #43331f;
+}
+
+.dex-move-meta {
+    -fx-font-size: 9.5px;
+    -fx-text-fill: #8a7550;
+}
+
+/* ---------- 右页：进化链标签 ---------- */
+.dex-evo-card {
+    -fx-padding: 4 6 5 6;
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-border-width: 1.2;
+    -fx-border-color: transparent;
+}
+
+.dex-evo-current {
+    -fx-background-color: rgba(255, 250, 232, 0.85);
+    -fx-border-color: #cda861;
+    -fx-effect: dropshadow(gaussian, rgba(122, 95, 52, 0.30), 5, 0, 0, 2);
+}
+
+.dex-evo-name {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 10px;
+    -fx-text-fill: #4a3b28;
+}
+
+.dex-evo-level {
+    -fx-font-size: 8.5px;
+    -fx-text-fill: #8a7550;
+}
+
+.dex-evo-arrow {
+    -fx-font-size: 12px;
+    -fx-text-fill: #a08a5f;
+}
+
+/* ---------- 右页：图鉴记录标签 ---------- */
+.dex-record-row {
+    -fx-background-color: rgba(255, 252, 240, 0.70);
+    -fx-background-radius: 6;
+    -fx-border-color: #dcc9a0;
+    -fx-border-radius: 6;
+    -fx-border-width: 1;
+    -fx-padding: 3 8 4 8;
+}
+
+.dex-record-label {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: #8a7550;
+}
+
+.dex-record-value {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #4a3b28;
+}
+
+/* ---------- 右页：未解锁迷雾 ---------- */
+.dex-locked-mark {
+    -fx-font-size: 30px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #b7a684;
+}
+
+.dex-locked-text {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: #8a7550;
+}
+
+.dex-hint {
+    -fx-font-size: 10.5px;
+    -fx-text-fill: #8a7550;
+}
+
+/* ---------- 右页：底部标签栏（书签式） ---------- */
+.dex-tab {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-text-fill: #6b5a3f;
+    -fx-background-color: rgba(220, 202, 158, 0.35);
+    -fx-background-radius: 7;
+    -fx-border-color: #cbb584;
+    -fx-border-radius: 7;
+    -fx-border-width: 1;
+    -fx-padding: 3 4 4 4;
+    -fx-cursor: hand;
+}
+
+.dex-tab:hover {
+    -fx-background-color: rgba(214, 190, 138, 0.55);
+}
+
+/* 选中态放在 :hover 之后——两者特异性相同时后定义者优先，保证悬停不淡出选中样式 */
+.dex-tab.dex-tab-active {
+    -fx-background-color: linear-gradient(to bottom, #8a6a45, #6d5134);
+    -fx-border-color: #4a3420;
+    -fx-text-fill: #f9efd9;
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.28), 5, 0, 0, 2);
+}
+
+/* ---------- 滚动条（列表与内容区共用，简化成细木色滑条） ---------- */
+.dex-list .scroll-bar:vertical,
+.dex-content-scroll .scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 9;
+    -fx-padding: 0 1 0 1;
+}
+
+.dex-list .scroll-bar:vertical .track,
+.dex-content-scroll .scroll-bar:vertical .track {
+    -fx-background-color: transparent;
+}
+
+.dex-list .scroll-bar:vertical .thumb,
+.dex-content-scroll .scroll-bar:vertical .thumb {
+    -fx-background-color: #cdb684;
+    -fx-background-radius: 4;
+}
+
+.dex-list .scroll-bar .increment-button,
+.dex-list .scroll-bar .decrement-button,
+.dex-content-scroll .scroll-bar .increment-button,
+.dex-content-scroll .scroll-bar .decrement-button {
+    -fx-pref-height: 0;
+    -fx-opacity: 0;
+}
+
+.dex-list .scroll-bar .increment-arrow,
+.dex-list .scroll-bar .decrement-arrow,
+.dex-content-scroll .scroll-bar .increment-arrow,
+.dex-content-scroll .scroll-bar .decrement-arrow {
+    -fx-shape: " ";
+    -fx-padding: 0;
+}

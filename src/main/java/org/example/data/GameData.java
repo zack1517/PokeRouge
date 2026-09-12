@@ -10,6 +10,7 @@ import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
 import org.example.model.Pokemon;
 import org.example.model.Species;
+import org.example.model.StatChange;
 import org.example.model.Stats;
 import org.example.model.StatusCondition;
 import org.example.util.LogUtil;
@@ -35,11 +36,14 @@ import java.util.function.Consumer;
  *
  * <p>CSV 统一格式（首行为表头，自动跳过，# 开头视为注释）：</p>
  * <ul>
- *     <li>moves.csv：id,name,type,category,power,accuracy,maxPp,priority,inflicts,inflictionChance[,effect]
+ *     <li>moves.csv：id,name,type,category,power,accuracy,maxPp,priority,inflicts,inflictionChance[,statChanges[,effect]]
  *     —— type 用属性英文名，category 取 PHYSICAL/SPECIAL/STATUS（变化类 power 为 0）；
  *     accuracy 为命中率（-1 表示必中）；priority 为先制度；inflicts 为命中后可能施加的异常状态
  *     （POISON/BADLY_POISON/PARALYSIS/BURN/SLEEP/FREEZE/CONFUSION，留空表示无），
  *     inflictionChance 为触发概率百分比（0~100）；
+ *     statChanges 为可选的能力等级变化，格式 “受方:能力:幅度”（受方 SELF/OPPONENT，能力
+ *     ATTACK/DEFENSE/SP_ATTACK/SP_DEFENSE/SPEED，幅度 -6~+6 非 0），多项用 “;” 分隔，
+ *     如 SELF:SPEED:+2 或 OPPONENT:ATTACK:-1；
  *     effect 为可选的技能效果英文名（如 SUNNY_DAY/GRASSY_TERRAIN），不填为无效果</li>
  *     <li>species.csv：id,name,type1,type2,hp,atk,def,spatk,spdef,speed,catchRate,wild,evolvesTo,evolveLevel,moves,learns
  *     —— type2 可为空；wild 1/0 决定是否进野怪池；evolvesTo 为进化目标 id（可空），
@@ -144,10 +148,20 @@ public final class GameData {
     }
 
     /**
-     * 按物种 id 创建一只满血个体（等级任意）。技能按成长解锁：先给「出生即会」的技能，
+     * 按物种 id 创建一只满血个体（等级任意，个体值随机）。技能按成长解锁：先给「出生即会」的技能，
      * 再按等级升序补入该等级已经习得的技能（最多 4 招），因此低等级个体技能较少。
      */
     public Optional<Pokemon> createPokemon(String speciesId, int level) {
+        return createPokemon(speciesId, level, null);
+    }
+
+    /**
+     * 按物种 id 创建一只满血个体，可指定个体值（{@code ivs} 为 null 时随机）。
+     *
+     * <p>个体值参与属性演算，随机个体值会让同一物种两次创建得到不同 HP/属性；
+     * 存档重建等需要确定性的场景应传入固定个体值（如全 0）。</p>
+     */
+    public Optional<Pokemon> createPokemon(String speciesId, int level, Stats ivs) {
         Species sp = species(speciesId);
         if (sp == null) {
             return Optional.empty();
@@ -168,7 +182,7 @@ public final class GameData {
                 pool.add(mv);
             }
         }
-        return Optional.of(Pokemon.create(sp, level, pool));
+        return Optional.of(Pokemon.create(sp, level, pool, ivs == null ? Stats.randomIv() : ivs));
     }
 
     // ------------------------------------------------------------------
@@ -453,10 +467,12 @@ public final class GameData {
         int priority = parseInt(c[7]);
         StatusCondition inflicts = c.length > 8 ? StatusCondition.parse(c[8]) : StatusCondition.NONE;
         int chance = c.length > 9 ? parseInt(c[9]) : 0;
-        MoveEffect effect = c.length > 10 ? MoveEffect.parse(c[10]) : MoveEffect.NONE;
+        // 列序：10 为能力等级变化，11 为技能效果（历史数据中 effect 从未被填写，故前移一位让变化技能书写更自然）。
+        List<StatChange> statChanges = c.length > 10 ? StatChange.parseAll(c[10]) : List.of();
+        MoveEffect effect = c.length > 11 ? MoveEffect.parse(c[11]) : MoveEffect.NONE;
         String id = c[0].trim();
         moveMap.put(id, new Move(id, c[1].trim(), type, category, power, accuracy, maxPp, priority,
-                effect, inflicts, chance));
+                effect, inflicts, chance, statChanges));
     }
 
     /**

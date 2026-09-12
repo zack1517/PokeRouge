@@ -26,19 +26,23 @@ public final class PokemonMapper {
     private PokemonMapper() {
     }
 
-    /** 战斗模型精灵 → 存档数据（含技能剩余 PP）。 */
+    /** 战斗模型精灵 → 存档数据（含技能剩余 PP 与技能库）。 */
     public static SaveData.PokemonData toData(Pokemon pokemon) {
         Stats ivs = pokemon.getIvs() == null ? new Stats(0, 0, 0, 0, 0, 0) : pokemon.getIvs();
         List<SaveData.MoveData> moves = new ArrayList<>();
         for (MoveSlot slot : pokemon.getMoveSlots()) {
             moves.add(new SaveData.MoveData(slot.getMove().getId(), slot.getPp()));
         }
+        List<String> knownMoves = new ArrayList<>();
+        for (Move known : pokemon.getKnownMoves()) {
+            knownMoves.add(known.getId());
+        }
         return new SaveData.PokemonData(pokemon.getSpecies().getId(), pokemon.getLevel(),
                 new SaveData.IvData(ivs.getHp(), ivs.getAttack(), ivs.getDefense(),
                         ivs.getSpAttack(), ivs.getSpDefense(), ivs.getSpeed()),
                 pokemon.getExp(), pokemon.getStatus().name(), pokemon.getSleepTurns(),
                 pokemon.getBadlyPoisonCounter(), pokemon.getConfusionTurns(),
-                pokemon.getCurrentHp(), moves);
+                pokemon.getCurrentHp(), moves, knownMoves);
     }
 
     /**
@@ -58,11 +62,23 @@ public final class PokemonMapper {
         for (SaveData.MoveData move : data.moves()) {
             findMove(move.moveId()).ifPresent(found -> slots.add(new MoveSlot(found, move.pp())));
         }
+        // 技能库：按存档顺序查表还原（查不到丢弃）；旧档无技能库字段时退化为出战技能
+        List<Move> knownMoves = new ArrayList<>();
+        for (String moveId : data.knownMoves()) {
+            findMove(moveId).ifPresent(knownMoves::add);
+        }
+        for (MoveSlot slot : slots) {
+            boolean missing = knownMoves.stream()
+                    .noneMatch(m -> m.getId().equals(slot.getMove().getId()));
+            if (missing) {
+                knownMoves.add(slot.getMove());
+            }
+        }
         SaveData.IvData iv = data.ivs() == null ? new SaveData.IvData(0, 0, 0, 0, 0, 0) : data.ivs();
         Stats ivs = new Stats(iv.hp(), iv.attack(), iv.defense(),
                 iv.spAttack(), iv.spDefense(), iv.speed());
         int level = Math.max(1, Math.min(Pokemon.MAX_LEVEL, data.level()));
-        return Optional.of(Pokemon.restore(species.get(), level, ivs, slots, data.exp(),
+        return Optional.of(Pokemon.restore(species.get(), level, ivs, slots, knownMoves, data.exp(),
                 StatusCondition.parse(data.status()), data.sleepTurns(),
                 data.badlyPoisonCounter(), data.confusionTurns(), data.currentHp()));
     }

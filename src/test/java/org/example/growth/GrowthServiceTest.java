@@ -315,7 +315,7 @@ class GrowthServiceTest {
     }
 
     @Test
-    void 技能栏已满时挂起等待抉择() {
+    void 技能栏已满时新招自动收入技能库不占出战槽() {
         Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of(2, "m_new"));
         Pokemon active = pokemon(mine, 1, fourMoves());
 
@@ -325,12 +325,12 @@ class GrowthServiceTest {
         BattleGrowthPort.Settlement settlement =
                 new GrowthService(port).settle(List.of(active), List.of(foe120()));
 
-        assertEquals(1, settlement.pendingLearns().size(), "满 4 招时应挂起一个学习抉择");
-        BattleService.LearnChoice choice = settlement.pendingLearns().get(0);
-        assertEquals(active, choice.pokemon());
-        assertEquals("m_new", choice.move().getId());
-        assertEquals(4, active.getMoveSlots().size(), "挂起期间技能栏不变");
-        assertFalse(knows(active, "m_new"));
+        assertTrue(settlement.pendingLearns().isEmpty(), "满 4 招时不再挂起学习抉择");
+        assertEquals(4, active.getMoveSlots().size(), "出战技能槽仍为 4 招");
+        assertTrue(active.knowsMove("m_new"), "新技能应保留进技能库");
+        assertFalse(knows(active, "m_new"), "出战槽已满，新技能不应自动装入出战槽");
+        assertTrue(settlement.log().stream().anyMatch(line -> line.contains("技能库")),
+                "日志应提示新技能已收入技能库");
     }
 
     @Test
@@ -391,6 +391,8 @@ class GrowthServiceTest {
         List<String> log = growth.resolveLearn(new BattleService.LearnChoice(active, NEW_MOVE), 0);
 
         assertEquals("m_new", active.getMoveSlots().get(0).getMove().getId());
+        assertTrue(active.knowsMove("m_new"), "新技能进入技能库");
+        assertTrue(active.knowsMove("m_slam"), "被换下的技能仍保留在技能库中");
         assertEquals(1, log.size());
         assertTrue(log.get(0).contains("忘记了") && log.get(0).contains("学会了"));
     }

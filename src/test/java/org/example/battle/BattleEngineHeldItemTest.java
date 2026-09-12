@@ -57,6 +57,10 @@ class BattleEngineHeldItemTest {
     private static final HeldItem QUICK_CLAW = item("e_quick_claw", "先制之爪", HeldItemEffect.FIRST_STRIKE, "20");
     private static final HeldItem EVIOLITE = item("e_eviolite", "进化辉石", HeldItemEffect.EVOLITE, "1.5");
 
+    /** 固定个体值（全 0）：同种子双场对照的确定性前提，个体值参与属性演算（dev 引入），
+     * 若不固定，两场精灵属性随机不同，伤害比断言失效。 */
+    private static final Stats ZERO_IV = new Stats(0, 0, 0, 0, 0, 0);
+
     private static HeldItem item(String id, String name, HeldItemEffect effect, String param) {
         return new HeldItem(id, name, effect, param, name + " 测试描述");
     }
@@ -76,12 +80,12 @@ class BattleEngineHeldItemTest {
                                    ElementType attackerType, ElementType defenderType,
                                    String defenderEvolvesTo) {
         Pokemon attacker = Pokemon.create(
-                species("atk_sp", attackerType, 1000, 100, 100, 200, null), 50, List.of(move));
+                species("atk_sp", attackerType, 1000, 100, 100, 200, null), 50, List.of(move), ZERO_IV);
         if (attackerItem != null) {
             attacker.setHeldItem(attackerItem);
         }
         Pokemon defender = Pokemon.create(
-                species("def_sp", defenderType, 5000, 10, 50, 10, defenderEvolvesTo), 50, List.of(WEAK_HIT));
+                species("def_sp", defenderType, 5000, 10, 50, 10, defenderEvolvesTo), 50, List.of(WEAK_HIT), ZERO_IV);
         if (defenderItem != null) {
             defender.setHeldItem(defenderItem);
         }
@@ -98,12 +102,12 @@ class BattleEngineHeldItemTest {
      */
     private static BattleEngine runOneRound(HeldItem mineItem) {
         Pokemon mine = Pokemon.create(
-                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(BIG_HIT));
+                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(BIG_HIT), ZERO_IV);
         if (mineItem != null) {
             mine.setHeldItem(mineItem);
         }
         Pokemon foe = Pokemon.create(
-                species("f_sp", ElementType.NORMAL, 5000, 100, 50, 200, null), 50, List.of(MED_HIT));
+                species("f_sp", ElementType.NORMAL, 5000, 100, 50, 200, null), 50, List.of(MED_HIT), ZERO_IV);
         Player player = new Player("玩家");
         player.addPokemon(mine);
         BattleEngine engine = new BattleEngine(player, foe, new Random(42));
@@ -195,10 +199,10 @@ class BattleEngineHeldItemTest {
     void 先制之爪触发时无视速度抢先出手() {
         long seed = seedWhereClawTriggers();
         Pokemon mine = Pokemon.create(
-                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(BIG_HIT));
+                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(BIG_HIT), ZERO_IV);
         mine.setHeldItem(QUICK_CLAW);
         Pokemon foe = Pokemon.create(
-                species("f_sp", ElementType.NORMAL, 300, 100, 50, 200, null), 50, List.of(MED_HIT));
+                species("f_sp", ElementType.NORMAL, 300, 100, 50, 200, null), 50, List.of(MED_HIT), ZERO_IV);
         Player player = new Player("玩家");
         player.addPokemon(mine);
         BattleEngine engine = new BattleEngine(player, foe, new Random(seed));
@@ -212,10 +216,10 @@ class BattleEngineHeldItemTest {
     void 先制之爪未触发时仍按速度判定() {
         long seed = seedWhereClawFails();
         Pokemon mine = Pokemon.create(
-                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(BIG_HIT));
+                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(BIG_HIT), ZERO_IV);
         mine.setHeldItem(QUICK_CLAW);
         Pokemon foe = Pokemon.create(
-                species("f_sp", ElementType.NORMAL, 300, 100, 50, 200, null), 50, List.of(MED_HIT));
+                species("f_sp", ElementType.NORMAL, 300, 100, 50, 200, null), 50, List.of(MED_HIT), ZERO_IV);
         Player player = new Player("玩家");
         player.addPokemon(mine);
         BattleEngine engine = new BattleEngine(player, foe, new Random(seed));
@@ -229,10 +233,10 @@ class BattleEngineHeldItemTest {
     void 双方先制之爪均触发时回退到速度判定() {
         long seed = seedWhereBothClawsTrigger();
         Pokemon mine = Pokemon.create(
-                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(BIG_HIT));
+                species("p_sp", ElementType.NORMAL, 800, 100, 50, 10, null), 50, List.of(BIG_HIT), ZERO_IV);
         mine.setHeldItem(QUICK_CLAW);
         Pokemon foe = Pokemon.create(
-                species("f_sp", ElementType.NORMAL, 300, 100, 50, 200, null), 50, List.of(MED_HIT));
+                species("f_sp", ElementType.NORMAL, 300, 100, 50, 200, null), 50, List.of(MED_HIT), ZERO_IV);
         foe.setHeldItem(QUICK_CLAW);
         Player player = new Player("玩家");
         player.addPokemon(mine);
