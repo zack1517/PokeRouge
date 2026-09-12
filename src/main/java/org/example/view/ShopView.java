@@ -46,7 +46,7 @@ public class ShopView {
         Label title = new Label("商店 · 第 " + stock.segment() + " 段");
         title.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #222;");
 
-        Label summary = new Label("持有金币：" + gold + "  🪙　　（段数越靠后，商品种类与数量越多）");
+        Label summary = new Label("持有金币：" + gold + "  🪙　　（段数越靠后，货架格数越多、售价越高）");
         summary.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-text-fill: #555;");
 
         VBox header = new VBox(2, title, summary);

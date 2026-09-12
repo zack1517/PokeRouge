@@ -24,9 +24,9 @@ import java.util.List;
 /**
  * 道具图鉴页（由主菜单「道具图鉴」按钮进入）：一页看全 93 件道具（16 件消耗品 + 77 件装备）。
  *
- * <p>每张卡片给出名称、【道具】/【装备】标记、效果说明、从第几段起可在商店买到与基础价，
+ * <p>每张卡片给出名称、【道具】/【装备】标记、效果说明、是否在商店出售与基础价，
  * 并用文字标注「已拥有 / 未拥有」；装备额外标注穿戴者 ——
- * 全量列出、不做收集解锁，方便查看「还有哪些没拿到、在哪一段能买到」。</p>
+ * 全量列出、不做收集解锁，方便查看「还有哪些没拿到、商店里能买什么」。</p>
  *
  * <p><b>可直接操作装备</b>：已拥有且未穿戴的装备，卡片刻出「穿给 [队伍成员] 」下拉与「穿戴」按钮；
  * 已被某只精灵穿戴的，给出「[名字] 持有」与「脱下」。穿脱后本页即时重建，
@@ -153,7 +153,7 @@ public final class ItemDexView {
         summary.setText("共 " + entries.size() + " 件（" + (entries.size() - countEquipment(entries))
                 + " 件道具 + " + countEquipment(entries) + " 件装备）　已拥有 " + owned + " 件"
                 + (equipped == 0 ? "" : "，其中 " + equipped + " 件已穿戴")
-                + "　未拥有的道具与装备会在商店里按段位逐步解锁上架");
+                + "　未拥有的道具与装备可随时在商店买到（第 1 段起即可能上架，货架格位随段数变多）");
 
         listBox.getChildren().clear();
         List<ItemDexData.Entry> shown = entries.stream().filter(this::matches).toList();
@@ -203,8 +203,9 @@ public final class ItemDexView {
             card.getChildren().add(description);
         }
 
-        Label source = new Label("第 " + entry.unlockSegment() + " 段起可在商店购买 · 基础价 "
-                + entry.basePrice() + " 金币（段数越靠后售价越高）");
+        Label source = new Label(entry.sold()
+                ? "商店出售 · 基础价 " + entry.basePrice() + " 金币（段数越靠后售价越高）"
+                : "不售卖 · 剧情专属道具（击败火箭队首领必得）");
         source.setWrapText(true);
         source.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #777;");
         card.getChildren().add(source);
@@ -232,7 +233,7 @@ public final class ItemDexView {
             return null;
         }
         if (!entry.owned()) {
-            return hintRow("可在商店购买（到段位后上架），或在肉鸽「装备补给」事件中获得。");
+            return hintRow("可在商店购买（第 1 段起即可能上架），或在肉鸽「装备补给」事件中获得。");
         }
 
         Pokemon holder = holderOf(entry.id());

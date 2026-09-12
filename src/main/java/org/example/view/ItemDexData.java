@@ -37,12 +37,12 @@ public final class ItemDexData {
      * @param description   效果说明（消耗品由本类按类别生成，装备取自数据表）
      * @param equipment     是否为可携带装备（false = 消耗品）
      * @param basePrice     第 1 段的基础售价（段数越靠后越贵，见 {@code RouteConfig#shopPrice}）
-     * @param unlockSegment 从第几段起可能在商店上架（1~5）
+     * @param sold          是否在商店售卖（{@code false} = 剧情专属道具，只能靠剧情获得）
      * @param ownedCount    持有数量：消耗品为背包件数，装备为 0 / 1（全库唯一）
      * @param holderName    当前穿戴该装备的精灵名；未穿戴或非装备时为 {@code null}
      */
     public record Entry(String id, String name, String description, boolean equipment,
-                        int basePrice, int unlockSegment, int ownedCount, String holderName) {
+                        int basePrice, boolean sold, int ownedCount, String holderName) {
 
         /** 是否已拥有（消耗品看背包件数，装备看是否入库）。 */
         public boolean owned() {
@@ -59,7 +59,7 @@ public final class ItemDexData {
     }
 
     /**
-     * 构建完整道具图鉴：消耗品在前、装备在后，各自按「解锁段位 → 基础价 → 名称」排序，
+     * 构建完整道具图鉴：消耗品在前、装备在后，各自按「基础价 → 名称」排序，
      * 读起来就是从便宜常见到稀有强力的一条推进线。
      *
      * @param player 玩家（{@code null} 视作什么都没有，条目仍全部列出）
@@ -83,18 +83,17 @@ public final class ItemDexData {
         for (ShopStock.CatalogEntry candidate : ShopStock.catalog()) {
             if (candidate.equipment()) {
                 entries.add(new Entry(candidate.id(), candidate.name(), candidate.description(), true,
-                        candidate.basePrice(), candidate.unlockSegment(),
+                        candidate.basePrice(), candidate.sold(),
                         ownedEquipment.contains(candidate.id()) ? 1 : 0,
                         holders.get(candidate.id())));
             } else {
                 Item item = GameData.instance().item(candidate.id());
                 int count = player == null || item == null ? 0 : player.getBag().countOf(item);
                 entries.add(new Entry(candidate.id(), candidate.name(), describe(item), false,
-                        candidate.basePrice(), candidate.unlockSegment(), count, null));
+                        candidate.basePrice(), candidate.sold(), count, null));
             }
         }
         entries.sort(Comparator.comparing(Entry::equipment)
-                .thenComparingInt(Entry::unlockSegment)
                 .thenComparingInt(Entry::basePrice)
                 .thenComparing(Entry::name));
         return List.copyOf(entries);

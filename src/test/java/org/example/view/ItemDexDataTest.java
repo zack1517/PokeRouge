@@ -55,11 +55,17 @@ class ItemDexDataTest {
         for (ItemDexData.Entry entry : entries) {
             assertFalse(entry.name().isBlank(), entry.id() + " 应有展示名");
             assertTrue(entry.basePrice() > 0, entry.id() + " 基础价应为正");
-            assertTrue(entry.unlockSegment() >= 1 && entry.unlockSegment() <= 5,
-                    entry.id() + " 解锁段位应在 1~5，实际 " + entry.unlockSegment());
             assertFalse(entry.owned(), "无玩家数据时不应标为已拥有");
             assertFalse(entry.equipped(), "无玩家数据时不应标为已穿戴");
         }
+    }
+
+    @Test
+    void 大师球列出但标注不售卖() {
+        assertEquals(1, ItemDexData.build(null).stream()
+                .filter(entry -> !entry.sold()).count(), "当前仅大师球为不售卖道具");
+        assertFalse(find(ItemDexData.build(null), "i_master_ball").sold(), "大师球应标注不售卖");
+        assertTrue(find(ItemDexData.build(null), "i_potion").sold(), "普通消耗品应标注在售");
     }
 
     @Test
@@ -82,17 +88,17 @@ class ItemDexDataTest {
     }
 
     @Test
-    void 装备按解锁段位与基础价递增排序() {
+    void 装备按基础价递增排序() {
         List<ItemDexData.Entry> entries = ItemDexData.build(null).stream()
                 .filter(ItemDexData.Entry::equipment).toList();
 
         for (int i = 1; i < entries.size(); i++) {
             ItemDexData.Entry prev = entries.get(i - 1);
             ItemDexData.Entry curr = entries.get(i);
-            assertTrue(prev.unlockSegment() < curr.unlockSegment()
-                            || (prev.unlockSegment() == curr.unlockSegment()
-                            && prev.basePrice() <= curr.basePrice()),
-                    "装备应「解锁段位 → 基础价」有序：" + prev.id() + " -> " + curr.id());
+            assertTrue(prev.basePrice() < curr.basePrice()
+                            || (prev.basePrice() == curr.basePrice()
+                            && prev.name().compareTo(curr.name()) <= 0),
+                    "装备应「基础价 → 名称」有序：" + prev.id() + " -> " + curr.id());
         }
     }
 
