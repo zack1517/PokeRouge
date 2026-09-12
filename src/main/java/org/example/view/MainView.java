@@ -47,7 +47,8 @@ import org.example.util.UiScale;
  * <ul>
  *     <li><b>上</b>：左上角「返回主界面」按钮；中间训练家标题（无背景框，白晕保证地图背景上可读）；
  *     右侧为段位信息框（段号 / 金币 / 存档位分多行排列）。</li>
- *     <li><b>中</b>：左中右三栏，宽度约 3:3:2 —— 左栏为六格队伍位（首发格左侧标 ⭐，点击进详情）；
+ *     <li><b>中</b>：左中右三栏，宽度约 3:3:2 —— 左栏为六格队伍位（首发格左侧标 ⭐，非首发格
+ *     第二行右侧附「设为首发」小按钮；点格子其余区域进详情）；
  *     右栏为背包列表（精灵球恒置顶、按捕捉强度降序，其余保持原序）；中栏为简要信息框，随光标在
  *     左/右栏按钮上悬停切换内容（精灵：插画/名称/属性/等级/状态/HP/EXP/四个技能/装备；
  *     道具：插图/数量/功能表述）。中栏保持最后一次悬停内容，方便移开光标阅读。</li>
@@ -67,7 +68,7 @@ public class MainView {
         /** 进入肉鸽层内事件页（楼层选项/点数/战斗入口）。 */
         void onStartRogueFloor();
 
-        /** 将 index 对应的精灵设为下一场战斗先发（当前菜单结构不再提供入口，保留供后续使用）。 */
+        /** 将 index 对应的精灵设为下一场战斗先发（由队伍格内的「设为首发」按钮触发）。 */
         void onSetActive(int index);
 
         /** 保存游戏：写入所选档位（未作战时可用）。 */
@@ -90,6 +91,9 @@ public class MainView {
 
     /** 队伍栏固定六格（含空位占位）。 */
     private static final int PARTY_SLOT_COUNT = 6;
+
+    /** 单个队伍位的固定高度（设计像素；旧版 Vgrow 撑满导致纵向过高，改恒定高度更紧凑）。 */
+    private static final double PARTY_SLOT_HEIGHT = 40;
 
     /** 中栏进度条宽度（设计像素；适配 3:3:2 的中栏宽度）。 */
     private static final double BAR_WIDTH = 170;
@@ -240,7 +244,10 @@ public class MainView {
         return column;
     }
 
-    /** 单个精灵位：上行「[⭐]名称 · Lv.X」，下行「HP cur/max · EXP a/b」；悬停联动中栏、点击进详情。 */
+    /**
+     * 单个精灵位：上行「[⭐]名称 · Lv.X」，下行「HP cur/max · EXP a/b +『设为首发』按钮」；
+     * 悬停联动中栏、点击（按钮以外区域）进详情。
+     */
     private Button buildPartySlot(Pokemon pokemon, Pokemon active, int index) {
         boolean isActive = pokemon == active;
 
@@ -253,8 +260,9 @@ public class MainView {
         level.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #555;");
         HBox line1 = new HBox(4);
         if (isActive) {
-            Label star = new Label("⭐");
-            star.setStyle(YH + "-fx-font-size: 12px;");
+            // ★ 为实心符号字形，配合 text-fill 呈「实心金星」（⭐ 在本环境回退为单色空心字形，无法彩色）
+            Label star = new Label("★");
+            star.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #F5A623;");
             line1.getChildren().add(star);
         }
         line1.getChildren().addAll(name, spacer, level);
@@ -277,15 +285,48 @@ public class MainView {
         slot.getStyleClass().add("party-slot");
         slot.setStyle(slotStyle(isActive, false));
         slot.setMaxWidth(Double.MAX_VALUE);
-        slot.setMaxHeight(Double.MAX_VALUE);
+        slot.setPrefHeight(PARTY_SLOT_HEIGHT);
+        slot.setMinHeight(Region.USE_PREF_SIZE);
+        slot.setMaxHeight(Region.USE_PREF_SIZE);
         slot.setOnMouseEntered(e -> {
             slot.setStyle(slotStyle(isActive, true));
             showPokemonDetail(pokemon);
         });
         slot.setOnMouseExited(e -> slot.setStyle(slotStyle(isActive, false)));
         slot.setOnAction(e -> actions.onShowPokemonDetail(index));
-        VBox.setVgrow(slot, Priority.ALWAYS);
+
+        if (!isActive) {
+            Region gap = new Region();
+            HBox.setHgrow(gap, Priority.ALWAYS);
+            line2.getChildren().addAll(gap, buildSetActiveButton(pokemon, index, slot));
+        }
         return slot;
+    }
+
+    /** 「设为首发」小按钮（第二行右侧）；倒下的精灵禁用，光标直接落在按钮上也触发格子悬停联动。 */
+    private Button buildSetActiveButton(Pokemon pokemon, int index, Button slot) {
+        Button fire = new Button("设为首发");
+        fire.getStyleClass().add("party-fire");
+        fire.setStyle(fireStyle(false));
+        fire.setDisable(pokemon.isFainted());
+        fire.setOnAction(e -> {
+            // ActionEvent 会沿父链冒泡到外层格子（触发其「进详情」），这里必须消费掉
+            actions.onSetActive(index);
+            e.consume();
+        });
+        fire.setOnMouseEntered(e -> {
+            fire.setStyle(fireStyle(true));
+            slot.setStyle(slotStyle(false, true));
+            showPokemonDetail(pokemon);
+        });
+        fire.setOnMouseExited(e -> fire.setStyle(fireStyle(false)));
+        return fire;
+    }
+
+    private static String fireStyle(boolean hover) {
+        return YH + "-fx-font-size: 10px; -fx-text-fill: white; -fx-padding: 1 6; -fx-cursor: hand;"
+                + " -fx-background-radius: 6; -fx-background-color: "
+                + (hover ? "#1e7ae0" : "#1565C0") + ";";
     }
 
     private static String slotStyle(boolean active, boolean hover) {
@@ -305,8 +346,9 @@ public class MainView {
                 + " -fx-border-color: #b5b5b5; -fx-border-style: dashed; -fx-border-width: 1;"
                 + " -fx-border-radius: 8;");
         slot.setMaxWidth(Double.MAX_VALUE);
-        slot.setMaxHeight(Double.MAX_VALUE);
-        VBox.setVgrow(slot, Priority.ALWAYS);
+        slot.setPrefHeight(PARTY_SLOT_HEIGHT);
+        slot.setMinHeight(Region.USE_PREF_SIZE);
+        slot.setMaxHeight(Region.USE_PREF_SIZE);
         return slot;
     }
 
