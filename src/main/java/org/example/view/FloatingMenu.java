@@ -32,6 +32,10 @@ import java.util.function.Consumer;
  *
  * <p>供启动页与其它悬浮式页面（如自定义战斗模式选择页）复用，保证按钮样式、
  * 交互动效完全一致；纯视觉由 {@code /css/start-menu.css} 承担，使用方需在场景中挂载该样式表。</p>
+ *
+ * <p>可选项：{@link #setCompact} 切换紧凑尺寸（顶栏返回按钮等小号场景，仅缩尺寸与字号，
+ * 配色 / 动效不变）；{@link #setDeselectOnExit} 让悬停变色不驻留（鼠标移开后恢复常态色，
+ * 适合单按钮顶栏场景）。</p>
  */
 public final class FloatingMenu {
 
@@ -47,6 +51,14 @@ public final class FloatingMenu {
 
     /** 按钮内容区左右内边距之和（与 CSS 中 -fx-padding 的 12+12 对应）。 */
     private static final double MENU_PADDING_H = 24;
+
+    /** 紧凑尺寸（顶栏返回胶囊等小号场景；与 CSS .menu-pill.menu-compact 配套）。 */
+    private static final double COMPACT_WIDTH = 132;
+    private static final double COMPACT_HEIGHT = 27;
+    private static final double COMPACT_ICON_WRAP_SIZE = 18;
+
+    /** 紧凑版内容区左右内边距之和（与 CSS 中 .menu-compact 的 -fx-padding 2 11 对应）。 */
+    private static final double COMPACT_PADDING_H = 22;
 
     /** 悬停上浮位移（负值向上）。 */
     private static final double HOVER_LIFT = -2;
@@ -82,6 +94,12 @@ public final class FloatingMenu {
     /** 入场动画进行中（期间忽略悬停位移，避免与入场位移争抢 translateY）。 */
     private boolean entrancePlaying = true;
 
+    /** 紧凑尺寸模式（仅缩尺寸与字号，配色 / 动效不变；须在 addPill 前开启）。 */
+    private boolean compact;
+
+    /** 移出即取消选中：悬停变色不驻留，鼠标移开后恢复常态色（单按钮顶栏场景使用）。 */
+    private boolean deselectOnExit;
+
     public FloatingMenu() {
         pane.setAlignment(Pos.CENTER);
         pane.setFillWidth(false);
@@ -90,6 +108,16 @@ public final class FloatingMenu {
     /** 菜单容器（放入页面垂直列中即可）。 */
     public VBox node() {
         return pane;
+    }
+
+    /** 开启紧凑尺寸（供顶栏返回按钮等小号场景；须在 {@link #addPill} 之前调用）。 */
+    public void setCompact(boolean compact) {
+        this.compact = compact;
+    }
+
+    /** 开启「移出即取消选中」：悬停变色仅在悬停期间生效，鼠标移开后恢复常态色。 */
+    public void setDeselectOnExit(boolean deselectOnExit) {
+        this.deselectOnExit = deselectOnExit;
     }
 
     /**
@@ -103,11 +131,16 @@ public final class FloatingMenu {
      * @return 按钮引用（调用方可追加禁用、提示等配置）
      */
     public Button addPill(String tone, String label, String sub, String icon, Runnable action) {
+        double wrapSize = compact ? COMPACT_ICON_WRAP_SIZE : ICON_WRAP_SIZE;
+        double pillWidth = compact ? COMPACT_WIDTH : MENU_WIDTH;
+        double pillHeight = compact ? COMPACT_HEIGHT : MENU_HEIGHT;
+        double paddingH = compact ? COMPACT_PADDING_H : MENU_PADDING_H;
+
         StackPane iconWrap = new StackPane();
         iconWrap.getStyleClass().addAll("menu-icon-wrap", "menu-tone-" + tone);
-        iconWrap.setMinSize(ICON_WRAP_SIZE, ICON_WRAP_SIZE);
-        iconWrap.setPrefSize(ICON_WRAP_SIZE, ICON_WRAP_SIZE);
-        iconWrap.setMaxSize(ICON_WRAP_SIZE, ICON_WRAP_SIZE);
+        iconWrap.setMinSize(wrapSize, wrapSize);
+        iconWrap.setPrefSize(wrapSize, wrapSize);
+        iconWrap.setMaxSize(wrapSize, wrapSize);
         SVGPath iconPath = new SVGPath();
         iconPath.setContent(icon);
         iconPath.getStyleClass().add("menu-icon");
@@ -132,13 +165,16 @@ public final class FloatingMenu {
 
         Button button = new Button();
         button.getStyleClass().add("menu-pill");
+        if (compact) {
+            button.getStyleClass().add("menu-compact"); // 紧凑版内边距 / 字号覆盖（CSS）
+        }
         button.setGraphic(content);
         button.setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
-        button.setMinSize(MENU_WIDTH, MENU_HEIGHT);
-        button.setPrefSize(MENU_WIDTH, MENU_HEIGHT);
-        button.setMaxSize(MENU_WIDTH, MENU_HEIGHT);
+        button.setMinSize(pillWidth, pillHeight);
+        button.setPrefSize(pillWidth, pillHeight);
+        button.setMaxSize(pillWidth, pillHeight);
         // graphic 撑满按钮内容区（Button 默认按 graphic 首选宽布局，需显式绑定到按钮宽减内边距）
-        content.prefWidthProperty().bind(button.widthProperty().subtract(MENU_PADDING_H));
+        content.prefWidthProperty().bind(button.widthProperty().subtract(paddingH));
 
         final int index = buttons.size();
         buttons.add(button);
@@ -148,7 +184,12 @@ public final class FloatingMenu {
             lift(button, HOVER_LIFT);
             setActive(index);
         });
-        button.setOnMouseExited(e -> lift(button, 0));
+        button.setOnMouseExited(e -> {
+            lift(button, 0);
+            if (deselectOnExit) {
+                setActive(-1); // 移出取消选中：恢复常态色（黄色）
+            }
+        });
 
         pane.getChildren().add(button);
         return button;

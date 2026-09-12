@@ -44,9 +44,9 @@ import java.util.function.Consumer;
  *
  * <p>呈现方式（2026-09-12 按设计稿 EncounterPage / EventCard 改版：仅样式与布局调整，行为不变）：</p>
  * <ul>
- *   <li>头部一行 —— 左「返回 BACK」胶囊（直接复用 {@link FloatingMenu} 共享胶囊菜单组，
- *       与「开始游戏」后各子页的返回按钮完全同款：外观 / 悬停上浮与选中放大动画 / 选中变色 /
- *       错峰入场动画）、右段位信息卡（段号 / 阶段 / 行动点 / 金币，沿用「初始主界面」（启动页）
+ *   <li>头部一行 —— 左「返回 BACK」胶囊（复用 {@link FloatingMenu} 共享胶囊菜单组，紧凑尺寸：
+ *       外观 / 悬停上浮与选中放大动画 / 悬停变色（移开恢复黄色）/ 错峰入场动画与子页一致）、
+ *       右段位信息卡（段号 / 阶段 / 行动点 / 金币，沿用「初始主界面」（启动页）
  *       胶囊族样式的小号版本，见 start-menu.css 的 .rogue-info）分贴行内两侧；
  *       「事件遭遇 ENCOUNTER EVENT」横幅（启动页胶囊族同款：黄→金渐变芯 + 深蓝描边环，
  *       无黑框、深蓝字，+ 副提示胶囊）贴页面最上方、水平居中于画布；</li>
@@ -747,10 +747,13 @@ public class RogueFloorView {
         };
     }
 
-    /** 返回入口：直接复用 {@link FloatingMenu} 共享胶囊菜单组——与「开始游戏」后各子页的
-     *  「返回 BACK」按钮完全同款（外观 / 悬停上浮 / 选中放大与变色 / 入场动画），回调不变。 */
+    /** 返回入口：复用 {@link FloatingMenu} 共享胶囊菜单组——与「开始游戏」后各子页的
+     *  「返回 BACK」按钮同款（外观 / 悬停上浮 / 选中放大与变色 / 入场动画），回调不变；
+     *  按顶栏场景取紧凑尺寸，且鼠标移开后恢复黄色常态（悬停变色不驻留）。 */
     private VBox buildBackMenu() {
         FloatingMenu menu = new FloatingMenu();
+        menu.setCompact(true);        // 缩小至原有小号尺寸（仅尺寸 / 字号变，配色与动效不变）
+        menu.setDeselectOnExit(true); // 移出取消选中：悬停深蓝 → 移开恢复黄色
         menu.addPill("slate", "返回", "BACK", ICON_BACK, onBack);
         backMenu = menu;
         return menu.node();

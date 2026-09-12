@@ -99,6 +99,23 @@
     -fx-opacity: 1;
 }
 
+/* ---------- 紧凑尺寸胶囊（顶栏返回按钮等小号场景）：仅缩内边距与字号，配色 / 动效层不变 ---------- */
+.menu-pill.menu-compact {
+    -fx-padding: 2 11;
+}
+
+.menu-pill.menu-compact .menu-title {
+    -fx-font-size: 10px;
+}
+
+.menu-pill.menu-compact .menu-sub {
+    -fx-font-size: 6px;
+}
+
+.menu-pill.menu-compact .menu-caret {
+    -fx-font-size: 7px;
+}
+
 /* ---------- 按钮左侧图标圆底（未选中统一为按钮同款黄色，不再按入口区分色调） ---------- */
 .menu-icon-wrap {
     -fx-background-radius: 999;
