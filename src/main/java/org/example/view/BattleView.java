@@ -922,6 +922,7 @@ public class BattleView {
         card.setStyle(BOTTOM_CARD_CSS); // 1/4 底栏：紧凑底样式
         card.setSpacing(2);
         card.setPrefWidth(PARTY_INFO_CARD_WIDTH);
+        card.setMinWidth(PARTY_INFO_CARD_WIDTH); // 最小宽=固定宽（同精灵卡）：防止左块长文本挤压右卡
         card.setAlignment(Pos.TOP_LEFT);
         itemInfoName.setStyle(YH + "-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #1a2a3a;");
         itemInfoDesc.setWrapText(true);
@@ -1003,6 +1004,7 @@ public class BattleView {
         if (hint != null && !hint.isEmpty()) {
             headLabel = new Label(hint);
             headLabel.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #2f5d9e;");
+            headLabel.setMaxWidth(HINT_MAX_WIDTH); // 限宽：长提示不得撑宽左块（右卡已钉 235，此处防提示自身撑破 616 预算）
         }
         HBox statusRow = new HBox(8, headLabel, gap, back);
         statusRow.setAlignment(Pos.CENTER_LEFT);
@@ -1063,6 +1065,10 @@ public class BattleView {
      * + 卡 padding 24 + 余量 → 235。此宽度同时是背包态右空卡宽度（左右分界与精灵面板一致，切换不跳动）。 */
     private static final int PARTY_INFO_CARD_WIDTH = 235;
 
+    /** 状态行提示文案最大宽（左块 371 - 「放弃捕捉」按钮≈66 - 行内间距 16 ≈ 289）：
+     * 放生面板的长提示在预算内完整显示，超长才省略，不许撑宽左块挤压右侧信息卡。 */
+    private static final int HINT_MAX_WIDTH = 289;
+
     /** 精灵信息卡（右块）：名称+属性+等级 / HP 条 / 状态+经验（同行） / 能力值两行。
      * 卡宽与行数均固定：悬停不同精灵时文本变化只在卡内布局，不牵动左块网格（防抖原则，同技能卡）。 */
     private VBox buildPartyInfoCard() {
@@ -1070,6 +1076,7 @@ public class BattleView {
         card.setStyle(BOTTOM_CARD_CSS); // 1/4 底栏：紧凑底样式（卡为 6 行信息，padding 6→3）
         card.setSpacing(2);
         card.setPrefWidth(PARTY_INFO_CARD_WIDTH);
+        card.setMinWidth(PARTY_INFO_CARD_WIDTH); // 最小宽=固定宽：左块长文本（如放生提示）不得挤压本卡（2026-09-12 放生面板实测被压出省略号）
         HBox line1 = new HBox(6);
         line1.setAlignment(Pos.CENTER_LEFT);
         partyInfoName.setStyle(YH + "-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #1a2a3a;");

@@ -228,7 +228,8 @@ public class BattleController implements BattleView.Actions {
                     discardedCapture = true;
                     render();
                 },
-                "队伍已满！" + captured.getName() + " 需要入队，请选择一只精灵放生（携带的装备会返还装备库），或点「放弃捕捉」。");
+                // 提示需≲24 字（12px 字体下约 289px 行内宽）：过长会撑宽左块挤压右侧信息卡（2026-09-12 放生面板实测）
+                "队伍已满！放生一只精灵，收下" + captured.getName() + "（装备返还）");
     }
 
     /** 展示队首一项「技能满、想学新招」的抉择菜单。 */
