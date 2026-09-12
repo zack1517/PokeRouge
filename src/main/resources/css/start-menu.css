@@ -309,3 +309,62 @@
     -fx-text-fill: #7d8794;
     -fx-cursor: default;
 }
+
+/* ---------- 悬浮子页·内部事件页（RogueFloorView）顶栏：返回胶囊 + 段位信息卡 ---------- */
+/* 返回胶囊：启动页 .menu-pill 的小号版本（白圈 → 深蓝描边环 → 黄→金渐变芯，先写的层在底层），
+   按钮左侧附同款图标圆底，与「初始主界面」按钮同族 */
+.rogue-back,
+.rogue-back:hover,
+.rogue-back:focused,
+.rogue-back:armed {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+    -fx-graphic-text-gap: 7;
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #123c63,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.92) 0%,
+            #ffcb05 18%,
+            #eea800 78%,
+            #ffcb05 100%);
+    -fx-background-insets: 0, 2, 4;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-padding: 3 14 3 11;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.42), 9, 0.07, 0, 3);
+    /* 屏蔽 modena 默认的聚焦环（本项目全自定义背景） */
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.rogue-back:hover {
+    -fx-background-color:
+        rgba(255, 255, 255, 1.0),
+        #2a75bb,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.95) 0%,
+            #ffd83d 18%,
+            #f0b000 78%,
+            #ffd83d 100%);
+}
+
+/* 返回胶囊内的箭头图标圆底（同启动页 .menu-icon-wrap 的小号版本） */
+.rogue-back-icon {
+    -fx-background-color: rgba(255, 203, 5, 0.28);
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-border-width: 1.5;
+    -fx-border-color: rgba(255, 255, 255, 0.85);
+}
+
+/* 段位信息卡：与存档页 .slot-row 同族的白底圆角卡（深蓝描边环 insets 双层），按顶栏体量缩小 */
+.rogue-info {
+    -fx-background-color: #123c63, rgba(255, 255, 255, 0.92);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 12, 10.5;
+    -fx-padding: 4 10 4 9;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.06, 0, 3);
+}

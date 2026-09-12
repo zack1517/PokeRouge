@@ -37,7 +37,8 @@ import java.util.function.Consumer;
  *
  * <p>呈现方式（2026-09-12 按设计稿 EncounterPage / EventCard 改版：仅样式与布局调整，行为不变）：</p>
  * <ul>
- *   <li>顶栏 —— 左侧金色胶囊「◀ 返回主菜单」，右侧段位信息面板（段号 / 阶段 / 行动点 / 金币）；</li>
+ *   <li>顶栏 —— 左侧「◀ 返回主菜单」胶囊与右侧段位信息卡（段号 / 阶段 / 行动点 / 金币），
+ *       均沿用「初始主界面」（启动页）胶囊族样式的小号版本（见 start-menu.css 的 .rogue-back / .rogue-info）；</li>
  *   <li>标题横幅 —— 深蓝渐变「事件遭遇 ENCOUNTER EVENT」+ 副提示胶囊；</li>
  *   <li>节点卡 —— 最多 3 列 × 2 行网格：上排固定三位常驻节点（野生宝可梦 → 路人训练师 → 医院，
  *       从左到右位置恒定），随机事件保持生成顺序排在下排；只渲染已刷新出来的事件、不做占位补格
@@ -55,6 +56,9 @@ public class RogueFloorView {
 
     /** 设计稿字体（正文中文统一微软雅黑）。 */
     private static final String FONT = "-fx-font-family: 'Microsoft YaHei';";
+
+    /** 启动页共用样式表（顶栏返回胶囊与信息卡沿用「初始主界面」胶囊族视觉）。 */
+    private static final String STYLE_SHEET = "/css/start-menu.css";
 
     /** 事件卡尺寸（设计画布 640×426.67 内按 3 列 × 2 行铺排）。 */
     private static final double CARD_W = 198;
@@ -117,7 +121,13 @@ public class RogueFloorView {
         content.getChildren().addAll(buildTopBar(data), buildBanner(), body);
 
         root.getChildren().addAll(buildWatermark(), content, overlay);
-        return UiScale.scene(root);
+
+        Scene scene = UiScale.scene(root);
+        var css = RogueFloorView.class.getResource(STYLE_SHEET);
+        if (css != null) {
+            scene.getStylesheets().add(css.toExternalForm());
+        }
+        return scene;
     }
 
     // ------------------------------------------------------------------
@@ -133,31 +143,28 @@ public class RogueFloorView {
         return bar;
     }
 
-    /** 段位信息面板：段号 · 阶段 + 行动点 / 金币。 */
+    /** 段位信息面板：段号 · 阶段 + 行动点 / 金币（缩小版，样式与启动页胶囊族统一）。 */
     private VBox buildInfoPanel(RunData data) {
         Label segment = new Label("第 " + session.getSegment() + " / " + RouteConfig.TOTAL_SEGMENTS
                 + " 段 · " + data.getPhase().getDisplayName());
-        segment.setStyle(FONT + " -fx-font-size: 11px; -fx-font-weight: 900; -fx-text-fill: #0D47A1;");
+        segment.setStyle(FONT + " -fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
 
         Label apIcon = new Label("⚡");
-        apIcon.setStyle("-fx-font-size: 9px;");
+        apIcon.setStyle("-fx-font-size: 8px;");
         Label ap = new Label("行动点: " + data.getAp() + "/" + data.getApMax());
-        ap.setStyle(FONT + " -fx-font-size: 9px; -fx-font-weight: bold; -fx-text-fill: #1A1A1A;");
+        ap.setStyle(FONT + " -fx-font-size: 8.5px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
         Label goldIcon = new Label("🪙");
-        goldIcon.setStyle("-fx-font-size: 9px;");
-        HBox.setMargin(goldIcon, new Insets(0, 0, 0, 8));
+        goldIcon.setStyle("-fx-font-size: 8px;");
+        HBox.setMargin(goldIcon, new Insets(0, 0, 0, 7));
         Label gold = new Label("金币: " + data.getGold());
-        gold.setStyle(FONT + " -fx-font-size: 9px; -fx-font-weight: bold; -fx-text-fill: #1A1A1A;");
+        gold.setStyle(FONT + " -fx-font-size: 8.5px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
 
         HBox stats = new HBox(3, apIcon, ap, goldIcon, gold);
         stats.setAlignment(Pos.CENTER_LEFT);
 
-        VBox panel = new VBox(3, segment, stats);
-        panel.setMinWidth(150);
-        panel.setStyle("-fx-background-color: rgba(255,255,255,0.88); -fx-background-radius: 12;"
-                + " -fx-border-color: #1565C0; -fx-border-width: 2.5; -fx-border-radius: 12;"
-                + " -fx-padding: 5 10 6 10;"
-                + " -fx-effect: dropshadow(gaussian, rgba(21,101,192,0.20), 10, 0.0, 0, 3);");
+        VBox panel = new VBox(2, segment, stats);
+        panel.setMinWidth(116);
+        panel.getStyleClass().add("rogue-info");
         return panel;
     }
 
@@ -665,15 +672,17 @@ public class RogueFloorView {
         };
     }
 
-    /** 金色返回胶囊：保留本轮进程，再次点击「进入路线节点」可继续（回调与旧版一致）。 */
+    /** 返回胶囊：启动页胶囊族的小号版本（样式见 start-menu.css 的 .rogue-back，回调与旧版一致）。 */
     private Button buildBackButton() {
-        Button back = new Button("◀ 返回主菜单");
-        back.setStyle(FONT + " -fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #1A1A1A;"
-                + " -fx-background-color: linear-gradient(to bottom right, #FFD800, #FFA000);"
-                + " -fx-background-radius: 24; -fx-border-color: #1A1A1A; -fx-border-width: 2.5;"
-                + " -fx-border-radius: 24; -fx-padding: 5 14 5 12;"
-                + " -fx-effect: dropshadow(one-pass-box, rgba(138,96,0,0.9), 1, 0.0, 0, 3);"
-                + " -fx-focus-color: transparent; -fx-faint-focus-color: transparent;");
+        Label arrow = new Label("◀");
+        arrow.setStyle("-fx-font-size: 7.5px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
+
+        StackPane iconWrap = new StackPane(arrow);
+        iconWrap.getStyleClass().add("rogue-back-icon");
+        fixedSize(iconWrap, 18, 18);
+
+        Button back = new Button("返回主菜单", iconWrap);
+        back.getStyleClass().add("rogue-back");
         back.setOnAction(e -> onBack.run());
         return back;
     }
