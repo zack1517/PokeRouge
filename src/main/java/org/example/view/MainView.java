@@ -50,8 +50,8 @@ import org.example.util.UiScale;
  * <ul>
  *     <li><b>上</b>：左上角「返回主界面」按钮；中间训练家标题（无背景框，白晕保证地图背景上可读）；
  *     右侧为段位信息框（段号 / 金币 / 存档位分多行排列）。</li>
- *     <li><b>中</b>：左中右三栏，宽度约 3:3:2 —— 左栏为六格队伍位（首发格左侧标 ⭐，非首发格
- *     第二行右侧附「设为首发」小按钮；点格子其余区域进详情）；
+ *     <li><b>中</b>：左中右三栏，宽度约 3:3:2 —— 左栏为六格队伍位（首发格左侧标 ★、第二行
+ *     右侧为灰色「已设首发」标识；非首发格第二行右侧附蓝色「设为首发」小按钮；点格子其余区域进详情）；
  *     右栏为背包列表（精灵球恒置顶、按捕捉强度降序，其余保持原序）；中栏为简要信息框，随光标在
  *     左/右栏按钮上悬停切换内容（精灵：插画/名称/属性/等级与状态同行/图鉴描述/性格/HP/EXP/
  *     六项能力值/出战技能与技能库/装备与装备库，顺序与详情页右侧信息框一致；
@@ -102,8 +102,8 @@ public class MainView {
     /** 中栏进度条宽度（设计像素；适配 3:3:2 的中栏宽度）。 */
     private static final double BAR_WIDTH = 170;
 
-    /** 中栏插画高度（设计像素；约合中栏可视高度 290 的 2/5，即页面顶部的「图标部分」）。 */
-    private static final double PORTRAIT_HEIGHT = 116;
+    /** 中栏顶部图标尺寸（设计像素；精灵插画与道具插图统一大小，约占中栏可视高度的 55%）。 */
+    private static final double DETAIL_ICON_SIZE = 160;
 
     /** 道具插图目录（classpath；文件名与道具名一致，如「精灵球.png」）。 */
     private static final String ITEM_IMAGE_DIR = "/images/tool/";
@@ -252,7 +252,7 @@ public class MainView {
     }
 
     /**
-     * 单个精灵位：上行「[⭐]名称 · Lv.X」，下行「HP cur/max · EXP a/b +『设为首发』按钮」；
+     * 单个精灵位：上行「[★]名称 · Lv.X」，下行「HP cur/max · EXP a/b +『设为首发』/『已设首发』按钮」；
      * 悬停联动中栏、点击（按钮以外区域）进详情。
      */
     private Button buildPartySlot(Pokemon pokemon, Pokemon active, int index) {
@@ -302,11 +302,12 @@ public class MainView {
         slot.setOnMouseExited(e -> slot.setStyle(slotStyle(isActive, false)));
         slot.setOnAction(e -> actions.onShowPokemonDetail(index));
 
-        if (!isActive) {
-            Region gap = new Region();
-            HBox.setHgrow(gap, Priority.ALWAYS);
-            line2.getChildren().addAll(gap, buildSetActiveButton(pokemon, index, slot));
-        }
+        // 第二行右侧：非首发格为蓝色「设为首发」按钮；首发格为灰色「已设首发」标识
+        Region gap = new Region();
+        HBox.setHgrow(gap, Priority.ALWAYS);
+        line2.getChildren().addAll(gap, isActive
+                ? buildActiveBadge()
+                : buildSetActiveButton(pokemon, index, slot));
         return slot;
     }
 
@@ -328,6 +329,21 @@ public class MainView {
         });
         fire.setOnMouseExited(e -> fire.setStyle(fireStyle(false)));
         return fire;
+    }
+
+    /** 首发格右侧的灰色「已设首发」标识（禁用态按钮；对应非首发格的蓝色「设为首发」）。 */
+    private static Button buildActiveBadge() {
+        Button badge = new Button("已设首发");
+        badge.getStyleClass().add("party-active-badge");
+        badge.setStyle(badgeStyle());
+        badge.setDisable(true);
+        return badge;
+    }
+
+    /** 「已设首发」标识样式：灰底白字，禁用态自带整体变淡，呈现“灰色按钮”观感。 */
+    private static String badgeStyle() {
+        return YH + "-fx-font-size: 10px; -fx-text-fill: #ffffff; -fx-padding: 1 6;"
+                + " -fx-background-radius: 6; -fx-background-color: #8f8f8f;";
     }
 
     private static String fireStyle(boolean hover) {
@@ -400,8 +416,8 @@ public class MainView {
         Node portrait;
         if (image != null) {
             ImageView view = new ImageView(image);
-            view.setFitWidth(PORTRAIT_HEIGHT);
-            view.setFitHeight(PORTRAIT_HEIGHT);
+            view.setFitWidth(DETAIL_ICON_SIZE);
+            view.setFitHeight(DETAIL_ICON_SIZE);
             view.setPreserveRatio(true);
             view.setSmooth(true);
             portrait = view;
@@ -411,7 +427,7 @@ public class MainView {
             portrait = fallback;
         }
         StackPane portraitBox = new StackPane(portrait);
-        portraitBox.setMinHeight(PORTRAIT_HEIGHT);
+        portraitBox.setMinHeight(DETAIL_ICON_SIZE);
         portraitBox.getStyleClass().add("detail-portrait");
 
         Label name = new Label(pokemon.getName());
@@ -644,8 +660,8 @@ public class MainView {
         detailBox.setAlignment(Pos.TOP_CENTER);
         Item item = stack.getItem();
 
-        StackPane iconBox = new StackPane(itemIcon(item.getName(), 56));
-        iconBox.setMinHeight(56);
+        StackPane iconBox = new StackPane(itemIcon(item.getName(), DETAIL_ICON_SIZE));
+        iconBox.setMinHeight(DETAIL_ICON_SIZE);
 
         Label title = new Label(item.getName() + " ×" + stack.getCount());
         title.setStyle(YH + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #222;");
