@@ -44,10 +44,10 @@ import java.util.function.Consumer;
  *
  * <p>呈现方式（2026-09-12 按设计稿 EncounterPage / EventCard 改版：仅样式与布局调整，行为不变）：</p>
  * <ul>
- *   <li>顶栏 —— 左侧「◀ 返回主菜单」胶囊与右侧段位信息卡（段号 / 阶段 / 行动点 / 金币），
- *       均沿用「初始主界面」（启动页）胶囊族样式的小号版本（见 start-menu.css 的 .rogue-back / .rogue-info）；</li>
- *   <li>标题横幅 —— 启动页胶囊族同款的「事件遭遇 ENCOUNTER EVENT」胶囊（黄→金渐变芯 + 深蓝描边环，
- *       无黑框、深蓝字）+ 副提示胶囊；</li>
+ *   <li>头部一行 —— 左「◀ 返回主菜单」胶囊、右段位信息卡（段号 / 阶段 / 行动点 / 金币，均沿用
+ *       「初始主界面」（启动页）胶囊族样式的小号版本，见 start-menu.css 的 .rogue-back / .rogue-info）
+ *       分贴行内两侧；「事件遭遇 ENCOUNTER EVENT」横幅（启动页胶囊族同款：黄→金渐变芯 + 深蓝描边环，
+ *       无黑框、深蓝字，+ 副提示胶囊）贴页面最上方、水平居中于画布；</li>
  *   <li>节点卡 —— 最多 3 列 × 2 行网格：上排固定三位常驻节点（野生宝可梦 → 路人训练师 → 医院，
  *       从左到右位置恒定），随机事件保持生成顺序排在下排；只渲染已刷新出来的事件、不做占位补格
  *       （真实节点至多 {@link RouteConfig#MAX_ROUTE_NODES} 个）：顶部图片预留区（渐变 + 类型 emoji + 精灵球装饰），
@@ -78,6 +78,8 @@ public class RogueFloorView {
     /** 网格：最多 3 列 × 2 行（只渲染已刷新事件，不补占位格）。 */
     private static final int GRID_COLS = 3;
     private static final double GRID_GAP = 10;
+    /** 探索态网格垂直居中校正：修正底部预告条与头部行高的差额，使网格中心对准画布垂直中心。 */
+    private static final double GRID_BOTTOM_RESERVE = 37;
 
     /** 卡片入场动效（与启动页胶囊按钮入场动画同参数：错峰上浮淡入；错峰顺序 = 从左到右、从上到下）。 */
     private static final double ENTRANCE_RISE = 11;
@@ -140,7 +142,7 @@ public class RogueFloorView {
 
         Region body = buildBody(data, overlay);
         VBox.setVgrow(body, Priority.ALWAYS);
-        content.getChildren().addAll(buildTopBar(data), buildBanner(), body);
+        content.getChildren().addAll(buildHeader(data), body);
 
         root.getChildren().addAll(buildWatermark(), content, overlay);
 
@@ -154,16 +156,21 @@ public class RogueFloorView {
     }
 
     // ------------------------------------------------------------------
-    // 页面骨架：顶栏 / 标题横幅 / 正文分支
+    // 页面骨架：头部一行 / 正文分支
     // ------------------------------------------------------------------
 
-    /** 顶栏：左金色返回胶囊，右段位信息面板（设计稿 EncounterPage TOP BAR）。 */
-    private HBox buildTopBar(RunData data) {
+    /**
+     * 头部一行：左返回胶囊、右段位信息面板贴行内两侧；「事件遭遇」横幅贴页面最上方、水平居中于画布。
+     * 横幅与两侧控件同放一个 StackPane —— 横幅居中位置取画布中点，不受左右两侧宽度差影响。
+     */
+    private StackPane buildHeader(RunData data) {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox bar = new HBox(8, buildBackButton(), spacer, buildInfoPanel(data));
-        bar.setAlignment(Pos.TOP_LEFT);
-        return bar;
+        HBox sides = new HBox(8, buildBackButton(), spacer, buildInfoPanel(data));
+        sides.setAlignment(Pos.TOP_LEFT);
+        StackPane header = new StackPane(buildBanner(), sides); // sides 在上层：保证两侧控件可点击
+        header.setAlignment(Pos.TOP_CENTER);
+        return header;
     }
 
     /** 段位信息面板：段号 · 阶段 + 行动点 / 金币（缩小版，样式与启动页胶囊族统一）。 */
@@ -235,10 +242,11 @@ public class RogueFloorView {
         return buildExplorationBody(data, overlay);
     }
 
-    /** 正常路线探索：3×2 节点卡网格 + 底部必然节点预告条。 */
+    /** 正常路线探索：3×2 节点卡网格（整体居画布正中）+ 底部必然节点预告条。 */
     private VBox buildExplorationBody(RunData data, Pane overlay) {
         VBox gridHolder = new VBox(buildGrid(data, overlay));
         gridHolder.setAlignment(Pos.CENTER);
+        gridHolder.setPadding(new Insets(0, 0, GRID_BOTTOM_RESERVE, 0)); // 居中校正：抵消头部长、底部预告条短的差额
         VBox.setVgrow(gridHolder, Priority.ALWAYS);
 
         VBox body = new VBox(6, gridHolder, buildMandatoryPreview(data));
