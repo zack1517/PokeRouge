@@ -73,7 +73,7 @@ import java.util.function.IntPredicate;
  * 见 {@link org.example.GameSession#battleBackgroundFor(org.example.model.OptionType)}）；未指定时默认野外图。</p>
  *
  * <p>2026-09-11 样式改版（整合「临时/react」Web 版战斗页设计）：信息卡为奶油米色芯 + 外蓝内黄双层描边硬阴影（2026-09-12 起双层描边与日志框统一）、
- * 行动按钮与道具 / 精灵格为马卡龙四色（黄 / 蓝 / 绿 / 红）硬底按钮（技能格自 2026-09-12 起改为随技能属性本色配色）、日志与详情卡为金框米色芯（芯色与信息卡同底色）、
+ * 行动按钮与道具 / 精灵格为马卡龙四色（黄 / 蓝 / 绿 / 红）硬底按钮（技能格自 2026-09-12 起改为随技能属性本色配色、普通属性用灰）、日志与详情卡为金框米色芯（芯色与信息卡同底色）、
  * HP 条为棕底 + 绿 / 黄 / 红渐变填充、属性徽章按属性分色。仅调整配色 / 描边 / 圆角 / 阴影等视觉样式：
  * 全部描边改由背景层内缩模拟（不占 padding），各按钮、文本、贴图（宝可梦立绘区域）的大小与位置均不变；
  * HP 条内部轨道样式在 {@code /css/battle.css}。</p>
@@ -516,6 +516,8 @@ public class BattleView {
     private static final PokeTone TONE_BLUE = new PokeTone("#6890f0", "#2850b0", "#ffffff", "#2850b0");
     private static final PokeTone TONE_GREEN = new PokeTone("#78c850", "#286820", "#ffffff", "#286820");
     private static final PokeTone TONE_RED = new PokeTone("#f85888", "#a01840", "#ffffff", "#a01840");
+    /** 技能格灰色按钮配色（问题3补充）：普通（NORMAL）属性技能不用灰褐本色（#A8A878），改用中性灰：底=灰蓝 #b9c2cc、描边/硬阴影=同色加深、深字。 */
+    private static final PokeTone TONE_GREY = new PokeTone("#b9c2cc", "#787e85", POKE_INK, "#787e85");
     /** 马卡龙四色轮换表（道具 / 精灵格按格索引取色；技能格自 2026-09-12 起改按技能属性本色，见 {@link #typeTone}）。 */
     private static final PokeTone[] TONE_CYCLE = {TONE_YELLOW, TONE_BLUE, TONE_GREEN, TONE_RED};
 
@@ -539,9 +541,13 @@ public class BattleView {
 
     /**
      * 技能格按钮配色（问题3）：以技能<b>属性本色</b>为主色 —— 背景=属性色、描边与硬阴影=同色加深 0.65、
-     * 文字按明暗取白或深色（同徽章可读性规则，{@link #badgeTextColor}）。四格随各自技能属性自然区分，不再轮换四色。
+     * 文字按明暗取白或深色（同徽章可读性规则，{@link #badgeTextColor}）。四格随各自技能属性自然区分，不再轮换四色；
+     * 普通（NORMAL）属性本色灰褐不显眼，统一改用灰色按钮（{@link #TONE_GREY}）。
      */
     private static PokeTone typeTone(ElementType type) {
+        if (type == ElementType.NORMAL) {
+            return TONE_GREY; // 普通属性技能：灰色按钮（问题3补充）
+        }
         if (type == null) {
             return TONE_YELLOW;
         }
