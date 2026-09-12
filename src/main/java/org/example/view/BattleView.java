@@ -73,7 +73,7 @@ import java.util.function.IntPredicate;
  * 见 {@link org.example.GameSession#battleBackgroundFor(org.example.model.OptionType)}）；未指定时默认野外图。</p>
  *
  * <p>2026-09-11 样式改版（整合「临时/react」Web 版战斗页设计）：信息卡为奶油米色芯 + 外蓝内黄双层描边硬阴影（2026-09-12 起双层描边与日志框统一）、
- * 行动按钮与技能 / 道具 / 精灵格为马卡龙四色（黄 / 蓝 / 绿 / 红）硬底按钮、日志与详情卡为金框米色芯（芯色与信息卡同底色）、
+ * 行动按钮与道具 / 精灵格为马卡龙四色（黄 / 蓝 / 绿 / 红）硬底按钮（技能格自 2026-09-12 起改为随技能属性本色配色）、日志与详情卡为金框米色芯（芯色与信息卡同底色）、
  * HP 条为棕底 + 绿 / 黄 / 红渐变填充、属性徽章按属性分色。仅调整配色 / 描边 / 圆角 / 阴影等视觉样式：
  * 全部描边改由背景层内缩模拟（不占 padding），各按钮、文本、贴图（宝可梦立绘区域）的大小与位置均不变；
  * HP 条内部轨道样式在 {@code /css/battle.css}。</p>
@@ -516,7 +516,7 @@ public class BattleView {
     private static final PokeTone TONE_BLUE = new PokeTone("#6890f0", "#2850b0", "#ffffff", "#2850b0");
     private static final PokeTone TONE_GREEN = new PokeTone("#78c850", "#286820", "#ffffff", "#286820");
     private static final PokeTone TONE_RED = new PokeTone("#f85888", "#a01840", "#ffffff", "#a01840");
-    /** 马卡龙四色轮换表（技能 / 道具 / 精灵格按格索引取色）。 */
+    /** 马卡龙四色轮换表（道具 / 精灵格按格索引取色；技能格自 2026-09-12 起改按技能属性本色，见 {@link #typeTone}）。 */
     private static final PokeTone[] TONE_CYCLE = {TONE_YELLOW, TONE_BLUE, TONE_GREEN, TONE_RED};
 
     /**
@@ -535,6 +535,28 @@ public class BattleView {
         return YH + sizeCss + "-fx-background-color: #b9c2cc, #e9e9e9;"
                 + "-fx-background-radius: 7, 5; -fx-background-insets: 0, 2;"
                 + "-fx-text-fill: #8a8a8a;";
+    }
+
+    /**
+     * 技能格按钮配色（问题3）：以技能<b>属性本色</b>为主色 —— 背景=属性色、描边与硬阴影=同色加深 0.65、
+     * 文字按明暗取白或深色（同徽章可读性规则，{@link #badgeTextColor}）。四格随各自技能属性自然区分，不再轮换四色。
+     */
+    private static PokeTone typeTone(ElementType type) {
+        if (type == null) {
+            return TONE_YELLOW;
+        }
+        String bg = type.getColorCode();
+        String border = darkenHex(Color.web(bg), 0.65);
+        return new PokeTone(bg, border, badgeTextColor(type), border);
+    }
+
+    /** 颜色按亮度比例调暗（保留色相）并转十六进制 CSS 色值（如 #f08030 × 0.65 → #9c531f）。 */
+    private static String darkenHex(Color color, double factor) {
+        Color dark = color.deriveColor(0, 1, factor, 1);
+        return String.format("#%02x%02x%02x",
+                (int) Math.round(dark.getRed() * 255),
+                (int) Math.round(dark.getGreen() * 255),
+                (int) Math.round(dark.getBlue() * 255));
     }
 
     /** 属性徽章样式（react TypeBadge：按属性分色；电 / 冰等浅色属性用深字保证可读）。 */
@@ -688,13 +710,13 @@ public class BattleView {
         for (int i = 0; i < 4; i++) {
             MoveSlot slot = i < slots.size() ? slots.get(i) : null;
             if (slot == null) {
-                grid.add(skillCell("—", "未习得", true, null, i), i % 2, i / 2);
+                grid.add(skillCell("—", "未习得", true, null), i % 2, i / 2);
                 continue;
             }
             boolean exhausted = slot.exhausted();
             String pp = exhausted ? "PP 不足" : "PP " + slot.getPp() + "/" + slot.getMove().getMaxPp();
             // 按钮第二行只保留 PP（2026-09-09：威力/属性不再进按钮，集中展示在右侧技能信息卡）
-            Button b = skillCell(slot.getMove().getName(), pp, exhausted, slot, i);
+            Button b = skillCell(slot.getMove().getName(), pp, exhausted, slot);
             // 悬停联动：右侧信息卡切换为当前技能（PP 不足也可查看，仅不能点击出招）
             b.setOnMouseEntered(e -> updateMoveInfo(slot));
             if (!exhausted) {
@@ -716,13 +738,14 @@ public class BattleView {
         leftPanel.getChildren().setAll(fieldStatus, logLines);
     }
 
-    /** 技能格（两行：技能名 / PP）；grey=PP 不足格（可悬停查看详情，点击无动作）；null slot 真禁用占位；colorIndex 取马卡龙轮换色。 */
-    private Button skillCell(String name, String sub, boolean grey, MoveSlot slot, int colorIndex) {
+    /** 技能格（两行：技能名 / PP）：可用技能格底色=技能属性本色（{@link #typeTone}），grey=PP 不足格（可悬停查看详情，点击无动作），null slot 真禁用灰占位。 */
+    private Button skillCell(String name, String sub, boolean grey, MoveSlot slot) {
         Button b = new Button(name + "\n" + sub);
         b.setFocusTraversable(false);
         String size = "-fx-font-size: 11px; -fx-pref-width: 168px; -fx-pref-height: 32px;"
                 + "-fx-line-spacing: 1; -fx-padding: 1 4;";
-        b.setStyle(grey ? greyToneCss(size) : toneCss(TONE_CYCLE[colorIndex % TONE_CYCLE.length], size));
+        b.setStyle(grey || slot == null ? greyToneCss(size)
+                : toneCss(typeTone(slot.getMove().getType()), size));
         b.setDisable(slot == null); // 未习得占位格真禁用（无详情可看）；PP 不足格保留悬停联动
         return b;
     }
