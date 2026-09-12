@@ -39,9 +39,9 @@ import java.util.function.Consumer;
  * <ul>
  *   <li>顶栏 —— 左侧金色胶囊「◀ 返回主菜单」，右侧段位信息面板（段号 / 阶段 / 行动点 / 金币）；</li>
  *   <li>标题横幅 —— 深蓝渐变「事件遭遇 ENCOUNTER EVENT」+ 副提示胶囊；</li>
- *   <li>节点卡 —— 3 列 × 2 行网格：上排固定三位常驻节点（野生宝可梦 → 路人训练师 → 医院，
- *       从左到右位置恒定），随机事件保持生成顺序排在下排（真实节点至多 {@link RouteConfig#MAX_ROUTE_NODES} 个，
- *       其余位置渲染为「待填充事件」虚线占位卡）：顶部图片预留区（渐变 + 类型 emoji + 精灵球装饰），
+ *   <li>节点卡 —— 最多 3 列 × 2 行网格：上排固定三位常驻节点（野生宝可梦 → 路人训练师 → 医院，
+ *       从左到右位置恒定），随机事件保持生成顺序排在下排；只渲染已刷新出来的事件、不做占位补格
+ *       （真实节点至多 {@link RouteConfig#MAX_ROUTE_NODES} 个）：顶部图片预留区（渐变 + 类型 emoji + 精灵球装饰），
  *       底部「类型 · 名称」与金色行动点徽章；悬停上浮并在卡片上方弹出深蓝金框描述弹窗，
  *       点击进入节点（点击行为与旧版按钮一致）；</li>
  *   <li>已走过的一次性节点 —— 灰底虚线只读卡（由 {@link Option#isConsumed()} 标记，取代旧版
@@ -63,9 +63,8 @@ public class RogueFloorView {
     private static final double CARD_TOP_H = 79;
     /** 卡面下部「标题 + 行动点徽章」高度（设计稿 34%）。 */
     private static final double CARD_BOTTOM_H = 41;
-    /** 网格：3 列 × 2 行满格（设计稿空位由「待填充事件」虚线卡补足）。 */
+    /** 网格：最多 3 列 × 2 行（只渲染已刷新事件，不补占位格）。 */
     private static final int GRID_COLS = 3;
-    private static final int GRID_CELLS = 6;
     private static final double GRID_GAP = 10;
 
     /** 描述弹窗尺寸（设计稿 260px 等比适配到 640 画布）。 */
@@ -232,8 +231,8 @@ public class RogueFloorView {
     // 节点卡片网格
     // ------------------------------------------------------------------
 
-    /** 3×2 网格：固定位（野生宝可梦 → 路人训练师 → 医院）从左到右占上排，
-     *  随机事件保持生成顺序排下排，余位用「待填充事件」虚线卡补足（设计稿满格布局）。 */
+    /** 最多 3 列 × 2 行网格：固定位（野生宝可梦 → 路人训练师 → 医院）从左到右占上排，
+     *  随机事件保持生成顺序排下排；只渲染已刷新出来的事件，不做占位补格。 */
     private GridPane buildGrid(RunData data, Pane overlay) {
         GridPane grid = new GridPane();
         grid.setHgap(GRID_GAP);
@@ -243,10 +242,6 @@ public class RogueFloorView {
         int index = 0;
         for (Option option : orderedOptions(data)) {
             grid.add(buildOptionCard(option, data, overlay), index % GRID_COLS, index / GRID_COLS);
-            index++;
-        }
-        while (index < GRID_CELLS) {
-            grid.add(buildPlaceholderCard(), index % GRID_COLS, index / GRID_COLS);
             index++;
         }
         return grid;
@@ -407,21 +402,7 @@ public class RogueFloorView {
         return buildIdleCard(centerCol, name);
     }
 
-    /** 占位卡：设计稿「待填充事件 / 敬请期待」虚线卡。 */
-    private VBox buildPlaceholderCard() {
-        Label icon = new Label("🔮");
-        icon.setStyle("-fx-font-size: 22px; -fx-opacity: 0.35;");
-        Label tag = new Label("敬请期待");
-        tag.setStyle(FONT + " -fx-font-size: 7.5px; -fx-font-weight: bold; -fx-text-fill: #7090b0;");
-        VBox centerCol = new VBox(2, icon, tag);
-        centerCol.setAlignment(Pos.CENTER);
-
-        Label name = new Label("待填充事件");
-        name.setStyle(FONT + " -fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #7090b0;");
-        return buildIdleCard(centerCol, name);
-    }
-
-    /** 灰底虚线卡：上部内容区 + 下部居中标题（占位 / 已走过共用）。 */
+    /** 灰底虚线卡：上部内容区 + 下部居中标题（已走过的一次性节点）。 */
     private VBox buildIdleCard(Node topCenter, Label bottomLabel) {
         VBox body = new VBox();
         fixedSize(body, CARD_W, CARD_H);
