@@ -417,9 +417,9 @@ public class RogueFloorView {
         fixedSize(content, CARD_W, CARD_H);
         content.setMouseTransparent(true); // 内容只是装饰与文字，点击统一交给下面的按钮
 
-        // 卡片底色：单节点多层背景（白底 / 顶区分隔线 / 顶区渐变）+ 边框 + 投影。
-        // 底色元素全部绘制在同一个无子节点的 Region 上——JavaFX 会给带边框容器的
-        // 子节点叠加 insets 偏移，撑满卡面的子块会压掉右侧与下侧边框。
+        // 卡片底色：单节点多层背景（白底 / 顶区分隔线 / 顶区渐变，无外边框）+ 投影。
+        // 底色元素全部绘制在同一个无子节点的 Region 上——单节点绘制保证各层圆角与
+        // 分隔线位置精确可控，不受子节点布局影响。
         // 背景层列表第一个在最底层：白底 → 分隔线（top 高 79 的下沿 2px）→ 顶区渐变。
         Region bg = new Region();
         fixedSize(bg, CARD_W, CARD_H);
@@ -427,8 +427,7 @@ public class RogueFloorView {
                 + " linear-gradient(to bottom right, #dbeafe 0%, #bfdbfe 55%, #93c5fd 100%);"
                 + " -fx-background-insets: 0, " + (int) (CARD_TOP_H - 2) + " 0 " + (int) CARD_BOTTOM_H + " 0,"
                 + " 0 0 " + (int) (CARD_BOTTOM_H + 2) + " 0;"
-                + " -fx-background-radius: 12, 0, 12 12 0 0;"
-                + " -fx-border-color: #1565C0; -fx-border-width: 2.5; -fx-border-radius: 12;";
+                + " -fx-background-radius: 12, 0, 12 12 0 0;";
         final String baseStyle = layers + CARD_SHADOW;
         final String hoverStyle = layers.replace("rgba(255,255,255,0.90)", "rgba(255,255,255,0.96)")
                 + CARD_SHADOW_HOVER;
