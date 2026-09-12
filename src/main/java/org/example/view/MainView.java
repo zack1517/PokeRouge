@@ -54,13 +54,15 @@ import org.example.util.UiScale;
  *     右侧为灰色「已设首发」标识；非首发格第二行右侧附蓝色「设为首发」小按钮；悬停格子看中栏信息）；
  *     右栏为背包列表（精灵球恒置顶、按捕捉强度降序，其余保持原序）；中栏为简要信息框，随光标在
  *     左/右栏按钮上悬停切换内容（精灵：插画/名称/属性/等级与状态同行/图鉴描述/性格/HP/EXP/
- *     六项能力值/出战技能与技能库/装备与装备库，一次展示完整信息；
+ *     六项能力值/出战技能与技能库/装备与装备库，一次展示完整信息；技能库可「换上」，满 4 槽时
+ *     在出战技能行「换下」完成互换；装备可「穿戴/换过来/脱下」，操作即时生效并局部刷新中栏；
  *     道具：插图/数量/功能表述）。中栏保持最后一次悬停内容，方便移开光标阅读。</li>
  *     <li><b>下</b>：进入层内事件 / 保存游戏 / 读取存档三个按钮居中排列（「返回主界面」已上移至顶部）。</li>
  * </ul>
  *
  * <p>背景由控制器按“段”决定后传入（同段多张图固定，换段才变），本类不做任何背景状态；
- * 每次进入主菜单都由控制器重新构建（队伍可能在对战中变化），因此本类不做状态刷新。</p>
+ * 每次进入主菜单都由控制器重新构建（队伍可能在对战中变化），因此本类不做整页状态刷新；
+ * 中栏内的技能换装与装备穿脱直接作用于模型，操作后仅重建中栏内容即时反映（与原详情页同源逻辑）。</p>
  *
  * <p>ⓘ 道具插图目录（{@value #ITEM_IMAGE_DIR}）只有部分道具素材，缺图回退为「首字色块」占位，
  * 待美术补齐后自动生效。</p>
@@ -117,6 +119,12 @@ public class MainView {
 
     /** 中栏简要信息框内容容器（悬停联动时整体重建）。 */
     private VBox detailBox;
+
+    /** 中栏当前展示的精灵（悬停切换到其他内容时清空待换技能状态；操作后刷新时保持不变）。 */
+    private Pokemon shownPokemon;
+
+    /** 待换上的技能（非 null 时处于「选择要换下的槽位」状态，出战技能行右侧临时显示「换下」）。 */
+    private Move pendingSwap;
 
     public MainView(Player player, Actions actions, String mapBackground, int segment) {
         this(player, actions, mapBackground, segment, -1, null);
@@ -402,8 +410,16 @@ public class MainView {
         detailBox.getChildren().add(hint);
     }
 
-    /** 中栏内容：精灵完整信息（插画 → 名称/属性 → 等级与状态同行 → 图鉴/性格/HP·EXP → 能力值 → 技能库 → 装备）。 */
+    /**
+     * 中栏内容：精灵完整信息（插画 → 名称/属性 → 等级与状态同行 → 图鉴/性格/HP·EXP → 能力值 →
+     * 技能库 → 装备）；技能库「换上」与装备「穿戴/换过来/脱下」即时生效，操作后由本方法重建中栏。
+     */
     private void showPokemonDetail(Pokemon pokemon) {
+        // 切换到其他精灵时退出「选择要换下的槽位」状态（同精灵重复渲染——如操作后刷新——则保持）
+        if (pokemon != shownPokemon) {
+            pendingSwap = null;
+            shownPokemon = pokemon;
+        }
         detailBox.getChildren().clear();
         detailBox.setAlignment(Pos.TOP_LEFT);
 
@@ -477,19 +493,29 @@ public class MainView {
         exp.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #222;");
         StackPane expBar = bar(expRatio, "#4F8FD9", BAR_WIDTH, 8);
 
-        // 出战技能（两行式：名称+PP ／ 属性徽章+分类·威力·命中）
+        // 出战技能（两行式：名称+PP ／ 属性徽章+分类·威力·命中；待换技能时行右侧临时出现「换下」）
         VBox moves = new VBox(4);
+        if (pendingSwap != null) {
+            Label swapping = new Label("即将换上【" + pendingSwap.getName()
+                    + "】，点击某个出战技能右侧的「换下」完成互换（或在技能库点「取消」）。");
+            swapping.setWrapText(true);
+            swapping.setMaxWidth(Double.MAX_VALUE);
+            swapping.getStyleClass().add("swap-hint");
+            swapping.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #b35900;"
+                    + " -fx-background-color: rgba(255, 196, 108, 0.35); -fx-background-radius: 6; -fx-padding: 3 6;");
+            moves.getChildren().add(swapping);
+        }
         if (pokemon.getMoveSlots().isEmpty()) {
             Label none = new Label("尚未携带技能。");
             none.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #888;");
             moves.getChildren().add(none);
         } else {
-            for (MoveSlot slot : pokemon.getMoveSlots()) {
-                moves.getChildren().add(battleMoveRow(slot));
+            for (int i = 0; i < pokemon.getMoveSlots().size(); i++) {
+                moves.getChildren().add(battleMoveRow(pokemon, pokemon.getMoveSlots().get(i), i));
             }
         }
 
-        // 技能库（灰底小标题 + 全部已知技能，右侧标出战状态；主菜单不提供换技能操作）
+        // 技能库（灰底小标题 + 全部已知技能；未出战可「换上」：空槽直接携带，满槽则进入待换状态）
         Label poolTitle = new Label("技能库（" + pokemon.getKnownMoves().size() + "）");
         poolTitle.setStyle(YH + "-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: #333;"
                 + " -fx-background-color: rgba(0, 0, 0, 0.07); -fx-background-radius: 6; -fx-padding: 2 8;");
@@ -500,19 +526,26 @@ public class MainView {
             movePool.getChildren().add(none);
         } else {
             for (Move known : pokemon.getKnownMoves()) {
-                movePool.getChildren().add(poolInfoRow(pokemon, known));
+                movePool.getChildren().add(poolRow(pokemon, known));
             }
         }
 
-        // 装备（已穿戴 + 装备库全部道具及穿戴状态；主菜单不提供穿脱操作）
+        // 装备（已穿戴行附「脱下」按钮；装备库逐件操作：「穿戴」/「换过来」/「已穿戴」禁用）
         HeldItem held = pokemon.getHeldItem();
         VBox equipment = new VBox(3);
         Label worn = new Label(held == null ? "当前未穿戴装备。"
                 : "已穿戴：" + held.getName() + " — " + held.getDescription());
         worn.setWrapText(true);
         worn.setMaxWidth(Double.MAX_VALUE);
+        worn.setMinWidth(0); // 右侧有「脱下」按钮：信息文本优先让位
         worn.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: " + (held == null ? "#888" : "#2a6e2a") + ";");
-        equipment.getChildren().add(worn);
+        if (held == null) {
+            equipment.getChildren().add(worn);
+        } else {
+            HBox wornRow = new HBox(6, worn, buildUnequipButton(pokemon));
+            wornRow.setAlignment(Pos.CENTER_LEFT);
+            equipment.getChildren().add(wornRow);
+        }
         List<HeldItem> owned = player.getEquipment();
         if (owned.isEmpty()) {
             Label none = new Label("装备库为空：可在肉鸽楼层选择「装备补给」事件获得装备。");
@@ -521,7 +554,7 @@ public class MainView {
             equipment.getChildren().add(none);
         } else {
             for (HeldItem item : owned) {
-                equipment.getChildren().add(equipmentInfoRow(pokemon, item));
+                equipment.getChildren().add(equipmentRow(pokemon, item));
             }
         }
 
@@ -571,8 +604,8 @@ public class MainView {
         return row;
     }
 
-    /** 出战技能单行：名称 + PP ／ 属性徽章 + 分类·威力·命中。 */
-    private static VBox battleMoveRow(MoveSlot slot) {
+    /** 出战技能单行：名称 + PP ／ 属性徽章 + 分类·威力·命中；待换技能时行右侧附红色「换下」。 */
+    private VBox battleMoveRow(Pokemon pokemon, MoveSlot slot, int slotIndex) {
         Label name = new Label(slot.getMove().getName());
         name.setStyle(YH + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #222;");
         Region spacer = new Region();
@@ -592,34 +625,69 @@ public class MainView {
         detail.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #666;");
         HBox line2 = new HBox(5, chip(slot.getMove().getType().getDisplayName(),
                 slot.getMove().getType().getColorCode()), detail);
+        if (pendingSwap != null) {
+            detail.setMinWidth(0); // 右侧有「换下」按钮：详情文本让位收缩，按钮保宽
+            Region push = new Region();
+            HBox.setHgrow(push, Priority.ALWAYS);
+            Button swap = new Button("换下");
+            swap.setMinWidth(Region.USE_PREF_SIZE); // 钉宽：不随行收缩
+            swap.getStyleClass().add("move-swap");
+            swap.setStyle(swapStyle(false));
+            swap.setOnMouseEntered(e -> swap.setStyle(swapStyle(true)));
+            swap.setOnMouseExited(e -> swap.setStyle(swapStyle(false)));
+            swap.setOnAction(e -> swapWithPool(pokemon, slotIndex));
+            line2.getChildren().addAll(push, swap);
+        }
         line2.setAlignment(Pos.CENTER_LEFT);
         return new VBox(1, line1, line2);
     }
 
-    /** 技能库信息行：名称 · 属性 · 威力 + 右侧出战状态（纯信息，无换技能操作）。 */
-    private static HBox poolInfoRow(Pokemon pokemon, Move move) {
+    /** 技能库操作行：名称 · 属性 · 威力 + 右侧按钮（出战中禁用 ／ 换上 ／ 待换时取消）。 */
+    private HBox poolRow(Pokemon pokemon, Move move) {
         Label info = new Label(move.getName() + " · " + move.getType().getDisplayName()
                 + " · 威力 " + (move.getPower() <= 0 ? "--" : move.getPower()));
         info.setWrapText(true);
         info.setMaxWidth(Double.MAX_VALUE);
-        info.setMinWidth(0); // 允许 HBox 收缩换行，避免挤掉右侧状态标签
+        info.setMinWidth(0); // 允许 HBox 收缩换行，避免挤掉右侧按钮
         HBox.setHgrow(info, Priority.ALWAYS);
         info.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
-        boolean inBattle = pokemon.hasMove(move);
-        Label state = new Label(inBattle ? "出战中" : "未出战");
-        state.setMinWidth(Region.USE_PREF_SIZE); // 优先保宽：收缩全部由左侧信息文本承担
-        state.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: " + (inBattle ? "#2a6e2a" : "#999") + ";");
-        HBox row = new HBox(6, info, state);
+
+        Button action = new Button();
+        action.setMinWidth(Region.USE_PREF_SIZE); // 钉宽：HBox 空间不足时收缩全部由左侧文本承担
+        if (pokemon.hasMove(move)) {
+            action.setText("出战中");
+            action.getStyleClass().add("pool-in-battle");
+            action.setStyle(badgeStyle());
+            action.setDisable(true);
+        } else if (move == pendingSwap) {
+            action.setText("取消");
+            action.getStyleClass().add("pool-cancel");
+            action.setStyle(fireStyle(false));
+            action.setOnMouseEntered(e -> action.setStyle(fireStyle(true)));
+            action.setOnMouseExited(e -> action.setStyle(fireStyle(false)));
+            action.setOnAction(e -> {
+                pendingSwap = null;
+                showPokemonDetail(pokemon);
+            });
+        } else {
+            action.setText("换上");
+            action.getStyleClass().add("pool-swap-in");
+            action.setStyle(fireStyle(false));
+            action.setOnMouseEntered(e -> action.setStyle(fireStyle(true)));
+            action.setOnMouseExited(e -> action.setStyle(fireStyle(false)));
+            action.setOnAction(e -> equipFromPool(pokemon, move));
+        }
+        HBox row = new HBox(6, info, action);
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
     }
 
-    /** 装备库信息行：名称：说明 + 右侧穿戴状态（纯信息，无穿脱操作）。 */
-    private HBox equipmentInfoRow(Pokemon pokemon, HeldItem item) {
+    /** 装备库操作行：名称：说明 + 右侧按钮（已穿戴禁用 ／ 换过来 ／ 穿戴）。 */
+    private HBox equipmentRow(Pokemon pokemon, HeldItem item) {
         Label info = new Label(item.getName() + "：" + item.getDescription());
         info.setWrapText(true);
         info.setMaxWidth(Double.MAX_VALUE);
-        info.setMinWidth(0); // 允许 HBox 收缩换行，避免挤掉右侧状态标签
+        info.setMinWidth(0); // 允许 HBox 收缩换行，避免挤掉右侧按钮
         HBox.setHgrow(info, Priority.ALWAYS);
         info.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
 
@@ -630,28 +698,93 @@ public class MainView {
                 break;
             }
         }
-        String stateText;
-        String stateColor;
+        Button action = new Button();
+        action.setMinWidth(Region.USE_PREF_SIZE); // 钉宽：HBox 空间不足时收缩全部由左侧文本承担
         if (holder == pokemon) {
-            stateText = "已穿戴";
-            stateColor = "#2a6e2a";
+            action.setText("已穿戴");
+            action.getStyleClass().add("equip-worn");
+            action.setStyle(badgeStyle());
+            action.setDisable(true);
         } else if (holder != null) {
-            stateText = holder.getName() + " 装备中";
-            stateColor = "#8a6d00";
+            action.setText("换过来");
+            action.getStyleClass().add("equip-move-over");
+            action.setStyle(fireStyle(false));
+            action.setOnMouseEntered(e -> action.setStyle(fireStyle(true)));
+            action.setOnMouseExited(e -> action.setStyle(fireStyle(false)));
+            action.setOnAction(e -> {
+                player.equip(pokemon, item); // 自动从原持有者处脱下再穿给当前精灵
+                showPokemonDetail(pokemon);
+            });
         } else {
-            stateText = "未装备";
-            stateColor = "#999";
+            action.setText("穿戴");
+            action.getStyleClass().add("equip-wear");
+            action.setStyle(fireStyle(false));
+            action.setOnMouseEntered(e -> action.setStyle(fireStyle(true)));
+            action.setOnMouseExited(e -> action.setStyle(fireStyle(false)));
+            action.setOnAction(e -> {
+                player.equip(pokemon, item);
+                showPokemonDetail(pokemon);
+            });
         }
-        Label state = new Label(stateText);
-        state.setMinWidth(Region.USE_PREF_SIZE); // 优先保宽：收缩全部由左侧信息文本承担
-        state.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: " + stateColor + ";");
-        HBox row = new HBox(6, info, state);
+        HBox row = new HBox(6, info, action);
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
     }
 
+    /** 已穿戴行的「脱下」按钮（红底，与原详情页同语义）。 */
+    private Button buildUnequipButton(Pokemon pokemon) {
+        Button unequip = new Button("脱下");
+        unequip.setMinWidth(Region.USE_PREF_SIZE); // 钉宽：不随行收缩
+        unequip.getStyleClass().add("equip-take-off");
+        unequip.setStyle(swapStyle(false));
+        unequip.setOnMouseEntered(e -> unequip.setStyle(swapStyle(true)));
+        unequip.setOnMouseExited(e -> unequip.setStyle(swapStyle(false)));
+        unequip.setOnAction(e -> {
+            player.unequip(pokemon);
+            showPokemonDetail(pokemon);
+        });
+        return unequip;
+    }
+
+    /**
+     * 把技能库中的技能装上出战槽：有空槽直接携带；满 4 招时进入「选择要换下的槽位」状态，
+     * 出战技能行临时出现「换下」按钮，点击即与该技能互换（不弹窗；逻辑与原详情页一致）。
+     */
+    private void equipFromPool(Pokemon pokemon, Move move) {
+        if (pokemon.hasMove(move)) {
+            return;
+        }
+        if (!pokemon.moveSlotsFull()) {
+            pokemon.learnMove(move);
+            pendingSwap = null;
+            showPokemonDetail(pokemon);
+            return;
+        }
+        pendingSwap = move;
+        showPokemonDetail(pokemon);
+    }
+
+    /** 用待换技能替换指定出战槽：被换下的技能仍保留在技能库中，之后可再换回。 */
+    private void swapWithPool(Pokemon pokemon, int slotIndex) {
+        if (pendingSwap == null) {
+            return;
+        }
+        pokemon.swapBattleMove(slotIndex, pendingSwap);
+        pendingSwap = null;
+        showPokemonDetail(pokemon);
+    }
+
+    /** 「换下」「脱下」等破坏性操作按钮样式：红底胶囊、悬停变亮（沿用原详情页红色语义）。 */
+    private static String swapStyle(boolean hover) {
+        return YH + "-fx-font-size: 10px; -fx-text-fill: white; -fx-padding: 1 6; -fx-cursor: hand;"
+                + " -fx-background-radius: 6; -fx-background-color: " + (hover ? "#f0837a" : "#c0392b") + ";";
+    }
+
     /** 中栏内容：道具简要信息（插图 → 名称×数量 → 功能表述）。 */
     private void showItemDetail(ItemStack stack) {
+        // 切到道具内容：退出精灵上下文，清空待换技能状态
+        shownPokemon = null;
+        pendingSwap = null;
         detailBox.getChildren().clear();
         detailBox.setAlignment(Pos.TOP_CENTER);
         Item item = stack.getItem();
