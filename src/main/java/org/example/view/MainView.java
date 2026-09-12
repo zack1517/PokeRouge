@@ -8,6 +8,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import javafx.animation.FadeTransition;
+import javafx.animation.Interpolator;
+import javafx.animation.ParallelTransition;
+import javafx.animation.PauseTransition;
+import javafx.animation.SequentialTransition;
+import javafx.animation.TranslateTransition;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -26,6 +32,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 
 import org.example.model.ElementType;
 import org.example.model.HeldItem;
@@ -98,6 +105,12 @@ public class MainView {
     /** 单个队伍位的固定高度（设计像素；旧版 Vgrow 撑满导致纵向过高，改恒定高度更紧凑）。 */
     private static final double PARTY_SLOT_HEIGHT = 40;
 
+    /** 入场动效（与内层事件页卡片同一组参数基线：错峰上浮淡入，从上到下）。 */
+    private static final double ENTRANCE_RISE = 11;
+    private static final double ENTRANCE_FADE_MS = 620;
+    private static final double ENTRANCE_DELAY_BASE_MS = 120;
+    private static final double ENTRANCE_DELAY_STEP_MS = 95;
+
     /** 中栏进度条宽度（设计像素；适配 3:3:2 的中栏宽度）。 */
     private static final double BAR_WIDTH = 170;
 
@@ -116,6 +129,10 @@ public class MainView {
     private final int segment; // 当前地图段号（仅用于展示）
     private final int gold; // 金币余额（负数表示本轮远征尚未开始，不展示）
     private final String slotName; // 当前存档位名（null = 尚未选档，仅用于展示）
+
+    /** 入场动画节点：左栏六格与右栏背包行各自从上到下错峰（每次重建场景时清空重收集）。 */
+    private final List<Node> partyEntrance = new ArrayList<>();
+    private final List<Node> bagEntrance = new ArrayList<>();
 
     /** 中栏简要信息框内容容器（悬停联动时整体重建）。 */
     private VBox detailBox;
@@ -146,13 +163,47 @@ public class MainView {
     }
 
     public Scene createScene() {
+        partyEntrance.clear();
+        bagEntrance.clear();
         BorderPane root = new BorderPane();
         ImageBackgrounds.apply(root, mapBackground);
         root.setPadding(new Insets(10, 12, 10, 12));
         root.setTop(buildHeader());
         root.setCenter(buildContent());
         root.setBottom(buildActionBar());
-        return UiScale.scene(root);
+        Scene scene = UiScale.scene(root);
+        playEntrance(); // 左右两侧选项从上到下错峰入场（与内层事件卡同一组动效参数）
+        return scene;
+    }
+
+    /** 左/右两栏入场：两栏各自从上到下错峰上浮淡入（与内层事件卡同一组动效参数）。 */
+    private void playEntrance() {
+        playEntranceSequence(partyEntrance);
+        playEntranceSequence(bagEntrance);
+    }
+
+    /** 单栏错峰序列：延迟 = 基准 + 序号 × 步进（序号即从上到下的展示顺序）。 */
+    private static void playEntranceSequence(List<Node> nodes) {
+        Interpolator spline = Interpolator.SPLINE(0.16, 1, 0.3, 1);
+        for (int i = 0; i < nodes.size(); i++) {
+            Node node = nodes.get(i);
+            node.setOpacity(0);
+            node.setTranslateY(ENTRANCE_RISE);
+
+            FadeTransition fade = new FadeTransition(Duration.millis(ENTRANCE_FADE_MS), node);
+            fade.setFromValue(0);
+            fade.setToValue(1);
+            fade.setInterpolator(spline);
+
+            TranslateTransition rise = new TranslateTransition(Duration.millis(ENTRANCE_FADE_MS), node);
+            rise.setFromY(ENTRANCE_RISE);
+            rise.setToY(0);
+            rise.setInterpolator(spline);
+
+            new SequentialTransition(
+                    new PauseTransition(Duration.millis(ENTRANCE_DELAY_BASE_MS + i * ENTRANCE_DELAY_STEP_MS)),
+                    new ParallelTransition(fade, rise)).play();
+        }
     }
 
     // ------------------------------------------------------------------
@@ -258,6 +309,7 @@ public class MainView {
                 slot = buildEmptySlot();
             }
             VBox.setVgrow(slot, Priority.ALWAYS); // 行高余量六格均分（每格在被拉伸的列内平分）
+            partyEntrance.add(slot); // 入场动画：序号即从上到下的出现顺序
             column.getChildren().add(slot);
         }
         return column;
@@ -422,7 +474,7 @@ public class MainView {
         Label empty = new Label("空位");
         empty.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #90aac8;");
         StackPane slot = new StackPane(empty);
-        slot.setStyle("-fx-background-color: rgba(255, 255, 255, 0.35); -fx-background-radius: 12;"
+        slot.setStyle("-fx-background-color: rgba(255, 255, 255, 0.5); -fx-background-radius: 12;"
                 + " -fx-border-color: #90aac8; -fx-border-style: dashed; -fx-border-width: 1;"
                 + " -fx-border-radius: 12;");
         slot.setMaxWidth(Double.MAX_VALUE);
@@ -873,7 +925,9 @@ public class MainView {
             list.getChildren().add(empty);
         } else {
             for (ItemStack stack : stacks) {
-                list.getChildren().add(buildBagRow(stack));
+                HBox row = buildBagRow(stack);
+                bagEntrance.add(row); // 入场动画：序号即从上到下的出现顺序
+                list.getChildren().add(row);
             }
         }
         ScrollPane scroll = new ScrollPane(list);
