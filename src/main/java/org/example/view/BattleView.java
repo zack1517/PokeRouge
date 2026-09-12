@@ -127,9 +127,12 @@ public class BattleView {
      */
     private final Pane effectLayer = new Pane();
 
+    /** 属性徽章组间距：多属性时每枚属性独立一枚徽章（react TypeBadge 排布）。 */
+    private static final int TYPE_BADGE_GAP = 4;
+
     // ---- 敌方信息（左上卡片） ----
     private final Label wildName = new Label("--");
-    private final Label wildType = new Label();
+    private final HBox wildTypeBox = new HBox(TYPE_BADGE_GAP);
     private final Label wildLv = new Label();
     private final ProgressBar wildHpBar = new ProgressBar();
     private final Label wildHpText = new Label();
@@ -137,7 +140,7 @@ public class BattleView {
 
     // ---- 己方信息（右下卡片，样式与敌方卡一致） ----
     private final Label playerName = new Label("--");
-    private final Label playerType = new Label();
+    private final HBox playerTypeBox = new HBox(TYPE_BADGE_GAP);
     private final Label playerLv = new Label();
     private final ProgressBar playerHpBar = new ProgressBar();
     private final Label playerHpText = new Label();
@@ -258,12 +261,12 @@ public class BattleView {
 
     /** 敌信息卡（左上；圆角 / 阴影朝左上，见 {@link #buildStatCard}）。 */
     private VBox buildEnemyCard() {
-        return buildStatCard(wildName, wildType, wildLv, wildHpBar, wildHpText, wildStatus, true);
+        return buildStatCard(wildName, wildTypeBox, wildLv, wildHpBar, wildHpText, wildStatus, true);
     }
 
     /** 中部区域：中央留空展示主背景（立绘悬浮其上，见 {@link #buildSpriteLayer()}）；右下角己方信息卡。 */
     private Parent buildCenter() {
-        VBox card = buildStatCard(playerName, playerType, playerLv, playerHpBar, playerHpText, playerStatus, false);
+        VBox card = buildStatCard(playerName, playerTypeBox, playerLv, playerHpBar, playerHpText, playerStatus, false);
         // 关键：center 是 StackPane，默认会把卡片拉高到与中部区域同高；宽高都限定为内容自然尺寸，再以 BOTTOM_RIGHT 归位到右下。
         card.setMaxHeight(Region.USE_PREF_SIZE);
         card.setMaxWidth(Region.USE_PREF_SIZE);
@@ -336,18 +339,18 @@ public class BattleView {
     }
 
     /**
-     * 双方同款信息卡：上行 名称/属性徽章/等级，下行 HP 条与数值，再下行异常状态徽章
-     * （无异常时整行隐藏，卡高自动回落）。
+     * 双方同款信息卡：上行 名称/属性徽章组（多属性时每枚属性独立徽章，内容随 {@link #refreshTypeBadges} 重建）/等级，
+     * 下行 HP 条与数值，再下行异常状态徽章（无异常时整行隐藏，卡高自动回落）。
      */
-    private VBox buildStatCard(Label name, Label type, Label lv,
+    private VBox buildStatCard(Label name, HBox typeBox, Label lv,
                                ProgressBar hpBar, Label hpText, Label status, boolean enemy) {
         VBox card = battleCard(enemy);
         HBox line1 = new HBox(6);
         line1.setAlignment(Pos.CENTER_LEFT);
         name.setStyle(YH + "-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #1a2a3a;");
-        type.setStyle(chip());
+        typeBox.setAlignment(Pos.CENTER_LEFT);
         lv.setStyle(YH + "-fx-font-size: 13px; -fx-text-fill: #4a5b70;");
-        line1.getChildren().addAll(name, type, lv);
+        line1.getChildren().addAll(name, typeBox, lv);
 
         HBox line2 = new HBox(6);
         line2.setAlignment(Pos.CENTER_LEFT);
@@ -535,14 +538,19 @@ public class BattleView {
     }
 
     /** 属性徽章样式（react TypeBadge：按属性分色；电 / 冰等浅色属性用深字保证可读）。 */
-    private static String chipFor(Pokemon p) {
-        ElementType primary = p == null ? null : p.getSpecies().getTypes().stream().findFirst().orElse(null);
-        if (primary == null) {
+    private static String chipFor(ElementType type) {
+        if (type == null) {
             return chip();
         }
-        return YH + "-fx-background-color: " + primary.getColorCode() + "; -fx-background-radius: 9;"
-                + "-fx-padding: 1 8; -fx-font-size: 12px; -fx-text-fill: " + badgeTextColor(primary) + ";"
+        return YH + "-fx-background-color: " + type.getColorCode() + "; -fx-background-radius: 9;"
+                + "-fx-padding: 1 8; -fx-font-size: 12px; -fx-text-fill: " + badgeTextColor(type) + ";"
                 + "-fx-font-weight: bold;";
+    }
+
+    /** 取精灵主属性（无则 null；供单徽章场景，如精灵详情卡）。 */
+    private static ElementType primaryTypeOf(Pokemon p) {
+        return p == null || p.getSpecies() == null ? null
+                : p.getSpecies().getTypes().stream().findFirst().orElse(null);
     }
 
     /** 浅色属性（亮底）用深海军蓝字，其余用白字。 */
@@ -563,23 +571,37 @@ public class BattleView {
     // 更新
     // ------------------------------------------------------------------
 
-    /** 刷新双方状态卡片（含异常状态徽章）与双方立绘。 */
+    /** 刷新双方状态卡片（含属性徽章组与异常状态徽章）与双方立绘。 */
     public void refreshPokemon(Pokemon player, Pokemon wild) {
         playerName.setText(player.getName());
-        playerType.setText(typeOf(player));
-        playerType.setStyle(chipFor(player)); // 属性徽章按属性分色
+        refreshTypeBadges(playerTypeBox, player); // 属性逐枚独立显示（各自专属配色）
         playerLv.setText("Lv." + player.getLevel());
         refreshHp(playerHpBar, playerHpText, player);
         applyStatusBadge(playerStatus, player);
         applySprite(playerSprite, playerSpriteFallback, player);
 
         wildName.setText(wild.getName());
-        wildType.setText(typeOf(wild));
-        wildType.setStyle(chipFor(wild)); // 属性徽章按属性分色
+        refreshTypeBadges(wildTypeBox, wild);
         wildLv.setText("Lv." + wild.getLevel());
         refreshHp(wildHpBar, wildHpText, wild);
         applyStatusBadge(wildStatus, wild);
         applySprite(enemySprite, enemySpriteFallback, wild);
+    }
+
+    /**
+     * 刷新属性徽章组：按精灵属性逐枚重建 —— 多属性（如 草 / 毒）各一枚独立徽章、各自专属底色，
+     * 不再合并为单一文本；无属性时清空。
+     */
+    private static void refreshTypeBadges(HBox box, Pokemon p) {
+        box.getChildren().clear();
+        if (p == null || p.getSpecies() == null) {
+            return;
+        }
+        for (ElementType type : p.getSpecies().getTypes()) {
+            Label chip = new Label(type.getDisplayName());
+            chip.setStyle(chipFor(type));
+            box.getChildren().add(chip);
+        }
     }
 
     /** 刷新天气/场地状态行（无天气/场地时清空；位于底栏日志上方）。 */
@@ -1062,7 +1084,7 @@ public class BattleView {
         }
         partyInfoName.setText(p.getName());
         partyInfoType.setText(typeOf(p));
-        partyInfoType.setStyle(chipFor(p)); // 属性徽章按属性分色
+        partyInfoType.setStyle(chipFor(primaryTypeOf(p))); // 属性徽章按主属性分色
         partyInfoLv.setText("Lv." + p.getLevel());
         refreshHp(partyInfoHpBar, partyInfoHpText, p);
         String badge = statusBadgeText(p);
