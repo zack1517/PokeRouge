@@ -39,7 +39,7 @@ public final class FloatingMenu {
     private static final double MENU_WIDTH = 216;
     private static final double MENU_HEIGHT = 38;
 
-    /** 按钮垂直间距（六个入口挤占画布后的收紧值）。 */
+    /** 按钮垂直间距（七个入口挤占画布后的收紧值）。 */
     private static final double MENU_GAP = 5;
 
     /** 图标圆底直径。 */

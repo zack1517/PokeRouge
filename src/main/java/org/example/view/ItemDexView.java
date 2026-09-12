@@ -22,7 +22,7 @@ import org.example.util.UiScale;
 import java.util.List;
 
 /**
- * 道具图鉴页（由主菜单「道具图鉴」按钮进入）：一页看全 93 件道具（16 件消耗品 + 77 件装备）。
+ * 道具图鉴页（主菜单与启动页均有入口）：一页看全 93 件道具（16 件消耗品 + 77 件装备）。
  *
  * <p>每张卡片给出名称、【道具】/【装备】标记、效果说明、是否在商店出售与基础价，
  * 并用文字标注「已拥有 / 未拥有」；装备额外标注穿戴者 ——
@@ -33,7 +33,8 @@ import java.util.List;
  * 与详情页（{@code PokemonDetailView}）共用 {@link Player#equip} / {@link Player#unequip}，
  * 因此全队唯一穿戴的约束由模型层保证。消耗品为纯展示（战斗内才可使用）。</p>
  *
- * <p>数据来自 {@link ItemDexData}（商店商品目录 + 玩家持有情况），本类只负责展示与交互。</p>
+ * <p>数据来自 {@link ItemDexData}（商店商品目录 + 玩家持有情况），本类只负责展示与交互。
+ * 启动页打开时没有存档（{@code player == null}），此时全部条目按「未拥有」只读展示。</p>
  */
 public final class ItemDexView {
 
@@ -63,6 +64,7 @@ public final class ItemDexView {
     private final Player player;
     private final String background;
     private final Runnable onBack;
+    private final String backLabel;
 
     private Filter filter = Filter.ALL;
     private Label summary;
@@ -74,9 +76,20 @@ public final class ItemDexView {
      * @param onBack     「返回」回调（回主菜单）
      */
     public ItemDexView(Player player, String background, Runnable onBack) {
+        this(player, background, onBack, "返回主菜单");
+    }
+
+    /**
+     * @param player     玩家（{@code null} = 无存档场景，如启动页；此时全部条目按「未拥有」只读展示）
+     * @param background 页面背景（classpath 资源，可为 {@code null}）
+     * @param onBack     「返回」回调
+     * @param backLabel  返回按钮文案（主菜单用「返回主菜单」，启动页用「返回主界面」）
+     */
+    public ItemDexView(Player player, String background, Runnable onBack, String backLabel) {
         this.player = player;
         this.background = background;
         this.onBack = onBack;
+        this.backLabel = backLabel;
     }
 
     public Scene createScene() {
@@ -137,7 +150,7 @@ public final class ItemDexView {
     }
 
     private HBox buildBackBar() {
-        Button back = new Button("返回主菜单");
+        Button back = new Button(backLabel);
         back.setStyle(YH + "-fx-font-size: 13px; -fx-padding: 8 14;");
         back.setOnAction(e -> onBack.run());
         HBox bar = new HBox(back);
@@ -151,8 +164,9 @@ public final class ItemDexView {
         long owned = entries.stream().filter(ItemDexData.Entry::owned).count();
         long equipped = entries.stream().filter(ItemDexData.Entry::equipped).count();
         summary.setText("共 " + entries.size() + " 件（" + (entries.size() - countEquipment(entries))
-                + " 件道具 + " + countEquipment(entries) + " 件装备）　已拥有 " + owned + " 件"
-                + (equipped == 0 ? "" : "，其中 " + equipped + " 件已穿戴")
+                + " 件道具 + " + countEquipment(entries) + " 件装备）"
+                + (player == null ? "" : "　已拥有 " + owned + " 件"
+                        + (equipped == 0 ? "" : "，其中 " + equipped + " 件已穿戴"))
                 + "　未拥有的道具与装备可随时在商店买到（第 1 段起即可能上架，货架格位随段数变多）");
 
         listBox.getChildren().clear();
@@ -231,6 +245,9 @@ public final class ItemDexView {
     private HBox buildActions(ItemDexData.Entry entry) {
         if (!entry.equipment()) {
             return null;
+        }
+        if (player == null) {
+            return hintRow("进入游戏后可在此直接穿戴 / 脱下装备。");
         }
         if (!entry.owned()) {
             return hintRow("可在商店购买（第 1 段起即可能上架），或在肉鸽「装备补给」事件中获得。");

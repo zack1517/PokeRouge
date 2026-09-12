@@ -112,11 +112,21 @@ public class MainController {
         return player.getParty().stream().mapToInt(Pokemon::getLevel).max().orElse(1);
     }
 
-    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「宝可梦图鉴」进入图鉴页；「自定义战斗」进入模式选择页）。 */
+    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「宝可梦图鉴」「道具图鉴」进入图鉴页；「自定义战斗」进入模式选择页）。 */
     public void showStartScreen() {
         MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环；文件缺失静默降级）
         stage.setScene(new StartView(this::showStarterSelection, this::showContinueSelection,
-                saveManager.store().hasAnySave(), this::showCustomBattle, this::showPokedex).createScene());
+                saveManager.store().hasAnySave(), this::showCustomBattle, this::showPokedex,
+                this::showItemDexFromStart).createScene());
+    }
+
+    /**
+     * 道具图鉴页·启动页入口：此时尚未读档，没有 {@link Player}，因此传 {@code null} 让图鉴
+     * 按「全部未拥有」只读展示（无穿戴 / 脱下操作，仅看效果与售价）。「返回」回到启动页；
+     * 主菜单内的道具图鉴入口（{@link #showItemDex()}）仍带玩家数据，可直接穿脱。
+     */
+    public void showItemDexFromStart() {
+        stage.setScene(new ItemDexView(null, null, this::showStartScreen, "返回主界面").createScene());
     }
 
     /**
