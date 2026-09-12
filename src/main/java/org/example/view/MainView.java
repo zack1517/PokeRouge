@@ -162,22 +162,24 @@ public class MainView {
     private Parent buildHeader() {
         Button back = new Button("返回主界面");
         back.getStyleClass().add("menu-back");
-        back.setStyle(YH + "-fx-font-size: 13px; -fx-padding: 5 12; -fx-cursor: hand;");
+        back.setStyle(backPillStyle(false));
+        back.setOnMouseEntered(e -> back.setStyle(backPillStyle(true)));
+        back.setOnMouseExited(e -> back.setStyle(backPillStyle(false)));
         back.setOnAction(e -> actions.onExit());
 
         Label title = new Label("宝可梦对战 · 训练家 " + player.getName());
         title.getStyleClass().add("menu-title");
-        // 已删除原大背景框：改用白色外发光，保证文字压在地图背景上仍清晰可读
-        title.setStyle(YH + "-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #222;"
-                + " -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 0.95), 10, 0.75, 0, 0);");
+        // 样式迁移：原「深色字 + 白色外发光」改为事件页「事件遭遇」横幅同款胶囊条（黄→金渐变芯 + 深蓝字）
+        title.setStyle(titleBannerStyle());
 
         // 右侧信息框：原上部分小字信息（段号 / 金币 / 存档位）分多行排列
         VBox info = new VBox(1);
         info.getStyleClass().add("menu-info");
         info.setAlignment(Pos.CENTER_RIGHT);
-        info.setStyle("-fx-background-color: rgba(255, 255, 255, 0.66); -fx-background-radius: 8;"
-                + " -fx-border-color: #c9c9c9; -fx-border-width: 1; -fx-border-radius: 8;"
-                + " -fx-padding: 4 10;");
+        info.setStyle("-fx-background-color: #123c63, rgba(255, 255, 255, 0.92);"
+                + " -fx-background-insets: 0, 1.5; -fx-background-radius: 12, 10.5;"
+                + " -fx-padding: 4 10 4 9;"
+                + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.06, 0, 3);");
         info.getChildren().add(infoLine("第 " + segment + " 段 · 地图"));
         if (gold >= 0) {
             info.getChildren().add(goldLine(gold));
@@ -199,16 +201,16 @@ public class MainView {
 
     private static Label infoLine(String text) {
         Label label = new Label(text);
-        label.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #444;");
+        label.setStyle(YH + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
         return label;
     }
 
     /** 金币行：「金币」+ 硬币插图 + 数量（🪙 emoji 在部分运行环境渲染为方块，改用图片资源）。 */
     private static HBox goldLine(int gold) {
         Label caption = new Label("金币");
-        caption.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #444;");
+        caption.setStyle(YH + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
         Label amount = new Label(String.valueOf(gold));
-        amount.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #444;");
+        amount.setStyle(YH + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #E6A800;");
         HBox line = new HBox(4, caption, itemIcon("金币", 12), amount);
         line.setAlignment(Pos.CENTER_RIGHT);
         return line;
@@ -319,7 +321,7 @@ public class MainView {
     private Button buildSetActiveButton(Pokemon pokemon, int index, Button slot) {
         Button fire = new Button("设为首发");
         fire.getStyleClass().add("party-fire");
-        fire.setStyle(fireStyle(false));
+        fire.setStyle(pillStyle(false));
         fire.setDisable(pokemon.isFainted());
         fire.setOnAction(e -> {
             // 防御性消费：避免 ActionEvent 冒泡到外层格子按钮引发未知动作
@@ -327,11 +329,11 @@ public class MainView {
             e.consume();
         });
         fire.setOnMouseEntered(e -> {
-            fire.setStyle(fireStyle(true));
+            fire.setStyle(pillStyle(true));
             slot.setStyle(slotStyle(false, true));
             showPokemonDetail(pokemon);
         });
-        fire.setOnMouseExited(e -> fire.setStyle(fireStyle(false)));
+        fire.setOnMouseExited(e -> fire.setStyle(pillStyle(false)));
         return fire;
     }
 
@@ -339,39 +341,88 @@ public class MainView {
     private static Button buildActiveBadge() {
         Button badge = new Button("已设首发");
         badge.getStyleClass().add("party-active-badge");
-        badge.setStyle(badgeStyle());
+        badge.setStyle(pillDisabledStyle());
         badge.setDisable(true);
         return badge;
     }
 
-    /** 「已设首发」标识样式：灰底白字，禁用态自带整体变淡，呈现“灰色按钮”观感。 */
-    private static String badgeStyle() {
-        return YH + "-fx-font-size: 10px; -fx-text-fill: #ffffff; -fx-padding: 1 6;"
-                + " -fx-background-radius: 6; -fx-background-color: #8f8f8f;";
+    /** 「已设首发」等禁用标识：灰化胶囊（启动页 .menu-pill:disabled 同款灰渐变），保留胶囊外形。 */
+    private static String pillDisabledStyle() {
+        return YH + "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #7d8794; -fx-padding: 2 8;"
+                + " -fx-cursor: default; -fx-opacity: 1;"
+                + " -fx-background-color: rgba(255, 255, 255, 0.96), #7d8794,"
+                + " linear-gradient(to bottom, #e9e9e9 0%, #c7c7c7 78%, #dfdfdf 100%);"
+                + " -fx-background-insets: 0, 1.5, 2.5; -fx-background-radius: 999, 997.5, 996.5;"
+                + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.20), 5, 0.04, 0, 1);";
     }
 
-    private static String fireStyle(boolean hover) {
-        return YH + "-fx-font-size: 10px; -fx-text-fill: white; -fx-padding: 1 6; -fx-cursor: hand;"
-                + " -fx-background-radius: 6; -fx-background-color: "
-                + (hover ? "#1e7ae0" : "#1565C0") + ";";
+    /** 操作按钮统一胶囊（启动页 .slot-action 同族）：白圈 → 深蓝描边环 → 黄→金渐变芯 + 深蓝字；悬停亮一档。 */
+    private static String pillStyle(boolean hover) {
+        return YH + "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #123c63; -fx-padding: 2 8;"
+                + " -fx-cursor: hand; -fx-focus-color: transparent; -fx-faint-focus-color: transparent;"
+                + " -fx-background-color: rgba(255, 255, 255, " + (hover ? "1.0" : "0.96") + "), "
+                + (hover ? "#2a75bb" : "#123c63") + ", " + goldGradient(hover) + ";"
+                + " -fx-background-insets: 0, 1.5, 2.5; -fx-background-radius: 999, 997.5, 996.5;"
+                + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 7, 0.05, 0, 2);";
     }
 
+    /** 黄→金渐变芯（悬停亮一档）：启动页 / 事件页胶囊族共用色值。 */
+    private static String goldGradient(boolean hover) {
+        return hover
+                ? "linear-gradient(to bottom, rgba(255, 255, 255, 0.95) 0%, #ffd83d 18%, #f0b000 78%, #ffd83d 100%)"
+                : "linear-gradient(to bottom, rgba(255, 255, 255, 0.92) 0%, #ffcb05 18%, #eea800 78%, #ffcb05 100%)";
+    }
+
+    /** 「返回主界面」按钮：启动页紧凑胶囊同款（白圈 → 深蓝环 → 黄→金渐变芯 + 深蓝字），悬停亮一档。 */
+    private static String backPillStyle(boolean hover) {
+        return YH + "-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #123c63; -fx-padding: 5 12;"
+                + " -fx-cursor: hand; -fx-focus-color: transparent; -fx-faint-focus-color: transparent;"
+                + " -fx-background-color: rgba(255, 255, 255, " + (hover ? "1.0" : "0.96") + "), "
+                + (hover ? "#2a75bb" : "#123c63") + ", " + goldGradient(hover) + ";"
+                + " -fx-background-insets: 0, 2, 4; -fx-background-radius: 999, 997, 995;"
+                + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, " + (hover ? "0.55" : "0.45") + "), 10, 0.08, 0, 3);";
+    }
+
+    /** 训练家标题：事件页「事件遭遇」横幅同款胶囊条（白圈 → 深蓝环 → 黄→金渐变芯 + 深蓝字，无黑框）。 */
+    private static String titleBannerStyle() {
+        return YH + "-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #123c63;"
+                + " -fx-padding: 2 18;"
+                + " -fx-background-color: rgba(255, 255, 255, 0.96), #123c63,"
+                + " linear-gradient(to bottom, rgba(255, 255, 255, 0.92) 0%, #ffcb05 18%, #eea800 78%, #ffcb05 100%);"
+                + " -fx-background-insets: 0, 2.5, 5; -fx-background-radius: 999, 996.5, 994;"
+                + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.50), 12, 0.08, 0, 4);";
+    }
+
+    /** 底部操作按钮：启动页 .menu-pill 同款大胶囊；字号/内边距按原按钮传入以保持尺寸不变。 */
+    private static String barPillStyle(String fontSize, String padding, boolean hover) {
+        return YH + "-fx-font-size: " + fontSize + "; -fx-font-weight: bold; -fx-padding: " + padding + ";"
+                + " -fx-text-fill: #123c63; -fx-cursor: hand;"
+                + " -fx-focus-color: transparent; -fx-faint-focus-color: transparent;"
+                + " -fx-background-color: rgba(255, 255, 255, " + (hover ? "1.0" : "0.96") + "), "
+                + (hover ? "#2a75bb" : "#123c63") + ", " + goldGradient(hover) + ";"
+                + " -fx-background-insets: 0, 2.5, 5; -fx-background-radius: 999, 996.5, 994;"
+                + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, " + (hover ? "0.55" : "0.45") + "), 12, 0.08, 0, 4);";
+    }
+
+    /** 队伍位：内层事件页事件卡同族（#1565C0 深蓝描边环 + 白底圆角卡）；悬停环加深一档；首发格金色环。 */
     private static String slotStyle(boolean active, boolean hover) {
-        String border = active ? "#DAA520" : (hover ? "#1565C0" : "#c9c9c9");
-        String background = hover ? "rgba(255, 255, 255, 0.9)" : "rgba(255, 255, 255, 0.66)";
-        return YH + "-fx-font-size: 11px; -fx-text-fill: #222; -fx-background-color: " + background + ";"
-                + " -fx-background-radius: 8; -fx-border-color: " + border + "; -fx-border-width: 1;"
-                + " -fx-border-radius: 8; -fx-padding: 3 8; -fx-alignment: center-left; -fx-cursor: hand;";
+        String ring = active ? "#DAA520" : (hover ? "#0D47A1" : "#1565C0");
+        String fill = hover ? "rgba(255, 255, 255, 0.98)" : "rgba(255, 255, 255, 0.92)";
+        return YH + "-fx-font-size: 11px; -fx-text-fill: #222; -fx-cursor: hand;"
+                + " -fx-background-color: " + ring + ", " + fill + ";"
+                + " -fx-background-insets: 0, 1.5; -fx-background-radius: 12, 10.5;"
+                + " -fx-padding: 3 8; -fx-alignment: center-left;"
+                + " -fx-effect: dropshadow(gaussian, rgba(21, 101, 192, 0.18), 12, 0, 0, 4);";
     }
 
     /** 空队伍位：灰底虚线框占位，不响应悬停与点击。 */
     private static StackPane buildEmptySlot() {
         Label empty = new Label("空位");
-        empty.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #9a9a9a;");
+        empty.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #90aac8;");
         StackPane slot = new StackPane(empty);
-        slot.setStyle("-fx-background-color: rgba(255, 255, 255, 0.25); -fx-background-radius: 8;"
-                + " -fx-border-color: #b5b5b5; -fx-border-style: dashed; -fx-border-width: 1;"
-                + " -fx-border-radius: 8;");
+        slot.setStyle("-fx-background-color: rgba(255, 255, 255, 0.35); -fx-background-radius: 12;"
+                + " -fx-border-color: #90aac8; -fx-border-style: dashed; -fx-border-width: 1;"
+                + " -fx-border-radius: 12;");
         slot.setMaxWidth(Double.MAX_VALUE);
         slot.setPrefHeight(PARTY_SLOT_HEIGHT);
         slot.setMinHeight(Region.USE_PREF_SIZE);
@@ -390,9 +441,10 @@ public class MainView {
         scroll.getStyleClass().add("detail-pane");
         scroll.setFitToWidth(true);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scroll.setStyle("-fx-background-color: rgba(255, 255, 255, 0.6); -fx-background-radius: 10;"
-                + " -fx-border-color: #c9c9c9; -fx-border-width: 1; -fx-border-radius: 10;"
-                + " -fx-background: transparent;");
+        scroll.setStyle("-fx-background-color: #123c63, rgba(255, 255, 255, 0.92);"
+                + " -fx-background-insets: 0, 1.5; -fx-background-radius: 14, 12.5;"
+                + " -fx-background: transparent;"
+                + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 10, 0.08, 0, 3);");
         scroll.skinProperty().addListener((o, oldSkin, skin) -> {
             if (skin != null) makeViewportTransparent(scroll);
         });
@@ -443,7 +495,7 @@ public class MainView {
         portraitBox.getStyleClass().add("detail-portrait");
 
         Label name = new Label(pokemon.getName());
-        name.setStyle(YH + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #222;");
+        name.setStyle(YH + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
 
         HBox types = new HBox(4);
         for (ElementType type : pokemon.getSpecies().getTypes()) {
@@ -501,8 +553,8 @@ public class MainView {
             swapping.setWrapText(true);
             swapping.setMaxWidth(Double.MAX_VALUE);
             swapping.getStyleClass().add("swap-hint");
-            swapping.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #b35900;"
-                    + " -fx-background-color: rgba(255, 196, 108, 0.35); -fx-background-radius: 6; -fx-padding: 3 6;");
+            swapping.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #123c63;"
+                    + " -fx-background-color: rgba(255, 203, 5, 0.35); -fx-background-radius: 6; -fx-padding: 3 6;");
             moves.getChildren().add(swapping);
         }
         if (pokemon.getMoveSlots().isEmpty()) {
@@ -517,8 +569,8 @@ public class MainView {
 
         // 技能库（灰底小标题 + 全部已知技能；未出战可「换上」：空槽直接携带，满槽则进入待换状态）
         Label poolTitle = new Label("技能库（" + pokemon.getKnownMoves().size() + "）");
-        poolTitle.setStyle(YH + "-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: #333;"
-                + " -fx-background-color: rgba(0, 0, 0, 0.07); -fx-background-radius: 6; -fx-padding: 2 8;");
+        poolTitle.setStyle(YH + "-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: #123c63;"
+                + " -fx-background-color: rgba(42, 117, 187, 0.16); -fx-background-radius: 6; -fx-padding: 2 8;");
         VBox movePool = new VBox(2);
         if (pokemon.getKnownMoves().isEmpty()) {
             Label none = new Label("技能库为空。");
@@ -632,9 +684,9 @@ public class MainView {
             Button swap = new Button("换下");
             swap.setMinWidth(Region.USE_PREF_SIZE); // 钉宽：不随行收缩
             swap.getStyleClass().add("move-swap");
-            swap.setStyle(swapStyle(false));
-            swap.setOnMouseEntered(e -> swap.setStyle(swapStyle(true)));
-            swap.setOnMouseExited(e -> swap.setStyle(swapStyle(false)));
+            swap.setStyle(dangerPillStyle(false));
+            swap.setOnMouseEntered(e -> swap.setStyle(dangerPillStyle(true)));
+            swap.setOnMouseExited(e -> swap.setStyle(dangerPillStyle(false)));
             swap.setOnAction(e -> swapWithPool(pokemon, slotIndex));
             line2.getChildren().addAll(push, swap);
         }
@@ -657,14 +709,14 @@ public class MainView {
         if (pokemon.hasMove(move)) {
             action.setText("出战中");
             action.getStyleClass().add("pool-in-battle");
-            action.setStyle(badgeStyle());
+            action.setStyle(pillDisabledStyle());
             action.setDisable(true);
         } else if (move == pendingSwap) {
             action.setText("取消");
             action.getStyleClass().add("pool-cancel");
-            action.setStyle(fireStyle(false));
-            action.setOnMouseEntered(e -> action.setStyle(fireStyle(true)));
-            action.setOnMouseExited(e -> action.setStyle(fireStyle(false)));
+            action.setStyle(pillStyle(false));
+            action.setOnMouseEntered(e -> action.setStyle(pillStyle(true)));
+            action.setOnMouseExited(e -> action.setStyle(pillStyle(false)));
             action.setOnAction(e -> {
                 pendingSwap = null;
                 showPokemonDetail(pokemon);
@@ -672,9 +724,9 @@ public class MainView {
         } else {
             action.setText("换上");
             action.getStyleClass().add("pool-swap-in");
-            action.setStyle(fireStyle(false));
-            action.setOnMouseEntered(e -> action.setStyle(fireStyle(true)));
-            action.setOnMouseExited(e -> action.setStyle(fireStyle(false)));
+            action.setStyle(pillStyle(false));
+            action.setOnMouseEntered(e -> action.setStyle(pillStyle(true)));
+            action.setOnMouseExited(e -> action.setStyle(pillStyle(false)));
             action.setOnAction(e -> equipFromPool(pokemon, move));
         }
         HBox row = new HBox(6, info, action);
@@ -703,14 +755,14 @@ public class MainView {
         if (holder == pokemon) {
             action.setText("已穿戴");
             action.getStyleClass().add("equip-worn");
-            action.setStyle(badgeStyle());
+            action.setStyle(pillDisabledStyle());
             action.setDisable(true);
         } else if (holder != null) {
             action.setText("换过来");
             action.getStyleClass().add("equip-move-over");
-            action.setStyle(fireStyle(false));
-            action.setOnMouseEntered(e -> action.setStyle(fireStyle(true)));
-            action.setOnMouseExited(e -> action.setStyle(fireStyle(false)));
+            action.setStyle(pillStyle(false));
+            action.setOnMouseEntered(e -> action.setStyle(pillStyle(true)));
+            action.setOnMouseExited(e -> action.setStyle(pillStyle(false)));
             action.setOnAction(e -> {
                 player.equip(pokemon, item); // 自动从原持有者处脱下再穿给当前精灵
                 showPokemonDetail(pokemon);
@@ -718,9 +770,9 @@ public class MainView {
         } else {
             action.setText("穿戴");
             action.getStyleClass().add("equip-wear");
-            action.setStyle(fireStyle(false));
-            action.setOnMouseEntered(e -> action.setStyle(fireStyle(true)));
-            action.setOnMouseExited(e -> action.setStyle(fireStyle(false)));
+            action.setStyle(pillStyle(false));
+            action.setOnMouseEntered(e -> action.setStyle(pillStyle(true)));
+            action.setOnMouseExited(e -> action.setStyle(pillStyle(false)));
             action.setOnAction(e -> {
                 player.equip(pokemon, item);
                 showPokemonDetail(pokemon);
@@ -736,9 +788,9 @@ public class MainView {
         Button unequip = new Button("脱下");
         unequip.setMinWidth(Region.USE_PREF_SIZE); // 钉宽：不随行收缩
         unequip.getStyleClass().add("equip-take-off");
-        unequip.setStyle(swapStyle(false));
-        unequip.setOnMouseEntered(e -> unequip.setStyle(swapStyle(true)));
-        unequip.setOnMouseExited(e -> unequip.setStyle(swapStyle(false)));
+        unequip.setStyle(dangerPillStyle(false));
+        unequip.setOnMouseEntered(e -> unequip.setStyle(dangerPillStyle(true)));
+        unequip.setOnMouseExited(e -> unequip.setStyle(dangerPillStyle(false)));
         unequip.setOnAction(e -> {
             player.unequip(pokemon);
             showPokemonDetail(pokemon);
@@ -774,10 +826,15 @@ public class MainView {
         showPokemonDetail(pokemon);
     }
 
-    /** 「换下」「脱下」等破坏性操作按钮样式：红底胶囊、悬停变亮（沿用原详情页红色语义）。 */
-    private static String swapStyle(boolean hover) {
-        return YH + "-fx-font-size: 10px; -fx-text-fill: white; -fx-padding: 1 6; -fx-cursor: hand;"
-                + " -fx-background-radius: 6; -fx-background-color: " + (hover ? "#f0837a" : "#c0392b") + ";";
+    /** 「换下」「脱下」等破坏性操作按钮样式：红胶囊、悬停变亮（沿用原详情页红色语义）。 */
+    private static String dangerPillStyle(boolean hover) {
+        return YH + "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: white; -fx-padding: 2 8;"
+                + " -fx-cursor: hand; -fx-focus-color: transparent; -fx-faint-focus-color: transparent;"
+                + " -fx-background-color: rgba(255, 255, 255, 0.96), " + (hover ? "#b03a2e" : "#7a1c12") + ", "
+                + (hover ? "linear-gradient(to bottom, rgba(255, 255, 255, 0.92) 0%, #f0837a 18%, #d64535 78%, #f0837a 100%)"
+                        : "linear-gradient(to bottom, rgba(255, 255, 255, 0.92) 0%, #e74c3c 18%, #c0392b 78%, #e74c3c 100%)") + ";"
+                + " -fx-background-insets: 0, 1.5, 2.5; -fx-background-radius: 999, 997.5, 996.5;"
+                + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 7, 0.05, 0, 2);";
     }
 
     /** 中栏内容：道具简要信息（插图 → 名称×数量 → 功能表述）。 */
@@ -793,7 +850,7 @@ public class MainView {
         iconBox.setMinHeight(DETAIL_ICON_SIZE);
 
         Label title = new Label(item.getName() + " ×" + stack.getCount());
-        title.setStyle(YH + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #222;");
+        title.setStyle(YH + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
 
         Label description = new Label(describeItem(item));
         description.setWrapText(true);
@@ -869,11 +926,14 @@ public class MainView {
         return row;
     }
 
+    /** 背包行：事件卡同族小号白底蓝环卡；悬停环加深一档。 */
     private static String bagRowStyle(boolean hover) {
-        return "-fx-background-color: "
-                + (hover ? "rgba(255, 255, 255, 0.92)" : "rgba(255, 255, 255, 0.66)") + ";"
-                + " -fx-background-radius: 6; -fx-border-color: " + (hover ? "#1565C0" : "#c9c9c9") + ";"
-                + " -fx-border-width: 1; -fx-border-radius: 6; -fx-padding: 2 6;";
+        String ring = hover ? "#0D47A1" : "#1565C0";
+        String fill = hover ? "rgba(255, 255, 255, 0.98)" : "rgba(255, 255, 255, 0.92)";
+        return "-fx-background-color: " + ring + ", " + fill + ";"
+                + " -fx-background-insets: 0, 1.5; -fx-background-radius: 8, 6.5;"
+                + " -fx-padding: 2 6;"
+                + " -fx-effect: dropshadow(gaussian, rgba(21, 101, 192, 0.16), 8, 0, 0, 2);";
     }
 
     // ------------------------------------------------------------------
@@ -883,15 +943,21 @@ public class MainView {
     private HBox buildActionBar() {
         // 主入口：肉鸽层内事件
         Button rogue = new Button("进入层内事件");
-        rogue.setStyle(YH + "-fx-font-size: 15px; -fx-padding: 10 18; -fx-cursor: hand;");
+        rogue.setStyle(barPillStyle("15px", "10 18", false));
+        rogue.setOnMouseEntered(e -> rogue.setStyle(barPillStyle("15px", "10 18", true)));
+        rogue.setOnMouseExited(e -> rogue.setStyle(barPillStyle("15px", "10 18", false)));
         rogue.setOnAction(e -> actions.onStartRogueFloor());
 
         Button save = new Button("保存游戏");
-        save.setStyle(YH + "-fx-font-size: 13px; -fx-padding: 8 14; -fx-cursor: hand;");
+        save.setStyle(barPillStyle("13px", "8 14", false));
+        save.setOnMouseEntered(e -> save.setStyle(barPillStyle("13px", "8 14", true)));
+        save.setOnMouseExited(e -> save.setStyle(barPillStyle("13px", "8 14", false)));
         save.setOnAction(e -> actions.onSaveGame());
 
         Button load = new Button("读取存档");
-        load.setStyle(YH + "-fx-font-size: 13px; -fx-padding: 8 14; -fx-cursor: hand;");
+        load.setStyle(barPillStyle("13px", "8 14", false));
+        load.setOnMouseEntered(e -> load.setStyle(barPillStyle("13px", "8 14", true)));
+        load.setOnMouseExited(e -> load.setStyle(barPillStyle("13px", "8 14", false)));
         load.setOnAction(e -> actions.onLoadGame());
 
         HBox bar = new HBox(12, rogue, save, load);
@@ -1009,7 +1075,7 @@ public class MainView {
 
     private static Label sectionLabel(String text) {
         Label label = new Label(text);
-        label.setStyle(YH + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #333;");
+        label.setStyle(YH + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
         return label;
     }
 
@@ -1018,7 +1084,7 @@ public class MainView {
         line.setPrefHeight(1);
         line.setMinHeight(1);
         line.setMaxHeight(1);
-        line.setStyle("-fx-background-color: #cfcfcf;");
+        line.setStyle("-fx-background-color: #c3d4e6;");
         return line;
     }
 
