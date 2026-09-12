@@ -22,6 +22,7 @@ import org.example.model.OptionType;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.RouteConfig;
+import org.example.model.RoutePhase;
 import org.example.model.RunData;
 import org.example.model.Trainer;
 import org.example.save.SaveFormatException;
@@ -533,14 +534,22 @@ public class MainController {
         afterRogueStep();
     }
 
-    /** 一次节点（含战斗）结束后的统一推进：已结束→结算；必然节点→开战；否则落盘并重绘。 */
+    /**
+     * 一次节点（含战斗）结束后的统一推进：已结束→结算；连打衔接→直接续战；
+     * 行动点耗尽/无节点可走→落盘并显示道馆战准备界面，由玩家确认后再开战。
+     */
     private void afterRogueStep() {
         if (session.isRogueRunFinished()) {
             finishRogueRun();
             return;
         }
-        if (session.getRogueRunData().getPhase().isMandatoryBattle()) {
-            startMandatoryBattle(session.getRogueRunData().getPhase().toOptionType()); // 行动点耗尽：必然节点
+        RoutePhase phase = session.getRogueRunData().getPhase();
+        // 四天王 / 冠军 / 首领侵略战：上一战胜利后直接续战（连打节奏不变）。
+        // 道馆战例外（行动点耗尽触发，phase=GYM）：不直接开战，先落盘并显示必然节点准备界面——
+        // 玩家可查看道馆信息、退回主菜单存档 / 调整队伍后再点「开始挑战」进入战斗
+        // （与失败一次后的重试界面同一形态）。
+        if (phase.isMandatoryBattle() && phase != RoutePhase.GYM) {
+            startMandatoryBattle(phase.toOptionType());
             return;
         }
         autoSave(); // 每推进一步就落盘：存档点即「未作战」的节点之间
