@@ -316,11 +316,27 @@ FXML 重写，要求：
 
 **`ShopView`（商店）**
 
-- 构造参数 `ShopView(stock, gold, onBuy, onLeave)`，展示本次上架的 `ShopStock.Entry` 列表
-  （名称 + 售价）、当前金币余额；买不起的条目禁用；购买成功后即时刷新余额；
+- 构造参数 `ShopView(session, stock, onBuy, onLeave)`，展示本次上架的 `ShopStock.Entry` 列表
+  （类型标签 + 名称 + 效果说明 + 售价）、当前金币余额；买不起的条目禁用；购买成功后即时刷新余额；
 - 商品**按段解锁**、售价按段通胀，均为 `RouteConfig` 中的可调数值（见需求文档 §4.5）。
-- **展示名不在商店侧自存**：`ShopStock` 通过 `GameData.instance().item(id).getName()` 取名字，
-  只有注册表里查不到该 id 时才退回内置兜底名。这样即便道具表改名，商店也自动跟随。
+- **展示名不在商店侧自存**：`ShopStock` 通过 `GameData.instance().item(id).getName()` 取消耗品名、
+  `equipment(id).getName()` 取装备名，只有注册表里查不到该 id 时才退回内置兜底名。
+  这样即便道具表 / 装备表改名，商店也自动跟随。
+
+> **v0.1.16（商店上架装备）**：货架改为两个分区，装备与消耗品各自抽签、各自占位 ——
+> - **消耗品分区**：仍是原 16 件池（第 1~5 段解锁），购买走背包，可重复购买；
+> - **装备分区**：池子**全量取自 `GameData#allEquipment()`**（47 件装备 + 30 种树果），
+>   解锁段位与基础价按 `HeldItemEffect` 分类推出（`ShopStock#equipmentUnlockSegment` /
+>   `equipmentBasePrice`），因此**新增装备只要登记进数据表就会自动上架**；
+> - **格位**：`RouteConfig#shopStockSize` 只管总格数，装备另占
+>   `shopEquipmentStockSize` 格（第 1 段 1 格 → 第 3 段起 2 格），剩余格位全给消耗品；
+> - **已拥有不再上架**：`ShopStock.forSegment(segment, random, ownedIds)` 会把玩家已拥有的装备
+>   剔出池子，控制器传 `player.getEquipment()` 的 id 集合；
+> - **购买分流**：`MainController#buyFromShop` 按 `Entry#isEquipment()` 分流 —— 消耗品入背包，
+>   装备走 `Player#addEquipment` 并随即从货架下架（`ShopStock#withoutEntry`），
+>   避免同一件重复购买。
+>
+> 展示层只多渲染「【装备】/【道具】」前缀与装备的效果说明，禁用规则不变。
 
 **`MainView` 标题栏**
 
@@ -640,3 +656,4 @@ public interface ScreenFactory {
 | v0.1.16 | 2026-09-11 | **界面流转收敛到启动页（跟随《接口文档_存档系统.md》v2.3）**：§3.1 场景图新增启动页（程序启动 / 返回主界面 / 一轮结束的落点）并把「结束 → 回 mainMenu」改为回启动页；§3.2 页面总表增「启动页」行、主菜单行改为「进入层内事件 / 保存游戏 / 读取存档 / 返回主界面（不退出程序）」；§3.5 场景入口补「读取存档」「返回主界面」「一轮结束回启动页」与被拒读档的三种情况；§4.7 存档时机补「换档前保护进度 / 离开这一局前」 | [待确认：UI 负责人] |
 | v0.1.17 | 2026-09-11 | 同步《接口文档_战斗服务.md》v1.11 逐只即时结算：§1.2 战斗系统行说明「每击倒一只即时申报」；§4.2 组装入口与 `pendingLearnChoices()/decideLearn(int)` 行补「战斗进行中即可能非空」与战斗页渲染顺序（挂起抉择优先、结局最后）；裁决连线：`BattleController#render` 已按此顺序实现 | [待确认：UI 负责人] |
 | v0.1.18 | 2026-09-11 | 同步《接口文档_战斗服务.md》v1.14 己方倒下后的玩家补位：§3.3 新增「补位面板」界面要求（优先于主菜单渲染、复用队伍 3×2 六格、无返回键、选中后 `chooseReplacement`）；§4.1 契约表补 `isAwaitingReplacement()/chooseReplacement(int)` 并修订行动方法与 `playerActive()` 说明（不再为 null）；§6.4 / §6.6 去除「自动换宠」旧描述 | [待确认：UI 负责人] |
+| v0.1.19 | 2026-09-12 | **商店上架全部装备（77 件）**：§3.6 `ShopView` 段改写 —— 货架分「消耗品 / 装备」两分区各自抽签，装备池全量取自 `GameData#allEquipment()`（47 件装备 + 30 种树果）并按 `HeldItemEffect` 定解锁段位与基础价，格位由 `RouteConfig#shopEquipmentStockSize` 控制（第 1 段 1 格 → 第 3 段起 2 格）；已拥有的装备不再上架（`forSegment(segment, random, ownedIds)`）；购买按 `Entry#isEquipment()` 分流（消耗品入背包 / 装备入库并下架）；展示层增「【装备】/【道具】」前缀与装备说明 | [待确认：UI 负责人] |

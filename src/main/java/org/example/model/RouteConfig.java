@@ -151,6 +151,28 @@ public final class RouteConfig {
         return (int) Math.round(basePrice * (1.0 + SHOP_PRICE_INFLATION_PERCENT * steps / 100.0));
     }
 
+    /** 第 1 段上架的装备数量（商店固定给装备留位，避免货架被消耗品占满）。 */
+    public static final int BASE_SHOP_EQUIPMENT_STOCK = 1;
+
+    /** 每推进多少段额外增加一件上架装备（装备比消耗品稀有，故按两段递增）。 */
+    public static final int SHOP_EQUIPMENT_STOCK_PER_SEGMENT = 2;
+
+    /** 单次商店的上架装备数量上限。 */
+    public static final int MAX_SHOP_EQUIPMENT_STOCK = 2;
+
+    /**
+     * 某一段商店的上架装备数量（装备比消耗品稀有，两段才多给一格）。
+     *
+     * <p>剩余格位卖给消耗品，见 {@link #shopStockSize(int)}：第 1 段共 3 格 = 1 装备 + 2 消耗品，
+     * 末段共 6 格 = 2 装备 + 4 消耗品。</p>
+     */
+    public static int shopEquipmentStockSize(int segment) {
+        int seg = Math.max(1, segment);
+        int size = BASE_SHOP_EQUIPMENT_STOCK
+                + (seg - 1) / Math.max(1, SHOP_EQUIPMENT_STOCK_PER_SEGMENT);
+        return Math.min(MAX_SHOP_EQUIPMENT_STOCK, size);
+    }
+
     // ------------------------------------------------------------------
     // 敌人强度（随段推进增强）
     // ------------------------------------------------------------------
