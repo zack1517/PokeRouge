@@ -194,6 +194,9 @@ public class RogueFloorView {
 
         VBox panel = new VBox(2, segment, stats);
         panel.setMinWidth(116);
+        // 头部行高由「事件遭遇」横幅决定，信息卡保持自身内容高度：
+        // 不封顶时会被 HBox 拉到整行高，底部多出一块空白
+        panel.setMaxHeight(Region.USE_PREF_SIZE);
         panel.getStyleClass().add("rogue-info");
         return panel;
     }
