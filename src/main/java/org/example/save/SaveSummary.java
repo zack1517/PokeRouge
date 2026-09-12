@@ -57,16 +57,14 @@ public record SaveSummary(SaveSlot slot, String playerName, int partySize, int a
     }
 
     /**
-     * 两行式摘要（档位卡窄幅排版用）：第一行「训练家 · 队伍规模 · 段号」，
-     * 第二行「行动点 · 金币 · 存档时间」；主动分行避免单行长句随机折行把时间戳截断。
+     * 三行式摘要（档位卡窄幅排版用）：第一行「训练家 · 队伍规模」，第二行「段号 · 行动点 · 金币」
+     * （未开始远征时提示），第三行存档时间单独成行；主动分行避免长句随机折行把时间戳截断。
      */
     public List<String> describeLines() {
         String name = playerName == null || playerName.isBlank() ? "无名训练家" : playerName;
-        String line1 = name + " · 队伍 " + partySize
-                + (segment > 0 ? " · 第 " + segment + " 段" : " · 未开始远征");
-        String line2 = segment > 0
-                ? "行动点 " + Math.max(0, ap) + " · 金币 " + Math.max(0, gold) + " · " + savedAtText()
-                : savedAtText();
-        return List.of(line1, line2);
+        String progress = segment > 0
+                ? "第 " + segment + " 段 · 行动点 " + Math.max(0, ap) + " · 金币 " + Math.max(0, gold)
+                : "未开始远征";
+        return List.of(name + " · 队伍 " + partySize, progress, savedAtText());
     }
 }

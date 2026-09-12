@@ -12,7 +12,6 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -31,7 +30,7 @@ import org.example.pokemon.service.PokemonServiceImpl;
  *
  * <p>与商店页 / 队伍配置页同一套视觉体系：顶栏「返回胶囊 + 白描边深蓝字标题 + 副提示 +
  * 新游戏信息卡」，中部为无卡底表单（训练家名称输入、初始宝可梦下拉与说明直接悬浮于背景），
- * 底部为黄→金大胶囊「带它开始冒险」；样式集中在 {@code /css/start-menu.css}
+ * 表单下方紧随黄→金大胶囊「带它开始冒险」（表单区整体偏上，按钮不再贴底）；样式集中在 {@code /css/start-menu.css}
  * （.starter-* 表单系列 + .page-title 标题 + .primary-pill 主按钮 + 胶囊 / 暗角 / .rogue-info 共享规范）。</p>
  *
  * <p>接线不变：选好初始精灵后进入存档位选择（新游戏）；「返回」（或 Esc）不创建精灵直接回启动页。</p>
@@ -111,12 +110,8 @@ public final class StarterSelectionView {
         form.setAlignment(Pos.CENTER);
         form.setMaxWidth(Region.USE_PREF_SIZE);
         form.getStyleClass().add("starter-card");
-        VBox center = new VBox(form);
-        center.setAlignment(Pos.CENTER);
-        BorderPane.setMargin(center, new Insets(0, 0, 8, 0));
-        layout.setCenter(center);
 
-        // 底部：「带它开始冒险」（黄→金大胶囊，全页视觉重心；「返回」在顶栏左侧）
+        // 「带它开始冒险」（黄→金大胶囊，紧随表单下方；「返回」在顶栏左侧）
         Button start = new Button("带它开始冒险");
         start.getStyleClass().add("primary-pill");
         start.setOnAction(e -> {
@@ -124,9 +119,12 @@ public final class StarterSelectionView {
             Species selected = choices.getValue();
             onStart.accept(trainerName, service.createPokemon(selected.getId(), STARTER_LEVEL));
         });
-        HBox bar = new HBox(start);
-        bar.setAlignment(Pos.CENTER);
-        layout.setBottom(bar);
+
+        // 表单区整体上移：顶栏下留固定间距，按钮排表单之后（不再固定窗口底部）
+        VBox center = new VBox(14, form, start);
+        center.setAlignment(Pos.TOP_CENTER);
+        BorderPane.setMargin(center, new Insets(16, 0, 0, 0));
+        layout.setCenter(center);
 
         root.getChildren().addAll(vignette, layout);
 

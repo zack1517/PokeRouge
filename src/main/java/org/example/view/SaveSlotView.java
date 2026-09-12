@@ -32,7 +32,7 @@ import java.util.function.Consumer;
  *
  * <p>布局与商店页 / 队伍配置页同族：顶栏「返回胶囊 + 白描边深蓝字标题 + 当前档位信息卡」，
  * 内容为 2×2 紧凑方形档位卡（白底蓝环卡；当前档位金环；队伍已全倒下的档位自动变灰并标注
- * 「队伍已全倒下」，继续游戏时不可选），卡内摘要按两行窄幅排版，主操作按钮为小号黄→金胶囊，
+ * 「队伍已全倒下」，继续游戏时不可选），卡内摘要按三行窄幅排版（时间单独一行），主操作按钮为小号黄→金胶囊，
  * 「删除」为白底红字小胶囊（空档禁用）；样式见 {@code /css/start-menu.css} 的 .slot-* 系列，
  * 「返回」由 {@link FloatingMenu} 紧凑胶囊承载（与启动页同款），Esc 亦返回。</p>
  *
@@ -48,8 +48,8 @@ public final class SaveSlotView {
     /** 共享样式表（胶囊按钮/图标/暗角/标题/档位卡，与启动页同一份）。 */
     private static final String STYLE_SHEET = "/css/start-menu.css";
 
-    /** 档位卡统一高度（设计像素；四卡等高的紧凑排列基线）。 */
-    private static final double CARD_HEIGHT = 110;
+    /** 档位卡统一高度（设计像素；四卡等高的紧凑排列基线，容纳三行摘要与全倒下警示行）。 */
+    private static final double CARD_HEIGHT = 126;
 
     /** 2×2 网格总宽上限（设计像素）：每卡 256 宽，两侧留白使卡片群居中收拢。 */
     private static final double GRID_MAX_WIDTH = 520;

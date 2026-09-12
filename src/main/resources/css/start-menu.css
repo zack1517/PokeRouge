@@ -430,10 +430,10 @@
     -fx-padding: 4 26 5 26;
 }
 
-/* ---------- 通用主行动大胶囊（黄→金渐变芯，表单页 / 悬浮子页底部主按钮共用） ---------- */
+/* ---------- 通用主行动大胶囊（黄→金渐变芯，表单页主按钮；2026-09-13 放大一档） ---------- */
 .primary-pill {
     -fx-font-family: 'Microsoft YaHei';
-    -fx-font-size: 14px;
+    -fx-font-size: 16px;
     -fx-font-weight: bold;
     -fx-text-fill: #123c63;
     -fx-background-color:
@@ -446,7 +446,7 @@
             #ffcb05 100%);
     -fx-background-insets: 0, 2, 4.5;
     -fx-background-radius: 999, 996.5, 994;
-    -fx-padding: 8 26;
+    -fx-padding: 10 34;
     -fx-cursor: hand;
     -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 12, 0.08, 0, 4);
     -fx-focus-color: transparent;
