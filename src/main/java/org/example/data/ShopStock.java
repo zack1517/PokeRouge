@@ -125,6 +125,40 @@ public final class ShopStock {
         };
     }
 
+    /**
+     * 商品目录条目：id、展示名、效果说明（消耗品为空串）、是否为装备、基础价、解锁段位。
+     *
+     * <p>与 {@link Entry} 的区别：{@code Entry} 是「本次货架上的一件商品」（价格已按段通胀），
+     * 本记录是「这件商品在目录里的定义」（基础价 + 从第几段起可能上架），供道具图鉴使用。</p>
+     */
+    public record CatalogEntry(String id, String name, String description, boolean equipment,
+                               int basePrice, int unlockSegment) {
+    }
+
+    /**
+     * 完整商品目录：全部消耗品 + 全部装备（当前 16 + 77 = 93 件），供道具图鉴展示
+     * 「第几段起可买、基础价多少」。
+     *
+     * <p>解锁段位与基础价直接复用 {@link #forSegment} 的同一份口径（消耗品读 {@link #CONSUMABLES}，
+     * 装备经 {@link #equipmentBasePrice} / {@link #equipmentUnlockSegment} 推出），
+     * 因此图鉴与货架永远不会说法不一。展示名一律取自 {@link GameData}。</p>
+     */
+    public static List<CatalogEntry> catalog() {
+        List<CatalogEntry> all = new ArrayList<>();
+        for (Consumable candidate : CONSUMABLES) {
+            Item item = GameData.instance().item(candidate.itemId());
+            all.add(new CatalogEntry(candidate.itemId(),
+                    item == null ? candidate.fallbackName() : item.getName(), "",
+                    false, candidate.basePrice(), candidate.unlockSegment()));
+        }
+        for (HeldItem equipment : GameData.instance().allEquipment()) {
+            all.add(new CatalogEntry(equipment.getId(), equipment.getName(), equipment.getDescription(),
+                    true, equipmentBasePrice(equipment.getEffectType()),
+                    equipmentUnlockSegment(equipment.getEffectType())));
+        }
+        return List.copyOf(all);
+    }
+
     private final int segment;
     private final List<Entry> entries;
 

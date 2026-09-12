@@ -268,6 +268,49 @@ class ShopStockTest {
                 "已拥有装备集合为 null 时不应崩");
     }
 
+    @Test
+    void 目录列全消耗品与装备() {
+        List<ShopStock.CatalogEntry> catalog = ShopStock.catalog();
+
+        assertEquals(93, catalog.size(), "目录应为 16 件消耗品 + 77 件装备");
+        assertEquals(16, catalog.stream().filter(e -> !e.equipment()).count(), "消耗品 16 件");
+        assertEquals(77, catalog.stream().filter(ShopStock.CatalogEntry::equipment).count(),
+                "装备与树果合计 77 件");
+        assertEquals(catalog.size(), catalog.stream().map(ShopStock.CatalogEntry::id).distinct().count(),
+                "目录 id 不应重复");
+    }
+
+    @Test
+    void 目录条目的段位与价格合法() {
+        List<ShopStock.CatalogEntry> catalog = ShopStock.catalog();
+
+        for (ShopStock.CatalogEntry entry : catalog) {
+            assertFalse(entry.name().isBlank(), entry.id() + " 应有展示名");
+            assertTrue(entry.basePrice() > 0, entry.id() + " 基础价应为正");
+            assertTrue(entry.unlockSegment() >= 1 && entry.unlockSegment() <= RouteConfig.TOTAL_SEGMENTS,
+                    entry.id() + " 解锁段位应在 1~" + RouteConfig.TOTAL_SEGMENTS);
+            if (entry.equipment()) {
+                assertFalse(entry.description().isBlank(), entry.id() + " 装备应有效果说明");
+            }
+        }
+    }
+
+    @Test
+    void 目录与货架的口径一致() {
+        List<ShopStock.CatalogEntry> catalog = ShopStock.catalog();
+        ShopStock.CatalogEntry firstSegmentConsumable = catalog.stream()
+                .filter(e -> !e.equipment() && e.id().equals("i_potion")).findFirst().orElseThrow();
+
+        // 第 1 段的货架必须只抽出目录里解锁段位 <= 1 的商品
+        for (ShopStock.Entry entry : ShopStock.forSegment(1, new Random(7)).entries()) {
+            ShopStock.CatalogEntry definition = catalog.stream()
+                    .filter(e -> e.id().equals(entry.itemId())).findFirst().orElseThrow();
+            assertTrue(definition.unlockSegment() <= 1,
+                    entry.itemId() + " 未到解锁段位却出现在第 1 段货架");
+        }
+        assertEquals(firstSegmentConsumable.basePrice(), 40, "伤药基础价应与消耗品池一致");
+    }
+
     /** 用多组固定随机源反复采样指定段位，返回出现过的全部商品 id（避免单次洗牌的偶然性）。 */
     private static Set<String> sampledIds(int segment, int seeds) {
         Set<String> ids = new TreeSet<>();

@@ -23,7 +23,8 @@ import java.util.List;
 
 /**
  * 主菜单视图（当前阶段的地图驻留页占位，见 GameSession 类 javadoc）：铺当前段的 bg_map 随机背景，
- * 展示训练家队伍与背包（可设先发），并给予「进入层内事件」「保存游戏」「读取存档」「返回主界面」四个入口。
+ * 展示训练家队伍与背包（可设先发），并给予「进入层内事件」「道具图鉴」「保存游戏」「读取存档」
+ * 「返回主界面」五个入口。
  * <p>背景由控制器按“段”决定后传入（同段多张图固定，换段才变），本类不做任何背景状态；
  * 每次进入主菜单都由控制器重新构建（队伍可能在对战中变化），因此本类不做状态刷新。</p>
  * <p>「返回主界面」只回到启动页（读档 / 新游戏都在那里发起），<b>不</b>退出程序 ——
@@ -50,6 +51,9 @@ public class MainView {
 
         /** 打开 index 对应精灵的详情页（立绘/属性/技能/装备；装备穿脱后返回主菜单自动同步）。 */
         void onShowPokemonDetail(int index);
+
+        /** 打开道具图鉴：全量道具与可携带装备一览，可直接穿戴 / 脱下装备。 */
+        void onShowItemDex();
 
         /** 返回游戏启动页（第一屏；重新「开始游戏」将重新创建训练家）。 */
         void onBackToStart();
@@ -211,6 +215,10 @@ public class MainView {
         rogue.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 15px; -fx-padding: 10 18;");
         rogue.setOnAction(e -> actions.onStartRogueFloor());
 
+        Button dex = new Button("道具图鉴");
+        dex.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
+        dex.setOnAction(e -> actions.onShowItemDex());
+
         Button save = new Button("保存游戏");
         save.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
         save.setOnAction(e -> actions.onSaveGame());
@@ -224,7 +232,7 @@ public class MainView {
         backToTitle.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-padding: 8 14;");
         backToTitle.setOnAction(e -> actions.onExit());
 
-        HBox bar = new HBox(12, rogue, save, load, backToTitle);
+        HBox bar = new HBox(12, rogue, dex, save, load, backToTitle);
         bar.setAlignment(Pos.CENTER);
         bar.setPadding(new Insets(10, 0, 0, 0));
         return bar;

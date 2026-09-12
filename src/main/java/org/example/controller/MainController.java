@@ -32,6 +32,7 @@ import org.example.util.LogUtil;
 import org.example.util.MusicPlayer;
 import org.example.view.CustomBattleSetupView;
 import org.example.view.CustomBattleView;
+import org.example.view.ItemDexView;
 import org.example.view.MainView;
 import org.example.view.PokedexView;
 import org.example.view.PokemonDetailView;
@@ -308,6 +309,11 @@ public class MainController {
             }
 
             @Override
+            public void onShowItemDex() {
+                showItemDex();
+            }
+
+            @Override
             public void onBackToStart() {
                 showStartScreen();
             }
@@ -321,6 +327,17 @@ public class MainController {
     public void showPokemonDetail(int initialIndex) {
         stage.setScene(new PokemonDetailView(player, initialIndex, session.mapBackgroundPath(), this::showMainMenu)
                 .createScene());
+    }
+
+    /**
+     * 道具图鉴页：由主菜单「道具图鉴」按钮进入。
+     *
+     * <p>全量列出商店商品目录（16 件消耗品 + 77 件装备），标注已拥有 / 未拥有与穿戴者；
+     * 已拥有的装备可在本页直接穿戴 / 脱下（写的就是玩家装备库，与详情页共用同一模型方法），
+     * 因此这里不做二次校验，也不与金币 / 存档交互。「返回」重建主菜单以同步队伍变化。</p>
+     */
+    public void showItemDex() {
+        stage.setScene(new ItemDexView(player, session.mapBackgroundPath(), this::showMainMenu).createScene());
     }
 
     /**
