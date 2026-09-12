@@ -7,6 +7,7 @@ import java.util.Objects;
 import org.example.battle.BattleDataPort;
 import org.example.battle.BattleGrowthPort;
 import org.example.battle.BattleService;
+import org.example.model.LearnableMove;
 import org.example.model.Move;
 import org.example.model.Pokemon;
 import org.example.model.Species;
@@ -63,11 +64,22 @@ public final class GrowthService implements BattleGrowthPort {
     public static final int GYM_EXP_NUMERATOR = 2;
     public static final int GYM_EXP_DENOMINATOR = 1;
 
+    /** 段数经验倍率：1 + 0.4×段数，折算为 (10 + 4×段数) / 10（整数截断）。 */
+    private static final int SEGMENT_EXP_NUMERATOR_BASE = 10;
+    private static final int SEGMENT_EXP_STEP = 4;
+    private static final int SEGMENT_EXP_DENOMINATOR = 10;
+
     /** 技能与种族数据的唯一来源。 */
     private final BattleDataPort dataPort;
 
     /** 局外成长进度（捕捉次数 / 对战次数 / 个体值加成），跨单轮远征存活。 */
     private final GrowthProgress progress;
+
+    /** 段数经验倍率的分子（默认 1，不设置时保持 1 倍）。 */
+    private int segmentExpNumerator = 1;
+
+    /** 段数经验倍率的分母（默认 1，不设置时保持 1 倍）。 */
+    private int segmentExpDenominator = 1;
 
     /**
      * 创建成长模块，使用进程级共享成长进度（{@link GrowthProgress#instance()}）。
@@ -101,6 +113,22 @@ public final class GrowthService implements BattleGrowthPort {
         return progress;
     }
 
+    /**
+     * 设置段数经验倍率：所有经验获取（击倒 / 捕捉）统一乘以 1 + 0.4×段数，
+     * 即 {@code (10 + 4×段数) / 10}。段数小于 1 时按 1 倍处理（不生效）。
+     *
+     * @param segment 当前肉鸽段号（1 起）
+     */
+    public void setSegmentExpMultiplier(int segment) {
+        if (segment < 1) {
+            segmentExpNumerator = 1;
+            segmentExpDenominator = 1;
+            return;
+        }
+        segmentExpNumerator = SEGMENT_EXP_NUMERATOR_BASE + SEGMENT_EXP_STEP * segment;
+        segmentExpDenominator = SEGMENT_EXP_DENOMINATOR;
+    }
+
     @Override
     public Settlement settle(List<Pokemon> survivors, List<Pokemon> defeated) {
         return settle(survivors, defeated, 1, 1);
@@ -111,7 +139,7 @@ public final class GrowthService implements BattleGrowthPort {
                              int expNumerator, int expDenominator) {
         List<String> log = new ArrayList<>();
         List<BattleService.LearnChoice> pending = new ArrayList<>();
-        int exp = totalExp(defeated) * expNumerator / expDenominator;
+        int exp = applySegmentMultiplier(totalExp(defeated) * expNumerator / expDenominator);
         if (exp > 0 && survivors != null) {
             for (Pokemon p : survivors) {
                 if (p == null || p.isFainted()) {
@@ -147,7 +175,7 @@ public final class GrowthService implements BattleGrowthPort {
         }
         // 捕捉成功奖励 1.5 倍击倒经验，与击倒结算同口径（升级 / 学招 / 进化即时判定）；
         // 被捕捉的精灵本身不参与发放（奖励只给参战的己方精灵）
-        int exp = captureExpOf(caught);
+        int exp = applySegmentMultiplier(captureExpOf(caught));
         if (exp > 0 && survivors != null) {
             for (Pokemon p : survivors) {
                 if (p == null || p.isFainted() || p == caught) {
@@ -207,12 +235,21 @@ public final class GrowthService implements BattleGrowthPort {
             learnAt(p, lv, log, pending);
             evolve(p, log);
         }
+        // 补学：等级已达标但尚未学会的技能（进化切换种族 / 学招数据调整 / 旧档重建都可能留下缺口）
+        learnOverdueMoves(p, log);
     }
 
     /** 等级达到习得表要求时尝试学会新技能：全部保留进技能库；出战槽有空位则自动携带。 */
     private void learnAt(Pokemon p, int level, List<String> log,
                          List<BattleService.LearnChoice> pending) {
-        String moveId = p.getSpecies().moveLearnedAt(level);
+        learnMove(p, p.getSpecies().moveLearnedAt(level), log);
+    }
+
+    /**
+     * 学会指定 id 的技能（未到学招等级 / 已会 / 数据缺失时静默跳过）：
+     * 入技能库，出战槽有空位则自动携带。
+     */
+    private void learnMove(Pokemon p, String moveId, List<String> log) {
         if (moveId == null) {
             return;
         }
@@ -227,6 +264,18 @@ public final class GrowthService implements BattleGrowthPort {
                     + "】，已收入技能库（可在宝可梦详情界面更换出战技能）。");
         } else {
             log.add(p.getName() + " 记住了【" + move.getName() + "】！");
+        }
+    }
+
+    /**
+     * 补学「学招等级不高于当前等级但尚未学会」的技能：进化切换种族、学招数据调整、
+     * 旧存档重建等场景都可能留下等级已过而技能缺失的个体，升级结算时统一补齐。
+     */
+    private void learnOverdueMoves(Pokemon p, List<String> log) {
+        for (LearnableMove learnable : p.getSpecies().getLearnableMoves()) {
+            if (learnable.getLevel() <= p.getLevel()) {
+                learnMove(p, learnable.getMoveId(), log);
+            }
         }
     }
 
@@ -291,5 +340,10 @@ public final class GrowthService implements BattleGrowthPort {
     /** 捕捉成功的经验奖励：相当于击败该宝可梦的 {@value #CAPTURE_EXP_NUMERATOR}/{@value #CAPTURE_EXP_DENOMINATOR} 倍经验。 */
     private static int captureExpOf(Pokemon caught) {
         return expOf(caught) * CAPTURE_EXP_NUMERATOR / CAPTURE_EXP_DENOMINATOR;
+    }
+
+    /** 把段数经验倍率（1 + 0.4×段数）应用到经验数值上（未设置时分子分母均为 1，保持原值）。 */
+    private int applySegmentMultiplier(int exp) {
+        return exp * segmentExpNumerator / segmentExpDenominator;
     }
 }

@@ -587,4 +587,119 @@ class GrowthServiceTest {
         assertEquals(1, growth.getProgress().captureCount("bulbasaur"));
         assertEquals("bulbasaur", growth.getProgress().dexEntries().get(0).getSpeciesId());
     }
+
+    // ------------------------------------------------------------------
+    // 段数经验倍率：所有经验获取统一乘以 1 + 0.4×段数
+    // ------------------------------------------------------------------
+
+    /** 段数经验倍率作用于击倒经验：段 2 → (10 + 4×2)/10 = 1.8 倍。 */
+    @Test
+    void 段数倍率提升击倒经验() {
+        GrowthService growth = new GrowthService(new RecordingPort(), new GrowthProgress());
+        growth.setSegmentExpMultiplier(2);
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        Pokemon active = pokemon(mine, 1, SLAM);
+        // baseExp 70 × 7 ÷ 7 = 70 点，段 2 再乘 1.8 → 126 点
+        Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()),
+                7, SLAM);
+
+        BattleGrowthPort.Settlement settlement = growth.settle(List.of(active), List.of(foe));
+
+        assertEquals(5, active.getLevel(), "段 2 击倒经验应为 70 × 1.8 = 126（升到 5 级，不足升 6 级）");
+        assertTrue(settlement.log().contains(active.getName() + " 获得了 126 点经验！"),
+                "段倍率后的经验日志：" + settlement.log());
+    }
+
+    /** 段数经验倍率同样作用于捕捉经验。 */
+    @Test
+    void 段数倍率提升捕捉经验() {
+        GrowthService growth = new GrowthService(new RecordingPort(), new GrowthProgress());
+        growth.setSegmentExpMultiplier(2);
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        Pokemon active = pokemon(mine, 1, SLAM);
+        // 捕捉经验 70 × 1.8 = 126，段 2 再乘 1.8 → 226 点
+        Pokemon caught = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()), 7, SLAM);
+
+        BattleGrowthPort.Settlement settlement = growth.settleCapture(List.of(active), caught);
+
+        assertEquals(6, active.getLevel(), "段 2 捕捉经验应为 126 × 1.8 = 226（升到 6 级，不足升 7 级）");
+        assertTrue(settlement.log().contains(active.getName() + " 获得了 226 点经验！"),
+                "段倍率后的捕捉经验日志：" + settlement.log());
+    }
+
+    /** 段数小于 1 时倍率不生效（保持 1 倍），避免异常段号放大经验。 */
+    @Test
+    void 段数倍率在段数非法时保持一倍() {
+        GrowthService growth = new GrowthService(new RecordingPort(), new GrowthProgress());
+        growth.setSegmentExpMultiplier(0);
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        Pokemon active = pokemon(mine, 30, SLAM);
+        Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()),
+                7, SLAM);
+
+        BattleGrowthPort.Settlement settlement = growth.settle(List.of(active), List.of(foe));
+
+        assertTrue(settlement.log().contains(active.getName() + " 获得了 70 点经验！"),
+                "段数非法时经验应保持原值：" + settlement.log());
+    }
+
+    // ------------------------------------------------------------------
+    // 等级大于学招等级自动补学（学招数据调整 / 旧档缺口 / 进化切换种族）
+    // ------------------------------------------------------------------
+
+    /** 等级已超过学招等级的技能应在升级结算时自动补学（不因错过等级而永久缺失）。 */
+    @Test
+    void 等级超过学招等级的技能升级时自动补学() {
+        RecordingPort port = new RecordingPort();
+        port.moves.put("m_new", NEW_MOVE);
+        Move extra = new Move("m_extra", "补学招", ElementType.WATER, MoveCategory.SPECIAL, 40, 100, 20);
+        port.moves.put("m_extra", extra);
+        GrowthService growth = new GrowthService(port, new GrowthProgress());
+        // 学招表 3 级 / 8 级；精灵已是 5 级却只带初始一招（模拟缺技能的旧个体）
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0,
+                Map.of(3, "m_new", 8, "m_extra"));
+        Pokemon active = pokemon(mine, 5, SLAM);
+        // baseExp 236 × 28 ÷ 7 = 944 点：5 级升到 10 级（5~9 级每级需 91/127/169/217/271，累计 875 ≤ 944 < 1206）
+        Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 236, List.of("m_slam"), null, 0, Map.of()),
+                28, SLAM);
+
+        BattleGrowthPort.Settlement settlement = growth.settle(List.of(active), List.of(foe));
+
+        assertEquals(10, active.getLevel(), "944 点经验应把 5 级精灵升到 10 级");
+        assertTrue(active.knowsMove("m_new"), "3 级学招等级的技能应在升级后自动补学");
+        assertTrue(active.knowsMove("m_extra"), "8 级学招等级的技能应照常到级习得");
+        assertTrue(settlement.log().contains(active.getName() + " 记住了【补学招】！"),
+                "补学技能应输出日志：" + settlement.log());
+    }
+
+    /** 进化切换种族后，新种族「等级低于当前等级」的技能应自动补学。 */
+    @Test
+    void 进化后自动补学新种族的低等级技能() {
+        RecordingPort port = new RecordingPort();
+        Move m1 = new Move("m_b1", "甲招", ElementType.BUG, MoveCategory.PHYSICAL, 40, 100, 20);
+        Move m2 = new Move("m_b2", "乙招", ElementType.BUG, MoveCategory.SPECIAL, 50, 100, 15);
+        Move m3 = new Move("m_b3", "丙招", ElementType.FLYING, MoveCategory.SPECIAL, 60, 100, 10);
+        port.moves.put("m_b1", m1);
+        port.moves.put("m_b2", m2);
+        port.moves.put("m_b3", m3);
+        GrowthService growth = new GrowthService(port, new GrowthProgress());
+        // 进化形态学招表 1 / 5 / 12 级；前置形态 10 级进化且自身无学招表
+        Species evolved = species("sp_b", 50, List.of("m_slam"), null, 0,
+                Map.of(1, "m_b1", 5, "m_b2", 12, "m_b3"));
+        port.species.put("sp_b", evolved);
+        Species base = species("sp_a", 50, List.of("m_slam"), "sp_b", 10, Map.of());
+        Pokemon active = pokemon(base, 10, SLAM);
+        // 2 倍结算：944 × 2 = 1888 点，10 级升到 14 级（10~13 级每级需 331/397/469/547，累计 1744 ≤ 1888 < 2375）
+        Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 236, List.of("m_slam"), null, 0, Map.of()),
+                28, SLAM);
+
+        BattleGrowthPort.Settlement settlement = growth.settle(List.of(active), List.of(foe), 2, 1);
+
+        assertEquals("sp_b", active.getSpecies().getId(), "10 级精灵获得经验后应进化为目标形态");
+        assertTrue(active.knowsMove("m_b1"), "进化后应自动补学新种族 1 级技能");
+        assertTrue(active.knowsMove("m_b2"), "进化后应自动补学新种族 5 级技能");
+        assertTrue(active.knowsMove("m_b3"), "进化后应照常到级习得新种族 12 级技能");
+        assertTrue(settlement.log().stream().anyMatch(line -> line.contains("进化成了 sp_b！")),
+                "进化日志应输出：" + settlement.log());
+    }
 }
