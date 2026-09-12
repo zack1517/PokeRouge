@@ -1,0 +1,357 @@
+/*
+ * PokeRouge · 自定义战斗·队伍配置页样式（CustomBattleSetupView 专用）。
+ *
+ * 视觉体系与启动页 / 模式选择页（start-menu.css）一致：
+ * 宝可梦经典蓝黄 + 半透明白卡悬浮于背景图之上；卡片圆角、柔和投影、清晰层次。
+ * 尺寸约定：全部数值均为「设计画布 640×426.67」内的逻辑像素，由 UiScale 统一放大渲染。
+ *
+ * JavaFX CSS 备忘：多层背景「先写的在底层」；无 transition，位移动画由代码实现。
+ */
+
+/* ---------- 顶部标题卡：主标题醒目 + 副标题小字，形成信息层级 ---------- */
+.cbs-header {
+    -fx-background-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.88));
+    -fx-background-radius: 12;
+    -fx-border-color: rgba(18, 60, 99, 0.25);
+    -fx-border-radius: 12;
+    -fx-border-width: 1;
+    -fx-padding: 7 14 8 14;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 10, 0.05, 0, 3);
+}
+
+.cbs-title {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 19px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+}
+
+.cbs-hint {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 10px;
+    -fx-text-fill: #44607e;
+}
+
+/* ---------- 左右两栏：半透明白卡面板 ---------- */
+.cbs-panel {
+    -fx-background-color: rgba(255, 255, 255, 0.80);
+    -fx-background-radius: 12;
+    -fx-border-color: rgba(18, 60, 99, 0.18);
+    -fx-border-radius: 12;
+    -fx-border-width: 1;
+    -fx-padding: 8 10 9 10;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.28), 9, 0.04, 0, 3);
+}
+
+.cbs-panel-title {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 12.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+}
+
+/* 标题左侧黄色小色条（游戏菜单感的装饰标记） */
+.cbs-accent {
+    -fx-background-color: linear-gradient(to bottom, #ffcb05, #eea800);
+    -fx-background-radius: 999;
+}
+
+/* ---------- 左侧候选列表：去默认白底，条目呈现为迷你卡片 ---------- */
+.cbs-list {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-control-inner-background: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 1 2;
+}
+
+.cbs-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-background-radius: 9;
+    -fx-border-color: transparent;
+    -fx-border-radius: 9;
+    -fx-border-width: 1.2;
+    -fx-padding: 3 6;
+}
+
+/* 悬停 / 键盘焦点：浅蓝底（覆盖 modena 默认焦点高亮） */
+.cbs-list .list-cell:filled:hover,
+.cbs-list .list-cell:filled:focused {
+    -fx-background-color: rgba(214, 233, 249, 0.60);
+}
+
+/* 选中：浅黄底 + 黄描边 + 柔光晕（规则靠后，悬停 / 焦点态不得覆盖） */
+.cbs-list .list-cell:filled:selected,
+.cbs-list .list-cell:filled:focused:selected {
+    -fx-background-color: linear-gradient(to right, rgba(255, 240, 190, 0.90), rgba(255, 249, 224, 0.90));
+    -fx-border-color: #ffcb05;
+    -fx-effect: dropshadow(gaussian, rgba(255, 203, 5, 0.40), 7, 0.06, 0, 1);
+}
+
+/* 控件本身聚焦时保持透明（背景图透出） */
+.cbs-list:focused {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+}
+
+/* 细滚动条（浅色轨道 + 深蓝拇指），避免默认灰色滚动条破坏浅色面板 */
+.cbs-list .scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 8;
+    -fx-padding: 0 1;
+}
+
+.cbs-list .scroll-bar:vertical .track,
+.cbs-list .scroll-bar:vertical .track-background {
+    -fx-background-color: transparent;
+}
+
+.cbs-list .scroll-bar:vertical .thumb {
+    -fx-background-color: rgba(18, 60, 99, 0.25);
+    -fx-background-radius: 999;
+}
+
+.cbs-list .scroll-bar:vertical .thumb:hover {
+    -fx-background-color: rgba(18, 60, 99, 0.45);
+}
+
+.cbs-list .scroll-bar .increment-button,
+.cbs-list .scroll-bar .decrement-button {
+    -fx-padding: 0;
+    -fx-opacity: 0;
+}
+
+/* ---------- 候选条目内部元素 ---------- */
+.cbs-cell-icon {
+    -fx-background-color: radial-gradient(center 50% 45%, radius 72%, rgba(255, 255, 255, 0.95), rgba(206, 228, 247, 0.90));
+    -fx-background-radius: 999;
+    -fx-border-color: rgba(18, 60, 99, 0.16);
+    -fx-border-radius: 999;
+    -fx-border-width: 1;
+}
+
+.cbs-cell-name {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #22354a;
+}
+
+.cbs-cell-sub {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 8.5px;
+    -fx-text-fill: rgba(90, 112, 134, 0.95);
+}
+
+.cbs-cell-bst {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 8.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1c5a94;
+    -fx-background-color: rgba(42, 117, 187, 0.13);
+    -fx-background-radius: 999;
+    -fx-padding: 1 6;
+}
+
+.cbs-cell-noicon {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: rgba(18, 60, 99, 0.45);
+}
+
+/* ---------- 右侧队伍网格与卡槽 ---------- */
+.cbs-party-grid {
+    -fx-background-color: transparent;
+}
+
+/* 成员卡：白卡 + 圆角 + 柔影；悬停亮蓝描边，选中黄描边 + 浅黄底 + 光晕 */
+.cbs-slot {
+    -fx-background-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.97), rgba(244, 248, 252, 0.93));
+    -fx-background-radius: 11;
+    -fx-border-color: rgba(18, 60, 99, 0.22);
+    -fx-border-radius: 11;
+    -fx-border-width: 1.2;
+    -fx-padding: 5 8;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.22), 6, 0.04, 0, 2);
+}
+
+.cbs-slot:hover {
+    -fx-border-color: #2a75bb;
+    -fx-effect: dropshadow(gaussian, rgba(42, 117, 187, 0.35), 9, 0.06, 0, 2);
+}
+
+.cbs-slot-selected {
+    -fx-background-color: linear-gradient(to bottom, rgba(255, 248, 220, 0.98), rgba(255, 240, 185, 0.95));
+    -fx-border-color: #ffcb05;
+    -fx-border-width: 2;
+    -fx-effect: dropshadow(gaussian, rgba(255, 203, 5, 0.55), 11, 0.12, 0, 2);
+}
+
+/* 空卡槽：虚线框 + 弱化底，避免大面积纯白空白 */
+.cbs-slot-empty {
+    -fx-background-color: rgba(255, 255, 255, 0.38);
+    -fx-background-radius: 11;
+    -fx-border-color: rgba(18, 60, 99, 0.30);
+    -fx-border-radius: 11;
+    -fx-border-width: 1.2;
+    -fx-border-style: segments(5, 4) line-cap round;
+}
+
+.cbs-slot-empty-hint {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 9px;
+    -fx-text-fill: rgba(80, 104, 128, 0.95);
+}
+
+.cbs-slot-plus {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: rgba(37, 90, 140, 0.32);
+}
+
+/* 精灵图圆底（浅蓝渐变，如迷你底座） */
+.cbs-slot-sprite {
+    -fx-background-color: radial-gradient(center 50% 45%, radius 72%, rgba(255, 255, 255, 0.98), rgba(203, 226, 246, 0.92));
+    -fx-background-radius: 999;
+    -fx-border-color: rgba(18, 60, 99, 0.20);
+    -fx-border-radius: 999;
+    -fx-border-width: 1;
+}
+
+.cbs-slot-noicon {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: rgba(18, 60, 99, 0.45);
+}
+
+.cbs-slot-name {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #22354a;
+}
+
+.cbs-slot-sub {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 8px;
+    -fx-text-fill: rgba(90, 112, 134, 0.95);
+}
+
+/* 「★ 首发」徽章：黄色小胶囊（全页唯一强调色，一眼识别首发） */
+.cbs-slot-badge {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 7.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #5c4600;
+    -fx-background-color: linear-gradient(to bottom, #ffd83d, #f0b000);
+    -fx-background-radius: 999;
+    -fx-padding: 1 5;
+    -fx-effect: dropshadow(gaussian, rgba(240, 176, 0, 0.45), 4, 0.05, 0, 1);
+}
+
+/* ---------- 按钮：白底胶囊（次级）/ 蓝色实心（操作）/ 黄色大胶囊（主行动） ---------- */
+.cbs-btn {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+    -fx-background-color: #123c63, rgba(255, 255, 255, 0.94);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 999, 997.5;
+    -fx-padding: 5 12;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.30), 6, 0.05, 0, 2);
+    /* 屏蔽 modena 默认聚焦环（本项目全自定义背景） */
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.cbs-btn:hover {
+    -fx-background-color: #2a75bb, rgba(255, 255, 255, 1.0);
+}
+
+.cbs-btn:pressed {
+    -fx-background-insets: 1.5, 2.6;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.22), 3, 0.03, 0, 1);
+}
+
+.cbs-btn:disabled,
+.cbs-btn:disabled > * {
+    -fx-opacity: 1; /* 覆盖 modena 0.4 透明度，用实色灰化 */
+}
+
+.cbs-btn:disabled {
+    -fx-background-color: #7d8794, linear-gradient(to bottom, #efefef, #d8d8d8);
+    -fx-text-fill: #7d8794;
+    -fx-cursor: default;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.15), 4, 0.03, 0, 1);
+}
+
+/* 加入队伍：蓝色实心胶囊（操作按钮，次于黄色主按钮） */
+.cbs-btn-blue {
+    -fx-text-fill: white;
+    -fx-background-color: #123c63, linear-gradient(to bottom, #3f8ccc, #1c5a94);
+}
+
+.cbs-btn-blue:hover {
+    -fx-background-color: #123c63, linear-gradient(to bottom, #58a0dc, #2470b5);
+}
+
+.cbs-btn-blue:disabled {
+    -fx-background-color: #7d8794, linear-gradient(to bottom, #efefef, #d8d8d8);
+    -fx-text-fill: #7d8794;
+}
+
+/* 开始战斗：全页最重要的黄色大胶囊（白圈 → 深蓝描边 → 黄→金渐变芯 + 光晕） */
+.cbs-btn-start {
+    -fx-font-size: 14px;
+    -fx-text-fill: #123c63;
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #123c63,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.92) 0%,
+            #ffcb05 18%,
+            #eea800 78%,
+            #ffcb05 100%);
+    -fx-background-insets: 0, 2, 4.5;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-padding: 8 26;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 12, 0.08, 0, 4);
+}
+
+.cbs-btn-start:hover {
+    -fx-background-color:
+        rgba(255, 255, 255, 1.0),
+        #2a75bb,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.95) 0%,
+            #ffd83d 18%,
+            #f0b000 78%,
+            #ffd83d 100%);
+    -fx-effect: dropshadow(gaussian, rgba(255, 203, 5, 0.55), 15, 0.15, 0, 3);
+}
+
+.cbs-btn-start:pressed {
+    -fx-background-insets: 1, 2.6, 5;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 6, 0.05, 0, 2);
+}
+
+.cbs-btn-start:disabled,
+.cbs-btn-start:disabled > * {
+    -fx-opacity: 1;
+}
+
+.cbs-btn-start:disabled {
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #7d8794,
+        linear-gradient(to bottom, #efefef 0%, #d8d8d8 78%, #e4e4e4 100%);
+    -fx-text-fill: #7d8794;
+    -fx-cursor: default;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.18), 5, 0.04, 0, 2);
+}

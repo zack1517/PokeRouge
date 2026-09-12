@@ -110,6 +110,10 @@ public class BattleConsole {
             if (!b.isOngoing()) {
                 break;
             }
+            if (b.isAwaitingReplacement()) {
+                doReplacement(b); // 出战精灵倒下：必须先选出下一只才能继续
+                continue;
+            }
             render(b);
             takeAction(b);
         }
@@ -258,6 +262,26 @@ public class BattleConsole {
         }
         printLogs(b.useItem(chosen, target));
         return true;
+    }
+
+    /** 补位子菜单：己方出战精灵倒下后强制选出下一只上场精灵（不消耗回合）。 */
+    static void doReplacement(BattleService b) {
+        List<Pokemon> party = b.getPlayer().getParty();
+        System.out.println("── 请选择接下来上场的精灵 ──────────────");
+        for (int i = 0; i < party.size(); i++) {
+            Pokemon p = party.get(i);
+            String tag = p.isFainted() ? "(倒下)" : "";
+            System.out.printf("  [%d] %-8s Lv%d  HP %d/%d  %s%n",
+                    i + 1, p.getName(), p.getLevel(), p.getCurrentHp(), p.getMaxHp(), tag);
+        }
+        System.out.print("  输入编号上场 > ");
+        int idx;
+        try {
+            idx = Integer.parseInt(read().trim()) - 1;
+        } catch (NumberFormatException e) {
+            return; // 输入非法：重新提示（战斗仍处于等待补位状态）
+        }
+        printLogs(b.chooseReplacement(idx)); // 引擎自行校验下标/倒下，非法时保持等待状态
     }
 
     /** 换宠子菜单：选目标精灵切换。不消耗回合时返回继续主菜单。 */

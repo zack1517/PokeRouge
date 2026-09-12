@@ -45,6 +45,7 @@ import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
 import org.example.model.MoveSlot;
 import org.example.model.Pokemon;
+import org.example.model.Stat;
 import org.example.model.Stats;
 import org.example.model.StatusCondition;
 import org.example.model.Terrain;
@@ -93,6 +94,9 @@ public class BattleView {
         /** 切换到队伍中第 partyIndex 只精灵（消耗本回合行动）。 */
         void onSwitchSelected(int partyIndex);
 
+        /** 己方出战精灵倒下后选择第 partyIndex 只精灵补位上场（不消耗回合）。 */
+        void onReplacementSelected(int partyIndex);
+
         /** 逃跑。 */
         void onRun();
 
@@ -137,6 +141,7 @@ public class BattleView {
     private final ProgressBar wildHpBar = new ProgressBar();
     private final Label wildHpText = new Label();
     private final Label wildStatus = new Label(); // 异常状态徽章（无异常时隐藏）
+    private final Label wildStages = new Label(); // 能力等级徽章（全部中立时隐藏）
 
     // ---- 己方信息（右下卡片，样式与敌方卡一致） ----
     private final Label playerName = new Label("--");
@@ -145,6 +150,7 @@ public class BattleView {
     private final ProgressBar playerHpBar = new ProgressBar();
     private final Label playerHpText = new Label();
     private final Label playerStatus = new Label(); // 异常状态徽章（无异常时隐藏）
+    private final Label playerStages = new Label(); // 能力等级徽章（全部中立时隐藏）
 
     // ---- 右上角信息块：地图阶段 / 金币（数据来自流程系统，TODO(dev) 接入前为桩文本） ----
     private final Label stageLabel = new Label("第 1 段 · 野外遭遇");
@@ -261,12 +267,12 @@ public class BattleView {
 
     /** 敌信息卡（左上；圆角 / 阴影朝左上，见 {@link #buildStatCard}）。 */
     private VBox buildEnemyCard() {
-        return buildStatCard(wildName, wildTypeBox, wildLv, wildHpBar, wildHpText, wildStatus, true);
+        return buildStatCard(wildName, wildTypeBox, wildLv, wildHpBar, wildHpText, wildStatus, wildStages, true);
     }
 
     /** 中部区域：中央留空展示主背景（立绘悬浮其上，见 {@link #buildSpriteLayer()}）；右下角己方信息卡。 */
     private Parent buildCenter() {
-        VBox card = buildStatCard(playerName, playerTypeBox, playerLv, playerHpBar, playerHpText, playerStatus, false);
+        VBox card = buildStatCard(playerName, playerTypeBox, playerLv, playerHpBar, playerHpText, playerStatus, playerStages, false);
         // 关键：center 是 StackPane，默认会把卡片拉高到与中部区域同高；宽高都限定为内容自然尺寸，再以 BOTTOM_RIGHT 归位到右下。
         card.setMaxHeight(Region.USE_PREF_SIZE);
         card.setMaxWidth(Region.USE_PREF_SIZE);
@@ -340,10 +346,10 @@ public class BattleView {
 
     /**
      * 双方同款信息卡：上行 名称/属性徽章组（多属性时每枚属性独立徽章，内容随 {@link #refreshTypeBadges} 重建）/等级，
-     * 下行 HP 条与数值，再下行异常状态徽章（无异常时整行隐藏，卡高自动回落）。
+     * 下行 HP 条与数值，再下行状态徽章与能力等级徽章（无内容时整行隐藏，卡高自动回落）。
      */
     private VBox buildStatCard(Label name, HBox typeBox, Label lv,
-                               ProgressBar hpBar, Label hpText, Label status, boolean enemy) {
+                               ProgressBar hpBar, Label hpText, Label status, Label stages, boolean enemy) {
         VBox card = battleCard(enemy);
         HBox line1 = new HBox(6);
         line1.setAlignment(Pos.CENTER_LEFT);
@@ -363,19 +369,32 @@ public class BattleView {
         status.setManaged(false);
         status.setVisible(false);
 
-        card.getChildren().addAll(line1, line2, status);
+        stages.setStyle(statStageChip());
+        stages.setWrapText(true); // 多项能力同时变化时换行，避免撑宽信息卡
+        stages.setManaged(false);
+        stages.setVisible(false);
+
+        card.getChildren().addAll(line1, line2, status, stages);
         return card;
     }
 
-    /** 异常状态徽章样式（橙底深字，与属性徽章区分）。 */
+    /** 状态徽章样式（橙底深字，与属性徽章区分）。 */
     private static String statusChip() {
         return YH + "-fx-background-color: #ffe6c7; -fx-background-radius: 4;"
                 + "-fx-padding: 1 8; -fx-font-size: 12px; -fx-text-fill: #a35200;"
                 + "-fx-font-weight: bold;";
     }
 
+    /** 能力等级徽章样式（蓝底深字，与异常状态的橙底区分）。 */
+    private static String statStageChip() {
+        return YH + "-fx-background-color: #dbe8ff; -fx-background-radius: 4;"
+                + "-fx-padding: 1 8; -fx-font-size: 12px; -fx-text-fill: #1c4b9c;"
+                + "-fx-font-weight: bold;";
+    }
+
     /**
-     * 异常状态徽章文案：倒下 &gt; 主要异常 &gt; 混乱（两者可同时显示，用空格连接）；无异常返回空串。
+     * 状态徽章文案：倒下 &gt; 守住 &gt; 寄生种子 &gt; 主要异常 &gt; 混乱（多项可同时显示，用空格连接）；
+     * 无任何状态返回空串。
      */
     private static String statusBadgeText(Pokemon p) {
         if (p == null) {
@@ -385,21 +404,63 @@ public class BattleView {
             return "已倒下";
         }
         StringBuilder sb = new StringBuilder();
+        if (p.isProtected()) {
+            sb.append("守住");
+        }
+        if (p.isSeeded()) {
+            appendBadgeToken(sb, "寄生种子");
+        }
         if (p.getStatus() != StatusCondition.NONE) {
-            sb.append(p.getStatus().getDisplayName());
+            appendBadgeToken(sb, p.getStatus().getDisplayName());
         }
         if (p.isConfused()) {
-            if (sb.length() > 0) {
-                sb.append(' ');
-            }
-            sb.append(StatusCondition.CONFUSION.getDisplayName());
+            appendBadgeToken(sb, StatusCondition.CONFUSION.getDisplayName());
         }
         return sb.toString();
     }
 
-    /** 把异常状态徽章刷到标签：无异常时隐藏并让出布局空间。 */
+    /** 追加一个用空格分隔的徽章词条。 */
+    private static void appendBadgeToken(StringBuilder sb, String token) {
+        if (sb.length() > 0) {
+            sb.append(' ');
+        }
+        sb.append(token);
+    }
+
+    /**
+     * 能力等级徽章文案：按 物攻/物防/特攻/特防/速度 顺序列出所有非中立等级，
+     * 形如 {@code 物攻↑1 速度↓2}；全部中立（含精灵为空/倒下）返回空串。
+     */
+    private static String statStageBadgeText(Pokemon p) {
+        if (p == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Stat stat : Stat.values()) {
+            int stage = p.getStatStage(stat);
+            if (stage == 0) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(stat.getDisplayName()).append(stage > 0 ? '↑' : '↓').append(Math.abs(stage));
+        }
+        return sb.toString();
+    }
+
+    /** 把状态徽章刷到标签：无任何状态时隐藏并让出布局空间。 */
     private static void applyStatusBadge(Label target, Pokemon p) {
         String text = statusBadgeText(p);
+        target.setText(text);
+        boolean visible = !text.isEmpty();
+        target.setManaged(visible);
+        target.setVisible(visible);
+    }
+
+    /** 把能力等级徽章刷到标签：全部中立时隐藏并让出布局空间。 */
+    private static void applyStatStageBadge(Label target, Pokemon p) {
+        String text = statStageBadgeText(p);
         target.setText(text);
         boolean visible = !text.isEmpty();
         target.setManaged(visible);
@@ -600,6 +661,7 @@ public class BattleView {
         playerLv.setText("Lv." + player.getLevel());
         refreshHp(playerHpBar, playerHpText, player);
         applyStatusBadge(playerStatus, player);
+        applyStatStageBadge(playerStages, player);
         applySprite(playerSprite, playerSpriteFallback, player);
 
         wildName.setText(wild.getName());
@@ -607,6 +669,7 @@ public class BattleView {
         wildLv.setText("Lv." + wild.getLevel());
         refreshHp(wildHpBar, wildHpText, wild);
         applyStatusBadge(wildStatus, wild);
+        applyStatStageBadge(wildStages, wild);
         applySprite(enemySprite, enemySpriteFallback, wild);
     }
 
@@ -815,8 +878,9 @@ public class BattleView {
     }
 
     /**
-     * 效果行文案：天气/场地类技能显示开启目标；附带异常状态的技能显示「可能使目标陷入X」
-     * （必定触发时显示「使目标陷入X」）；无效果返回空串（调用方隐藏该行）。
+     * 效果行文案：天气/场地类技能显示开启目标，专属效果（守住/寄生种子/睡觉）显示效果说明；
+     * 附带异常状态的技能显示「可能使目标陷入X」（必定触发时显示「使目标陷入X」）；
+     * 无效果返回空串（调用方隐藏该行）。
      */
     private static String moveEffectText(Move move) {
         String status = inflictionText(move);
@@ -824,14 +888,19 @@ public class BattleView {
         if (effect == MoveEffect.NONE) {
             return status;
         }
-        String fieldText;
-        Weather weather = effect.toWeather();
-        if (weather != null) {
-            fieldText = "效果：开启" + weather.getDisplayName();
-        } else {
-            Terrain terrain = effect.toTerrain();
-            fieldText = terrain != null ? "效果：开启" + terrain.getDisplayName() : "效果：附加";
-        }
+        String fieldText = switch (effect) {
+            case PROTECT -> "效果：本回合挡下对方的一切招式";
+            case LEECH_SEED -> "效果：每回合吸取目标最大 HP 的 1/8";
+            case REST -> "效果：回满 HP 并睡眠 2 回合";
+            default -> {
+                Weather weather = effect.toWeather();
+                if (weather != null) {
+                    yield "效果：开启" + weather.getDisplayName();
+                }
+                Terrain terrain = effect.toTerrain();
+                yield terrain != null ? "效果：开启" + terrain.getDisplayName() : "效果：附加";
+            }
+        };
         return status.isEmpty() ? fieldText : fieldText + "\n" + status;
     }
 
@@ -966,6 +1035,20 @@ public class BattleView {
     }
 
     /**
+     * 补位选择面板（己方出战精灵倒下后强制弹出）：与精灵面板同构，但没有「返回」按钮 ——
+     * 必须选出一只健康精灵才能继续战斗（倒下的精灵与已倒下的出战位灰显不可点）。
+     *
+     * @param party       玩家队伍
+     * @param activeIndex 刚倒下的出战精灵下标（灰格呈现）
+     * @param onPick      选中替补时的回调（参数为队伍下标）
+     */
+    public void showReplacementMenu(List<Pokemon> party, int activeIndex, IntConsumer onPick) {
+        renderPartyGrid(party, activeIndex,
+                idx -> !party.get(idx).isFainted() && idx != activeIndex, // 可点：健康且非当前出战
+                onPick, null, "请选择接下来上场的精灵！", "返回"); // onBack=null：不显示「返回」按钮
+    }
+
+    /**
      * 目标选择面板（背包用药后）：与精灵面板同构的 3×2 六格，格子可否点击由 {@code selectable} 决定
      * （如伤药只能选未满血且未倒下的精灵），不可选格仅不可点击、仍可悬停查看详情（格色不随可选性变化，恒为三色：黄=当前出战 / 蓝=在队 / 灰=倒下）。
      * 点中合法目标即回调其队伍下标（由控制器转交 {@code useItem(item, partyIndex)}）。
@@ -983,22 +1066,19 @@ public class BattleView {
     }
 
     /**
-     * 队伍六格面板通用渲染（精灵面板 / 道具目标面板 / 放生面板共用）：
+     * 队伍六格面板通用渲染（精灵面板 / 道具目标面板 / 放生面板 / 补位面板共用）：
      * 左块 [状态行 + 3×2 固定六格]（有提示文案时提示顶替场况文本显示在状态行内），右块精灵信息卡（悬停联动）。
      * 格色统一三色（2026-09-12 问题4）：黄=当前出战 / 蓝=其余在队 / 灰=倒下；{@code selectable} 只决定点击行为，不影响配色。
      *
      * @param selectable 某下标是否可点击选中
+     * @param onBack     返回回调；为 {@code null} 时不显示「返回」按钮（补位面板等不可返回的场景）
      * @param backText   返回按钮文案（精灵/目标面板为「返回」，放生面板为「放弃捕捉」）
      */
     private void renderPartyGrid(List<Pokemon> party, int activeIndex,
                                  IntPredicate selectable,
                                  IntConsumer onPick, Runnable onBack, String hint, String backText) {
         leftPanel.setStyle("");
-        Button back = compactButton(backText);
-        back.setOnAction(e -> onBack.run());
-        Region gap = new Region();
-        HBox.setHgrow(gap, Priority.ALWAYS);
-        // 底栏收窄至 1/4 后纵向仅余 ≈99：有提示文案时（道具目标选择）提示顶替场况文本
+        // 底栏收窄至 1/4 后纵向仅余 ≈99：有提示文案时（道具目标选择/补位选择）提示顶替场况文本
         // 显示在同一状态行内，不再另起一行，保证 3×2 格 + 状态行放得下
         Label headLabel = fieldStatus;
         if (hint != null && !hint.isEmpty()) {
@@ -1006,7 +1086,17 @@ public class BattleView {
             headLabel.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #2f5d9e;");
             headLabel.setMaxWidth(HINT_MAX_WIDTH); // 限宽：长提示不得撑宽左块（右卡已钉 235，此处防提示自身撑破 616 预算）
         }
-        HBox statusRow = new HBox(8, headLabel, gap, back);
+        HBox statusRow;
+        if (onBack == null) {
+            // 补位面板：必须选出替补才能继续战斗，不显示「返回」按钮
+            statusRow = new HBox(8, headLabel);
+        } else {
+            Button back = compactButton(backText);
+            back.setOnAction(e -> onBack.run());
+            Region gap = new Region();
+            HBox.setHgrow(gap, Priority.ALWAYS);
+            statusRow = new HBox(8, headLabel, gap, back);
+        }
         statusRow.setAlignment(Pos.CENTER_LEFT);
 
         // 3×2 固定六格（行优先）；列距 13 使三列网格恰填满左块（115×3+13×2=371）
@@ -1241,6 +1331,10 @@ public class BattleView {
      *
      * <p>事件为空时立即回调；单步动画被跳过（无立绘）时该步耗时为零。播放前后各复位一次立绘变换与特效层，
      * 保证上一段演出的残留位移/缩放不会叠加到下一段。</p>
+     *
+     * <p>每一步动画开始前先按事件携带的 HP 快照刷新对应一方的血条（见 {@link #applyEventHp}），
+     * 因此「一方出手 → 对方扣血并抖动 → 另一方出手 → 这边扣血并抖动」按事件顺序逐步呈现，
+     * 不会等双方都演完才结算血量。</p>
      */
     public void playEvents(List<BattleEvent> events, Runnable onFinished) {
         resetPerformance();
@@ -1257,14 +1351,59 @@ public class BattleView {
         Runnable next = () -> playAt(events, index + 1, onFinished);
         switch (event.kind()) {
             case BATTLE_START -> playEntrance(next);
-            case SEND_OUT -> playSendOut(event.side(), event.actor(), next);
+            case SEND_OUT -> {
+                applyEventHp(event);
+                playSendOut(event.side(), event.actor(), next);
+            }
             case RECALL -> playRecall(event.side(), event.actor(), next);
             case MOVE -> playMoveCast(event.side(), event.element(), event.category(), next);
-            case HIT -> playHit(event.side(), event.element(), next);
-            case FAINT -> playFaint(event.side(), event.actor(), next);
+            case HIT -> {
+                applyEventHp(event);
+                playHit(event.side(), event.element(), next);
+            }
+            case FAINT -> {
+                applyEventHp(event);
+                playFaint(event.side(), event.actor(), next);
+            }
             case CAPTURE -> playCapture(event.success(), next);
-            case ITEM -> playItem(next);
+            case ITEM -> {
+                applyEventHp(event);
+                playItem(next);
+            }
             case RUN -> playRun(event.success(), next);
+        }
+    }
+
+    /**
+     * 播放该步动画前先把受影响一方的血条刷成事件携带的 HP 快照，实现「招式命中先扣血、再播受击动画」。
+     *
+     * <p>{@link BattleEvent.Kind#HIT} / {@link BattleEvent.Kind#FAINT} 的 {@code actor} 是精灵名：
+     * 仅当状态卡片当前显示的正是这只精灵时才刷新，避免把已倒下精灵的 HP 写到刚换上场的新精灵身上。
+     * {@link BattleEvent.Kind#SEND_OUT} 是新精灵上场，名字与血条一起切换；
+     * {@link BattleEvent.Kind#ITEM} 的 {@code actor} 是道具名、携带的恒为场上精灵的 HP，故不比对名字。
+     * 快照缺失（{@link BattleEvent.Hp#present()} 为 {@code false}）时不动血条。</p>
+     */
+    private void applyEventHp(BattleEvent event) {
+        BattleEvent.Hp hp = event.hp();
+        if (event.side() == null || hp == null || !hp.present()) {
+            return;
+        }
+        boolean playerSide = event.side() == BattleEvent.Side.PLAYER;
+        Label name = playerSide ? playerName : wildName;
+        ProgressBar bar = playerSide ? playerHpBar : wildHpBar;
+        Label text = playerSide ? playerHpText : wildHpText;
+        switch (event.kind()) {
+            case ITEM -> refreshHp(bar, text, hp);
+            case SEND_OUT -> {
+                // 新精灵上场：等级/属性等文案留到本轮演出结束后由 refreshPokemon 统一刷新
+                name.setText(event.actor());
+                refreshHp(bar, text, hp);
+            }
+            default -> {
+                if (name.getText().equals(event.actor())) {
+                    refreshHp(bar, text, hp);
+                }
+            }
         }
     }
 
@@ -1699,9 +1838,18 @@ public class BattleView {
     }
 
     private static void refreshHp(ProgressBar bar, Label text, Pokemon p) {
-        double ratio = p.getMaxHp() <= 0 ? 0 : (double) p.getCurrentHp() / p.getMaxHp();
+        refreshHp(bar, text, p.getCurrentHp(), p.getMaxHp());
+    }
+
+    /** 按事件携带的 HP 快照刷新血条（演出过程中使用，不重建状态卡片）。 */
+    private static void refreshHp(ProgressBar bar, Label text, BattleEvent.Hp hp) {
+        refreshHp(bar, text, hp.current(), hp.max());
+    }
+
+    private static void refreshHp(ProgressBar bar, Label text, int current, int max) {
+        double ratio = max <= 0 ? 0 : (double) current / max;
         bar.setProgress(Math.max(0, ratio));
-        text.setText("HP " + p.getCurrentHp() + " / " + p.getMaxHp());
+        text.setText("HP " + current + " / " + max);
         String color;
         // react HP 条：>50% 绿、>20% 黄、其余红，均为渐变填充（棕底 track 见 /css/battle.css）
         if (ratio > 0.5) {

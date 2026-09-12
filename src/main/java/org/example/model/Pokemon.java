@@ -2,7 +2,9 @@ package org.example.model;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -56,6 +58,20 @@ public class Pokemon {
      * 同一件装备同时只能被一只精灵持有，穿戴唯一性由 {@link Player#equip} 保证。</p>
      */
     private HeldItem heldItem;
+    /**
+     * 能力等级（-6 ~ +6），由战斗引擎按 {@link StatChange} 施加。
+     * <p>这是<b>挥发性</b>状态：离场（换宠、倒下）或战斗开始即清零，因此不写入存档，
+     * {@link #restore} 恢复的个体一律从中立等级开始。</p>
+     */
+    private final Map<Stat, Integer> statStages = new EnumMap<>(Stat.class);
+    /**
+     * 本回合是否受「守住」保护（挥发性：回合结束或离场即失效）。
+     */
+    private boolean protectedThisTurn;
+    /** 连续使用「守住」的次数（改用其他招式即归零），决定成功率递减幅度。 */
+    private int protectStreak;
+    /** 是否被「寄生种子」寄生（挥发性：离场即清除）。 */
+    private boolean seeded;
 
     private Pokemon(Species species, int level, Stats stats, Stats ivs, int maxHp, List<MoveSlot> slots) {
         this.uuid = UUID.randomUUID().toString();
@@ -325,14 +341,127 @@ public class Pokemon {
         return confusionTurns <= 0;
     }
 
-    /** 计入异常状态后的实际速度（麻痹减半，最低 1）。 */
+    /** 计入能力等级与异常状态后的实际速度（麻痹减半，最低 1）。 */
     public int effectiveSpeed() {
-        return Math.max(1, (int) Math.round(stats.getSpeed() * status.speedMultiplier()));
+        return applyModifiers(stats.getSpeed(), Stat.SPEED, status.speedMultiplier());
     }
 
-    /** 计入异常状态后的实际物理攻击（灼伤减半，最低 1）。 */
+    /** 计入能力等级与异常状态后的实际物理攻击（灼伤减半，最低 1）。 */
     public int effectiveAttack() {
-        return Math.max(1, (int) Math.round(stats.getAttack() * status.attackMultiplier()));
+        return applyModifiers(stats.getAttack(), Stat.ATTACK, status.attackMultiplier());
+    }
+
+    /** 计入能力等级后的实际物理防御（最低 1）。 */
+    public int effectiveDefense() {
+        return applyModifiers(stats.getDefense(), Stat.DEFENSE, 1.0);
+    }
+
+    /** 计入能力等级后的实际特殊攻击（最低 1）。 */
+    public int effectiveSpAttack() {
+        return applyModifiers(stats.getSpAttack(), Stat.SP_ATTACK, 1.0);
+    }
+
+    /** 计入能力等级后的实际特殊防御（最低 1）。 */
+    public int effectiveSpDefense() {
+        return applyModifiers(stats.getSpDefense(), Stat.SP_DEFENSE, 1.0);
+    }
+
+    /** 能力等级的最大值。 */
+    public static final int MAX_STAT_STAGE = 6;
+
+    /** 能力等级的最小值。 */
+    public static final int MIN_STAT_STAGE = -6;
+
+    /**
+     * 计算某项能力的实际数值：{@code 面板值 × 能力等级倍率 × 异常状态倍率}，下限 1。
+     *
+     * @param base           面板值（{@link #getStats()} 中的对应项）
+     * @param stat           能力项（决定能力等级倍率）
+     * @param statusMultiplier 异常状态倍率（无影响为 {@code 1.0}）
+     */
+    private int applyModifiers(int base, Stat stat, double statusMultiplier) {
+        double value = base * stageMultiplier(getStatStage(stat)) * statusMultiplier;
+        return Math.max(1, (int) Math.round(value));
+    }
+
+    /**
+     * 能力等级 {@code -6 ~ +6} 对应的数值倍率：正等级为 {@code (2 + n) / 2}，
+     * 负等级为 {@code 2 / (2 - n)}（即 0 级 1.0、+2 级 2.0、-2 级 0.5，与正作一致）。
+     */
+    public static double stageMultiplier(int stage) {
+        int clamped = Math.max(MIN_STAT_STAGE, Math.min(MAX_STAT_STAGE, stage));
+        return clamped >= 0 ? (2.0 + clamped) / 2.0 : 2.0 / (2.0 - clamped);
+    }
+
+    /** 当前能力等级（未变化为 0）。 */
+    public int getStatStage(Stat stat) {
+        return stat == null ? 0 : statStages.getOrDefault(stat, 0);
+    }
+
+    /**
+     * 增减能力等级，结果裁剪到 {@code [-6, +6]}。
+     *
+     * @return 本次<b>实际</b>变化量（已受上下限裁剪；例如已 +6 时再 +1 返回 0）
+     */
+    public int changeStatStage(Stat stat, int delta) {
+        if (stat == null || delta == 0) {
+            return 0;
+        }
+        int before = getStatStage(stat);
+        int after = Math.max(MIN_STAT_STAGE, Math.min(MAX_STAT_STAGE, before + delta));
+        statStages.put(stat, after);
+        return after - before;
+    }
+
+    /** 是否所有能力等级均为 0（中立）。 */
+    public boolean hasNoStatStages() {
+        return statStages.isEmpty();
+    }
+
+    /** 清空全部能力等级（离场/倒下/战斗开始时调用）。 */
+    public void clearStatStages() {
+        statStages.clear();
+    }
+
+    /** 本回合是否受「守住」保护（挥发性：回合结束或离场即失效）。 */
+    public boolean isProtected() {
+        return protectedThisTurn;
+    }
+
+    /** 设置本回合的「守住」保护（回合末由战斗引擎统一清除）。 */
+    public void setProtected(boolean value) {
+        protectedThisTurn = value;
+    }
+
+    /** 连续使用「守住」的次数（改用其他招式或离场即归零）。 */
+    public int getProtectStreak() {
+        return protectStreak;
+    }
+
+    /** 记录连续使用「守住」的次数（负数视为 0）。 */
+    public void setProtectStreak(int streak) {
+        protectStreak = Math.max(0, streak);
+    }
+
+    /** 是否被「寄生种子」寄生（挥发性：离场即清除）。 */
+    public boolean isSeeded() {
+        return seeded;
+    }
+
+    /** 设置寄生种子状态。 */
+    public void setSeeded(boolean value) {
+        seeded = value;
+    }
+
+    /**
+     * 清除全部<b>挥发性</b>战斗状态：能力等级、守住保护与连续次数、寄生种子。
+     * <p>离场（换宠、倒下）与战斗开始时调用；这些状态不写入存档。</p>
+     */
+    public void clearVolatileState() {
+        clearStatStages();
+        protectedThisTurn = false;
+        protectStreak = 0;
+        seeded = false;
     }
 
     public String getName() {
@@ -426,19 +555,21 @@ public class Pokemon {
         return real;
     }
 
-    /** 完全恢复：HP 回满、补满全部技能 PP，并清除异常状态与混乱。 */
+    /** 完全恢复：HP 回满、补满全部技能 PP，并清除异常状态、混乱、能力等级与寄生种子。 */
     public void fullRestore() {
         currentHp = maxHp;
         for (MoveSlot slot : moveSlots) {
             slot.restore(slot.getMove().getMaxPp());
         }
         clearAllStatus();
+        clearVolatileState();
     }
 
-    /** 契约补充：仅回满 HP 并清除异常状态（§2.11 fullHeal；混乱一并清除）。 */
+    /** 契约补充：仅回满 HP 并清除异常状态（§2.11 fullHeal；混乱、能力等级与寄生种子一并清除）。 */
     public void fullHeal() {
         currentHp = maxHp;
         clearAllStatus();
+        clearVolatileState();
     }
 
     /** 是否满足进化条件（定义了进化目标且达到等级）。 */
