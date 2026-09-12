@@ -327,6 +327,37 @@ class RogueTurnManagerTest {
         assertEquals(0, manager.getRunData().getRetryUsed(), "冠军战不消耗重试机会");
     }
 
+    /** 第一次道馆战全灭的免费救援：消耗本段失败机会但不扣金币（§4.3 补充规则）。 */
+    @Test
+    void testUseFreeGymRescue_consumesRetryWithoutGoldPenalty() {
+        RogueTurnManager manager = newManager();
+        manager.enterPhase(RoutePhase.GYM);
+        int goldBefore = manager.getRunData().getGold();
+
+        assertTrue(manager.useFreeGymRescue(), "道馆阶段第一次全灭应可免费救援");
+        assertEquals(1, manager.getRunData().getRetryUsed(), "免费救援同样消耗本段失败机会");
+        assertEquals(goldBefore, manager.getRunData().getGold(), "免费救援不扣金币");
+        assertFalse(manager.isGameOver(), "免费救援不结束本轮");
+        assertNotNull(manager.getMandatoryOption(), "救援后仍保留道馆必然节点");
+
+        // 失败机会已耗尽：救援后再败走常规路径则本轮结束
+        assertFalse(manager.resolveMandatoryDefeat(), "免费救援后再败本轮结束");
+        assertTrue(manager.isGameOver());
+    }
+
+    /** 免费救援只在道馆阶段首次尝试时生效：探索阶段与失败机会已用时均不触发。 */
+    @Test
+    void testUseFreeGymRescue_onlyAppliesToFirstGymAttempt() {
+        RogueTurnManager manager = newManager();
+        assertFalse(manager.useFreeGymRescue(), "探索阶段没有道馆救援");
+        assertEquals(0, manager.getRunData().getRetryUsed(), "未触发时不消耗失败机会");
+
+        manager.enterPhase(RoutePhase.GYM);
+        manager.getRunData().useRetry();
+        assertFalse(manager.useFreeGymRescue(), "失败机会已用时不再免费救援");
+        assertEquals(1, manager.getRunData().getRetryUsed(), "不额外消耗失败机会");
+    }
+
     // ------------------------------------------------------------------
     // 医院与节点自回血（§4.4）
     // ------------------------------------------------------------------

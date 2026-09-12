@@ -367,6 +367,20 @@ public class RogueTurnManager {
         return false;
     }
 
+    /**
+     * 第一次道馆战全灭的免费救援（§4.3 补充规则）：消耗本段失败机会但<b>不扣金币</b>，
+     * 全队满状态恢复由控制器执行（本类不持有队伍状态）。
+     *
+     * @return 符合免费救援条件（道馆阶段、本段未用过失败机会）并已消耗机会返回 {@code true}
+     */
+    public boolean useFreeGymRescue() {
+        if (runData.getPhase() != RoutePhase.GYM || !runData.canRetry()) {
+            return false;
+        }
+        runData.useRetry();
+        return true;
+    }
+
     // ------------------------------------------------------------------
     // 金币
     // ------------------------------------------------------------------

@@ -3,6 +3,7 @@ package org.example.integration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.example.growth.GrowthProgress;
@@ -20,6 +21,7 @@ import org.example.pokemon.service.PokemonService;
 import org.example.pokemon.service.PokemonServiceImpl;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -129,6 +131,61 @@ class PokemonBattleAdapterTest {
                 assertEvolvedFormLegal(wild.get());
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 段号出现规则：段 1 无进化宝可梦不出场、绿毛虫一家加权
+    // ------------------------------------------------------------------
+
+    /** 无进化链宝可梦（自身不进化、也无前序进化型）物种 id，段 1 不应出现在遭遇候选池。 */
+    private static final Set<String> NO_EVOLUTION_IDS =
+            Set.of("pikachu", "eevee", "vulpix", "lapras", "snorlax", "chansey", "aerodactyl");
+
+    /** 段 1 不应出现无进化宝可梦：多次采样（固定等级 5）均不得抽中无进化链物种。 */
+    @Test
+    void testCreateWildPokemon_segment1NeverYieldsNoEvolutionSpecies() {
+        GrowthProgress progress = new GrowthProgress();
+        for (int i = 0; i < 200; i++) {
+            Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemonExact(5, 1, progress);
+            assertTrue(wild.isPresent());
+            assertFalse(NO_EVOLUTION_IDS.contains(wild.get().getSpecies().getId()),
+                    "段 1 不应出现无进化宝可梦：" + wild.get().getName());
+        }
+    }
+
+    /** 段 1 绿毛虫一家权重更高：多次采样统计应显著高于无加权时的期望占比。 */
+    @Test
+    void testCreateWildPokemon_segment1BoostsCaterpieLine() {
+        GrowthProgress progress = new GrowthProgress();
+        int caterpieLine = 0;
+        int samples = 3000;
+        for (int i = 0; i < samples; i++) {
+            Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemonExact(5, 1, progress);
+            assertTrue(wild.isPresent());
+            if (Set.of("caterpie", "metapod", "butterfree").contains(wild.get().getSpecies().getId())) {
+                caterpieLine++;
+            }
+        }
+        // 等级 5 的段 1 候选约 22 只基础形态 + 绿毛虫额外 1 份：加权后期望 ≈ 261/3000；
+        // 无加权时绿毛虫期望 ≈ 136/3000，其 5σ 上界 ≈ 193，故以 200 为「加权生效」的可靠下界。
+        assertTrue(caterpieLine >= 200,
+                "段 1 绿毛虫一家出现次数应显著高于无加权期望，实际 " + caterpieLine + "/" + samples);
+    }
+
+    /** 第 2 段起无进化宝可梦应进入遭遇候选池（段规则只约束段 1）。 */
+    @Test
+    void testCreateWildPokemon_segment2AllowsNoEvolutionSpecies() {
+        GrowthProgress progress = new GrowthProgress();
+        boolean seen = false;
+        for (int i = 0; i < 200; i++) {
+            Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemonExact(20, 2, progress);
+            assertTrue(wild.isPresent());
+            if (NO_EVOLUTION_IDS.contains(wild.get().getSpecies().getId())) {
+                seen = true;
+                break;
+            }
+        }
+        assertTrue(seen, "第 2 段起无进化宝可梦应进入遭遇候选池");
     }
 
     /** 断言该野生精灵不是非法进化形态：其前一进化型的进化等级必须不高于其实际等级。 */
