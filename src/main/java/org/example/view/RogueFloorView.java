@@ -27,6 +27,9 @@ import org.example.model.RunData;
 import org.example.util.ImageBackgrounds;
 import org.example.util.UiScale;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -36,7 +39,8 @@ import java.util.function.Consumer;
  * <ul>
  *   <li>顶栏 —— 左侧金色胶囊「◀ 返回主菜单」，右侧段位信息面板（段号 / 阶段 / 行动点 / 金币）；</li>
  *   <li>标题横幅 —— 深蓝渐变「事件遭遇 ENCOUNTER EVENT」+ 副提示胶囊；</li>
- *   <li>节点卡 —— 3 列 × 2 行网格（设计稿满格 6 位，真实节点至多 {@link RouteConfig#MAX_ROUTE_NODES} 个，
+ *   <li>节点卡 —— 3 列 × 2 行网格：上排固定三位常驻节点（野生宝可梦 → 路人训练师 → 医院，
+ *       从左到右位置恒定），随机事件保持生成顺序排在下排（真实节点至多 {@link RouteConfig#MAX_ROUTE_NODES} 个，
  *       其余位置渲染为「待填充事件」虚线占位卡）：顶部图片预留区（渐变 + 类型 emoji + 精灵球装饰），
  *       底部「类型 · 名称」与金色行动点徽章；悬停上浮并在卡片上方弹出深蓝金框描述弹窗，
  *       点击进入节点（点击行为与旧版按钮一致）；</li>
@@ -228,7 +232,8 @@ public class RogueFloorView {
     // 节点卡片网格
     // ------------------------------------------------------------------
 
-    /** 3×2 网格：真实节点依次入格，余位用「待填充事件」虚线卡补足（设计稿满格布局）。 */
+    /** 3×2 网格：固定位（野生宝可梦 → 路人训练师 → 医院）从左到右占上排，
+     *  随机事件保持生成顺序排下排，余位用「待填充事件」虚线卡补足（设计稿满格布局）。 */
     private GridPane buildGrid(RunData data, Pane overlay) {
         GridPane grid = new GridPane();
         grid.setHgap(GRID_GAP);
@@ -236,10 +241,7 @@ public class RogueFloorView {
         grid.setAlignment(Pos.CENTER);
 
         int index = 0;
-        for (Option option : data.getAvailableOptions()) {
-            if (option == null) {
-                continue;
-            }
+        for (Option option : orderedOptions(data)) {
             grid.add(buildOptionCard(option, data, overlay), index % GRID_COLS, index / GRID_COLS);
             index++;
         }
@@ -248,6 +250,35 @@ public class RogueFloorView {
             index++;
         }
         return grid;
+    }
+
+    /** 展示顺序：三个常驻节点固定位（野生宝可梦 → 路人训练师 → 医院，从左到右），
+     *  其余随机事件保持生成顺序排在其后。{@link List#sort} 是稳定排序，仅调整展示，
+     *  不修改 {@link RunData} 里的原始列表。 */
+    private static List<Option> orderedOptions(RunData data) {
+        List<Option> options = new ArrayList<>();
+        for (Option option : data.getAvailableOptions()) {
+            if (option != null) {
+                options.add(option);
+            }
+        }
+        options.sort(Comparator.comparingInt(RogueFloorView::fixedSlot));
+        return options;
+    }
+
+    /** 固定位序号：野生宝可梦 → 路人训练师 → 医院（0 / 1 / 2）；其余随机事件统一排后（3）。 */
+    private static int fixedSlot(Option option) {
+        OptionType type = option.getType();
+        if (type == OptionType.WILD) {
+            return 0;
+        }
+        if (type == OptionType.TRAINER) {
+            return 1;
+        }
+        if (type == OptionType.HOSPITAL) {
+            return 2;
+        }
+        return 3;
     }
 
     /**
