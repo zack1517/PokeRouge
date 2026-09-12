@@ -10,6 +10,10 @@ i_poke_ball,精灵球,BALL,3,0,
 i_great_ball,超级球,BALL,5,0,
 i_ultra_ball,高级球,BALL,8,0,
 i_master_ball,大师球,BALL,255,1,
+i_premier_ball,纪念球,BALL,3,0,
+i_cherish_ball,贵重球,BALL,3,0,
+i_safari_ball,狩猎球,BALL,4.5,0,
+i_sport_ball,竞赛球,BALL,4.5,0,
 i_antidote,解毒药,CURE,0,0,POISON|BADLY_POISON
 i_paralyze_heal,麻痹药,CURE,0,0,PARALYSIS
 i_burn_heal,灼伤药,CURE,0,0,BURN

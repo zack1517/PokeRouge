@@ -27,10 +27,11 @@ class SaveCodecTest {
                                 new SaveData.IvData(31, 20, 15, 10, 5, 0),
                                 340L, "POISON", 2, 3, 1, 27,
                                 List.of(new SaveData.MoveData("tackle", 30),
-                                        new SaveData.MoveData("vine-whip", 7))),
+                                        new SaveData.MoveData("vine-whip", 7)),
+                                List.of(), "e_life_orb"),
                         new SaveData.PokemonData("charmander", 10,
                                 new SaveData.IvData(12, 12, 12, 12, 12, 12),
-                                0L, "NONE", 0, 0, 0, 30, List.of())),
+                                0L, "NONE", 0, 0, 0, 30, List.of(), List.of(), "")),
                 List.of(new SaveData.ItemData("potion", 3),
                         new SaveData.ItemData("poke-ball", 5)),
                 new SaveData.RunRecord(4, 10, "EXPLORING", 0, 320, true, false),
@@ -48,6 +49,30 @@ class SaveCodecTest {
         SaveData parsed = SaveCodec.parse(SaveCodec.render(original));
 
         assertEquals(original, parsed);
+    }
+
+    /** 携带装备 id 必须随文本往返；未携带的精灵写出空串并原样读回。 */
+    @Test
+    void 携带装备id随文本往返() {
+        SaveData original = sample();
+
+        String text = SaveCodec.render(original);
+        SaveData parsed = SaveCodec.parse(text);
+
+        assertEquals("e_life_orb", parsed.party().get(0).heldItemId());
+        assertEquals("", parsed.party().get(1).heldItemId(), "未携带时应为空串");
+    }
+
+    /** 旧档的 PP 行没有装备字段（少一段）：按未携带解析，不能读档失败。 */
+    @Test
+    void 旧档缺少装备字段仍可读() {
+        String legacy = SaveCodec.render(sample()).replace("|e_life_orb", "");
+
+        SaveData parsed = SaveCodec.parse(legacy);
+
+        assertEquals("", parsed.party().get(0).heldItemId());
+        assertEquals("e_life_orb", sample().party().get(0).heldItemId(),
+                "原快照仍应带装备，确保上面的替换确实生效");
     }
 
     /** 可选字段（地图背景、必然节点）为 null 时不应写出该行，读回仍是 null。 */
@@ -70,7 +95,7 @@ class SaveCodecTest {
         String tricky = "小|明\\ 换\n行";
         SaveData original = new SaveData(SaveData.FORMAT_VERSION, tricky, 0,
                 List.of(new SaveData.PokemonData("bulbasaur", 5, null, 0L, null, 0, 0, 0, 1,
-                        List.of(new SaveData.MoveData("tackle", 1)))),
+                        List.of(new SaveData.MoveData("tackle", 1)), List.of(), "")),
                 List.of(new SaveData.ItemData("potion", 1)),
                 new SaveData.RunRecord(1, 8, "EXPLORING", 0, 0, false, false),
                 List.of(new SaveData.OptionData(tricky, "WILD", 0, tricky)),
@@ -100,7 +125,7 @@ class SaveCodecTest {
                         new SaveData.IvData(1, 1, 1, 1, 1, 1),
                         0L, "NONE", 0, 0, 0, 30,
                         List.of(new SaveData.MoveData("tackle", 10)),
-                        List.of("tackle", "vine-whip", "razor-leaf"))),
+                        List.of("tackle", "vine-whip", "razor-leaf"), "")),
                 List.of(), SaveData.RunRecord.notStarted(), List.of(), null, 0, null, 1L);
 
         String text = SaveCodec.render(original);

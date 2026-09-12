@@ -1,5 +1,6 @@
 package org.example.battle;
 
+import org.example.growth.GrowthProgress;
 import org.example.growth.GrowthService;
 import org.example.model.ElementType;
 import org.example.model.Move;
@@ -134,7 +135,7 @@ class BattleDataPortTest {
         port.moves.put("m_new", NEW_MOVE);
 
         BattleService battle = BattleServices.newBattle(player, pokemon(foe, 5, SLAM), new Random(7),
-                port, new GrowthService(port));
+                port, new GrowthService(port, new GrowthProgress()));
         battle.useMove(player.getActive().getMoveSlots().get(0));
 
         assertEquals(BattleService.Status.PLAYER_WIN, battle.getStatus());
@@ -175,7 +176,7 @@ class BattleDataPortTest {
         port.species.put("mine_evo", evolved);
 
         BattleService battle = BattleServices.newBattle(player, pokemon(foe, 5, SLAM), new Random(7),
-                port, new GrowthService(port));
+                port, new GrowthService(port, new GrowthProgress()));
         battle.useMove(player.getActive().getMoveSlots().get(0));
 
         assertTrue(port.calls.contains("species:mine_evo"), "成长模块应通过端口查询进化目标种族");

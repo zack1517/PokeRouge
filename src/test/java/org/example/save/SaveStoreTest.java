@@ -28,7 +28,7 @@ class SaveStoreTest {
         return new SaveData(SaveData.FORMAT_VERSION, playerName, 0,
                 List.of(new SaveData.PokemonData("bulbasaur", 5,
                         new SaveData.IvData(1, 2, 3, 4, 5, 6), 100L, "NONE", 0, 0, 0, 20,
-                        List.of(new SaveData.MoveData("tackle", 30)))),
+                        List.of(new SaveData.MoveData("tackle", 30)), List.of(), "")),
                 List.of(new SaveData.ItemData("potion", 1)),
                 new SaveData.RunRecord(ap, 8, "EXPLORING", 0, 150, false, false),
                 List.of(), null, segment, "map.png", 1_000L);

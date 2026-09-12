@@ -8,9 +8,10 @@ import org.example.model.ItemCategory;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
+import org.example.model.MoveFlag;
+import org.example.model.StatChange;
 import org.example.model.Pokemon;
 import org.example.model.Species;
-import org.example.model.StatChange;
 import org.example.model.Stats;
 import org.example.model.StatusCondition;
 import org.example.util.LogUtil;
@@ -22,11 +23,13 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -36,7 +39,7 @@ import java.util.function.Consumer;
  *
  * <p>CSV 统一格式（首行为表头，自动跳过，# 开头视为注释）：</p>
  * <ul>
- *     <li>moves.csv：id,name,type,category,power,accuracy,maxPp,priority,inflicts,inflictionChance[,statChanges[,effect]]
+ *     <li>moves.csv：id,name,type,category,power,accuracy,maxPp,priority,inflicts,inflictionChance[,statChanges[,effect[,flags]]]
  *     —— type 用属性英文名，category 取 PHYSICAL/SPECIAL/STATUS（变化类 power 为 0）；
  *     accuracy 为命中率（-1 表示必中）；priority 为先制度；inflicts 为命中后可能施加的异常状态
  *     （POISON/BADLY_POISON/PARALYSIS/BURN/SLEEP/FREEZE/CONFUSION，留空表示无），
@@ -44,7 +47,8 @@ import java.util.function.Consumer;
  *     statChanges 为可选的能力等级变化，格式 “受方:能力:幅度”（受方 SELF/OPPONENT，能力
  *     ATTACK/DEFENSE/SP_ATTACK/SP_DEFENSE/SPEED，幅度 -6~+6 非 0），多项用 “;” 分隔，
  *     如 SELF:SPEED:+2 或 OPPONENT:ATTACK:-1；
- *     effect 为可选的技能效果英文名（如 SUNNY_DAY/GRASSY_TERRAIN），不填为无效果</li>
+ *     effect 为可选的技能效果英文名（如 SUNNY_DAY/GRASSY_TERRAIN/PROTECT/LEECH_SEED/REST），不填为无效果；
+ *     flags 为可选的招式标记（CONTACT 接触 / PUNCH 拳 / POWDER 粉末 / SOUND 声音，多标记用 “|” 分隔），不填为无标记</li>
  *     <li>species.csv：id,name,type1,type2,hp,atk,def,spatk,spdef,speed,catchRate,wild,evolvesTo,evolveLevel,moves,learns
  *     —— type2 可为空；wild 1/0 决定是否进野怪池；evolvesTo 为进化目标 id（可空），
  *     evolveLevel 为进化等级（0/空 = 不进化）；moves 为出生即会的技能（“;”分隔、最多 4 个）；
@@ -197,15 +201,15 @@ public final class GameData {
     }
 
     private void registerBuiltinMoves() {
-        putMove("m_tackle", "撞击", ElementType.NORMAL, MoveCategory.PHYSICAL, 40, 35);
-        putMove("m_quick", "电光一闪", ElementType.NORMAL, MoveCategory.PHYSICAL, 40, 30);
+        putMove("m_tackle", "撞击", ElementType.NORMAL, MoveCategory.PHYSICAL, 40, 35, MoveFlag.CONTACT);
+        putMove("m_quick", "电光一闪", ElementType.NORMAL, MoveCategory.PHYSICAL, 40, 30, MoveFlag.CONTACT);
         putMove("m_ember", "火花", ElementType.FIRE, MoveCategory.SPECIAL, 40, 25);
         putMove("m_flamethrower", "喷射火焰", ElementType.FIRE, MoveCategory.SPECIAL, 90, 15);
-        putMove("m_flame_wheel", "火焰轮", ElementType.FIRE, MoveCategory.PHYSICAL, 60, 25);
+        putMove("m_flame_wheel", "火焰轮", ElementType.FIRE, MoveCategory.PHYSICAL, 60, 25, MoveFlag.CONTACT);
         putMove("m_bubble", "水枪", ElementType.WATER, MoveCategory.SPECIAL, 40, 25);
         putMove("m_hydro_pump", "水炮", ElementType.WATER, MoveCategory.SPECIAL, 110, 5);
-        putMove("m_aqua_jet", "水流喷射", ElementType.WATER, MoveCategory.PHYSICAL, 40, 20);
-        putMove("m_vine_whip", "藤鞭", ElementType.GRASS, MoveCategory.PHYSICAL, 45, 25);
+        putMove("m_aqua_jet", "水流喷射", ElementType.WATER, MoveCategory.PHYSICAL, 40, 20, MoveFlag.CONTACT);
+        putMove("m_vine_whip", "藤鞭", ElementType.GRASS, MoveCategory.PHYSICAL, 45, 25, MoveFlag.CONTACT);
         putMove("m_razor_leaf", "飞叶快刀", ElementType.GRASS, MoveCategory.PHYSICAL, 55, 25);
         putMove("m_giga_drain", "终极吸取", ElementType.GRASS, MoveCategory.SPECIAL, 75, 10);
         putMove("m_thunder_shock", "电击", ElementType.ELECTRIC, MoveCategory.SPECIAL, 40, 30);
@@ -216,13 +220,13 @@ public final class GameData {
         putMove("m_rock_throw", "落石", ElementType.ROCK, MoveCategory.PHYSICAL, 50, 15);
         putMove("m_mud_slap", "掷泥", ElementType.GROUND, MoveCategory.SPECIAL, 20, 10);
         putMove("m_earthquake", "地震", ElementType.GROUND, MoveCategory.PHYSICAL, 100, 10);
-        putMove("m_wing_attack", "翅膀攻击", ElementType.FLYING, MoveCategory.PHYSICAL, 60, 35);
-        putMove("m_cross_poison", "十字毒刃", ElementType.POISON, MoveCategory.PHYSICAL, 70, 20);
+        putMove("m_wing_attack", "翅膀攻击", ElementType.FLYING, MoveCategory.PHYSICAL, 60, 35, MoveFlag.CONTACT);
+        putMove("m_cross_poison", "十字毒刃", ElementType.POISON, MoveCategory.PHYSICAL, 70, 20, MoveFlag.CONTACT);
         // 进化形态的招牌技能
         putMove("m_fire_blast", "大字爆炎", ElementType.FIRE, MoveCategory.SPECIAL, 110, 5);
         putMove("m_muddy_water", "浊流", ElementType.WATER, MoveCategory.SPECIAL, 90, 10);
-        putMove("m_leaf_blade", "叶刃", ElementType.GRASS, MoveCategory.PHYSICAL, 90, 15);
-        putMove("m_volt_tackle", "伏特冲击", ElementType.ELECTRIC, MoveCategory.PHYSICAL, 120, 15);
+        putMove("m_leaf_blade", "叶刃", ElementType.GRASS, MoveCategory.PHYSICAL, 90, 15, MoveFlag.CONTACT);
+        putMove("m_volt_tackle", "伏特冲击", ElementType.ELECTRIC, MoveCategory.PHYSICAL, 120, 15, MoveFlag.CONTACT);
 
         // ---- 天气/场地变化技能：power=0、STATUS，效果开启对应天气/场地 ----
         putMove("m_sunny_day", "大晴天", ElementType.FIRE, MoveCategory.STATUS, 0, 5, MoveEffect.SUNNY_DAY);
@@ -238,11 +242,11 @@ public final class GameData {
         putMove("m_thunder_wave", "电磁波", ElementType.ELECTRIC, MoveCategory.STATUS, 0, 20, 90,
                 StatusCondition.PARALYSIS, 100);
         putMove("m_poison_powder", "毒粉", ElementType.POISON, MoveCategory.STATUS, 0, 35, 75,
-                StatusCondition.POISON, 100);
+                StatusCondition.POISON, 100, MoveFlag.POWDER);
         putMove("m_toxic", "剧毒", ElementType.POISON, MoveCategory.STATUS, 0, 10, 90,
                 StatusCondition.BADLY_POISON, 100);
         putMove("m_sleep_powder", "催眠粉", ElementType.GRASS, MoveCategory.STATUS, 0, 15, 75,
-                StatusCondition.SLEEP, 100);
+                StatusCondition.SLEEP, 100, MoveFlag.POWDER);
         putMove("m_will_o_wisp", "鬼火", ElementType.FIRE, MoveCategory.STATUS, 0, 15, 85,
                 StatusCondition.BURN, 100);
         putMove("m_confuse_ray", "奇异之光", ElementType.GHOST, MoveCategory.STATUS, 0, 10, 100,
@@ -250,9 +254,9 @@ public final class GameData {
 
         // ---- 附带异常状态的攻击技能：按概率触发 ----
         putMove("m_body_slam", "泰山压顶", ElementType.NORMAL, MoveCategory.PHYSICAL, 85, 15, 100,
-                StatusCondition.PARALYSIS, 30);
+                StatusCondition.PARALYSIS, 30, MoveFlag.CONTACT);
         putMove("m_ice_fang", "冰冻牙", ElementType.ICE, MoveCategory.PHYSICAL, 65, 15, 95,
-                StatusCondition.FREEZE, 10);
+                StatusCondition.FREEZE, 10, MoveFlag.CONTACT);
     }
 
     private void registerBuiltinSpecies() {
@@ -313,6 +317,13 @@ public final class GameData {
         putItem("i_ultra_ball", "高级球", ItemCategory.POKE_BALL, 8);
         putItem("i_master_ball", "大师球", ItemCategory.POKE_BALL, 255, true);
 
+        // ---- 倍率固定（不依赖对手等级/体重/回合数等条件）的其它球种 ----
+        // 纪念球与贵重球在正作中是「基准倍率」的收藏球，这里保持 ×3（与精灵球同效）不作增强。
+        putItem("i_premier_ball", "纪念球", ItemCategory.POKE_BALL, 3);
+        putItem("i_cherish_ball", "贵重球", ItemCategory.POKE_BALL, 3);
+        putItem("i_safari_ball", "狩猎球", ItemCategory.POKE_BALL, 4.5);
+        putItem("i_sport_ball", "竞赛球", ItemCategory.POKE_BALL, 4.5);
+
         // ---- 异常状态解除道具：分别对应单种异常与全部主要异常（解毒药同时解除中毒与剧毒） ----
         putItem("i_antidote", "解毒药", "POISON|BADLY_POISON");
         putItem("i_paralyze_heal", "麻痹药", "PARALYSIS");
@@ -323,14 +334,15 @@ public final class GameData {
     }
 
     private void putMove(String id, String name, ElementType type, MoveCategory category,
-                         int power, int pp) {
-        putMove(id, name, type, category, power, pp, MoveEffect.NONE);
+                         int power, int pp, MoveFlag... flags) {
+        putMove(id, name, type, category, power, pp, MoveEffect.NONE, flags);
     }
 
     /** 带效果注册技能（天气/场地变化类技能使用）。 */
     private void putMove(String id, String name, ElementType type, MoveCategory category,
-                         int power, int pp, MoveEffect effect) {
-        moveMap.put(id, new Move(id, name, type, category, power, 100, pp, effect));
+                         int power, int pp, MoveEffect effect, MoveFlag... flags) {
+        moveMap.put(id, new Move(id, name, type, category, power, 100, pp, 0, effect,
+                StatusCondition.NONE, 0, flagSet(flags)));
     }
 
     /**
@@ -339,11 +351,18 @@ public final class GameData {
      * @param accuracy 命中率（-1 表示必中）
      * @param inflicts 命中后可能施加的异常状态
      * @param chance   触发概率百分比（0~100）
+     * @param flags    招式标记（接触/拳/粉末），可省略
      */
     private void putMove(String id, String name, ElementType type, MoveCategory category,
-                         int power, int pp, int accuracy, StatusCondition inflicts, int chance) {
+                         int power, int pp, int accuracy, StatusCondition inflicts, int chance,
+                         MoveFlag... flags) {
         moveMap.put(id, new Move(id, name, type, category, power, accuracy, pp, 0,
-                MoveEffect.NONE, inflicts, chance));
+                MoveEffect.NONE, inflicts, chance, flagSet(flags)));
+    }
+
+    /** 把内建注册用的可变参数标记转为不可变集合；无标记返回空集合。 */
+    private static Set<MoveFlag> flagSet(MoveFlag... flags) {
+        return flags.length == 0 ? Set.of() : EnumSet.copyOf(List.of(flags));
     }
 
     /**
@@ -403,6 +422,126 @@ public final class GameData {
         putEquipment("e_shell_bell", "贝壳之铃", HeldItemEffect.LIFE_STEAL, "0.125", "攻击造成伤害的 1/8 回复自身 HP");
         putEquipment("e_quick_claw", "先制之爪", HeldItemEffect.FIRST_STRIKE, "20", "20% 概率无视速度先手出招");
         putEquipment("e_eviolite", "进化辉石", HeldItemEffect.EVOLITE, "1.5", "未最终进化时防御与特防提升 50%");
+        // 批次①携带物：招式威力修正
+        putEquipment("e_muscle_band", "力量头带", HeldItemEffect.PHYSICAL_DAMAGE, "1.1", "物理招式伤害提升 10%");
+        putEquipment("e_wise_glasses", "博识眼镜", HeldItemEffect.SPECIAL_DAMAGE, "1.1", "特殊招式伤害提升 10%");
+        putEquipment("e_life_orb", "生命宝珠", HeldItemEffect.LIFE_ORB, "1.3|0.1",
+                "招式伤害提升 30%，每次命中后失去最大 HP 的 1/10");
+        // 速度与出手顺序
+        putEquipment("e_iron_ball", "黑色铁球", HeldItemEffect.SPEED_MULTIPLIER, "0.5|GROUND",
+                "速度降低 50%，且被地面化（不再免疫地面系招式）");
+        putEquipment("e_lagging_tail", "后攻之尾", HeldItemEffect.MOVE_LAST, "",
+                "同先制度时必定最后出招");
+        // 伤害判定修正
+        putEquipment("e_ring_target", "标靶", HeldItemEffect.IGNORE_IMMUNITY, "",
+                "携带者失去属性免疫，原本无效的招式变为 1 倍");
+        putEquipment("e_air_balloon", "气球", HeldItemEffect.GROUND_IMMUNE, "",
+                "免疫地面系招式，被地面系招式命中后消耗");
+        // 回合末效果
+        putEquipment("e_black_sludge", "黑色污泥", HeldItemEffect.POISON_HEAL, "0.0625|0.125",
+                "毒属性每回合末回复 1/16 HP，非毒属性每回合末失去 1/8 HP");
+        putEquipment("e_flame_orb", "火焰宝珠", HeldItemEffect.END_TURN_STATUS, "BURN",
+                "回合结束时变为灼伤状态");
+        putEquipment("e_toxic_orb", "剧毒宝珠", HeldItemEffect.END_TURN_STATUS, "BADLY_POISON",
+                "回合结束时变为剧毒状态");
+        // 天气延长
+        putEquipment("e_heat_rock", "炽热岩石", HeldItemEffect.WEATHER_DURATION, "SUNNY|8",
+                "携带者开启大晴天时持续 8 回合");
+        putEquipment("e_damp_rock", "潮湿岩石", HeldItemEffect.WEATHER_DURATION, "RAIN|8",
+                "携带者开启下雨时持续 8 回合");
+        putEquipment("e_smooth_rock", "沙沙岩石", HeldItemEffect.WEATHER_DURATION, "SANDSTORM|8",
+                "携带者开启沙暴时持续 8 回合");
+        putEquipment("e_icy_rock", "冰冷岩石", HeldItemEffect.WEATHER_DURATION, "HAIL|8",
+                "携带者开启冰雹时持续 8 回合");
+        // 保命
+        putEquipment("e_focus_sash", "气势披带", HeldItemEffect.FOCUS_SASH, "",
+                "满 HP 时受到致死伤害保留 1 HP，触发后消耗");
+        putEquipment("e_focus_band", "气势头带", HeldItemEffect.FOCUS_BAND, "10",
+                "HP 归零时 10% 概率保留 1 HP");
+        // 讲究系
+        putEquipment("e_choice_specs", "讲究眼镜", HeldItemEffect.CHOICE, "SPECIAL|1.5",
+                "特殊招式伤害提升 50%，但只能使用第一个招式");
+        putEquipment("e_choice_scarf", "讲究围巾", HeldItemEffect.CHOICE, "SPEED|1.5",
+                "速度提升 50%，但只能使用第一个招式");
+        // 批次④装备：招式标记 / 会心 / 畏缩
+        putEquipment("e_punch_glove", "拳击手套", HeldItemEffect.PUNCH_BOOST, "1.1",
+                "拳类招式威力提升 10%，且该招式不再视为接触类");
+        putEquipment("e_rocky_helmet", "凸凸头盔", HeldItemEffect.CONTACT_PUNISH, "0.1667",
+                "被接触类招式命中时，攻击方失去最大 HP 的 1/6");
+        putEquipment("e_safety_goggles", "防尘护目镜", HeldItemEffect.POWDER_IMMUNE, "",
+                "免疫粉末类招式与沙暴/冰雹的回合末伤害");
+        putEquipment("e_razor_claw", "锐利之爪", HeldItemEffect.CRIT_BOOST, "1",
+                "会心等级 +1（会心率 1/24 → 1/8）");
+        putEquipment("e_kings_rock", "王者之证", HeldItemEffect.FLINCH_CHANCE, "10",
+                "招式造成伤害后 10% 概率使目标畏缩");
+        putEquipment("e_metronome", "节拍器", HeldItemEffect.CONSECUTIVE_BOOST, "0.2",
+                "连续使用同一招式时每次增伤 20%，上限 2 倍");
+        // 批次⑤装备：能力等级联动 / 天气免疫
+        putEquipment("e_choice_band", "讲究头带", HeldItemEffect.CHOICE, "ATTACK|1.5",
+                "物理招式伤害提升 50%，但只能使用第一个招式");
+        putEquipment("e_assault_vest", "突击背心", HeldItemEffect.ASSAULT_VEST, "1.5",
+                "特防提升 50%，但无法使用变化类招式");
+        putEquipment("e_clear_amulet", "清净坠饰", HeldItemEffect.CLEAR_AMULET, "",
+                "能力等级不会被对手降低");
+        putEquipment("e_weakness_policy", "弱点保险", HeldItemEffect.WEAKNESS_POLICY, "2",
+                "被效果拔群招式命中后，物攻与特攻各提升 2 级，触发后消耗");
+        putEquipment("e_blunder_policy", "打空保险", HeldItemEffect.BLUNDER_POLICY, "2",
+                "招式未命中时速度提升 2 级，触发后消耗");
+        putEquipment("e_throat_spray", "爽喉喷雾", HeldItemEffect.THROAT_SPRAY, "1",
+                "使用声音类招式后特攻提升 1 级，触发后消耗");
+        putEquipment("e_electric_seed", "电气种子", HeldItemEffect.TERRAIN_SEED, "ELECTRIC|DEFENSE|1",
+                "电气场地时防御提升 1 级，触发后消耗");
+        putEquipment("e_psychic_seed", "精神种子", HeldItemEffect.TERRAIN_SEED, "PSYCHIC|SP_DEFENSE|1",
+                "精神场地时特防提升 1 级，触发后消耗");
+        putEquipment("e_misty_seed", "薄雾种子", HeldItemEffect.TERRAIN_SEED, "MISTY|SP_DEFENSE|1",
+                "薄雾场地时特防提升 1 级，触发后消耗");
+        putEquipment("e_grassy_seed", "青草种子", HeldItemEffect.TERRAIN_SEED, "GRASSY|DEFENSE|1",
+                "青草场地时防御提升 1 级，触发后消耗");
+        putEquipment("e_absorb_bulb", "球根", HeldItemEffect.TYPE_REACTION, "WATER|SP_ATTACK|1",
+                "受到水属性招式时特攻提升 1 级，触发后消耗");
+        putEquipment("e_cell_battery", "充电电池", HeldItemEffect.TYPE_REACTION, "ELECTRIC|ATTACK|1",
+                "受到电属性招式时物攻提升 1 级，触发后消耗");
+        putEquipment("e_luminous_moss", "光苔", HeldItemEffect.TYPE_REACTION, "WATER|SP_DEFENSE|1",
+                "受到水属性招式时特防提升 1 级，触发后消耗");
+        putEquipment("e_snowball", "雪球", HeldItemEffect.TYPE_REACTION, "ICE|ATTACK|1",
+                "受到冰属性招式时物攻提升 1 级，触发后消耗");
+        putEquipment("e_utility_umbrella", "万能伞", HeldItemEffect.UTILITY_UMBRELLA, "",
+                "不受天气影响：晴天/雨天的威力修正无效，沙暴/冰雹的回合末伤害也不生效");
+        // 批次②树果：异常治疗（陷入对应异常时立即治愈并消耗）
+        putEquipment("b_cheri", "樱子果", HeldItemEffect.CURE_STATUS, "PARALYSIS", "陷入麻痹时立即治愈");
+        putEquipment("b_pecha", "桃桃果", HeldItemEffect.CURE_STATUS, "POISON|BADLY_POISON", "陷入中毒时立即治愈");
+        putEquipment("b_rawst", "莓莓果", HeldItemEffect.CURE_STATUS, "BURN", "陷入灼伤时立即治愈");
+        putEquipment("b_chesto", "零余果", HeldItemEffect.CURE_STATUS, "SLEEP", "陷入睡眠时立即治愈");
+        putEquipment("b_aspear", "利木果", HeldItemEffect.CURE_STATUS, "FREEZE", "陷入冰冻时立即治愈");
+        putEquipment("b_persim", "柿仔果", HeldItemEffect.CURE_STATUS, "CONFUSION", "陷入混乱时立即治愈");
+        putEquipment("b_lum", "木子果", HeldItemEffect.CURE_STATUS, "ALL", "陷入任何异常状态时立即治愈");
+        // 批次②树果：HP 回复（HP 低于阈值时回复并消耗）
+        putEquipment("b_oran", "橙橙果", HeldItemEffect.HEAL_HP, "0.5|10", "HP 不高于 1/2 时回复 10 HP");
+        putEquipment("b_sitrus", "文柚果", HeldItemEffect.HEAL_HP, "0.5|0.25", "HP 不高于 1/2 时回复最大 HP 的 1/4");
+        putEquipment("b_figy", "勿花果", HeldItemEffect.HEAL_HP, "0.25|0.125", "HP 不高于 1/4 时回复最大 HP 的 1/8");
+        putEquipment("b_wiki", "异奇果", HeldItemEffect.HEAL_HP, "0.25|0.125", "HP 不高于 1/4 时回复最大 HP 的 1/8");
+        putEquipment("b_aguav", "乐芭果", HeldItemEffect.HEAL_HP, "0.25|0.125", "HP 不高于 1/4 时回复最大 HP 的 1/8");
+        putEquipment("b_iapapa", "芭亚果", HeldItemEffect.HEAL_HP, "0.25|0.125", "HP 不高于 1/4 时回复最大 HP 的 1/8");
+        // 批次②树果：PP 回复
+        putEquipment("b_leppa", "苹野果", HeldItemEffect.HEAL_PP, "10", "招式 PP 耗尽时回复 10 PP");
+        // 批次②树果：属性减伤（受效果拔群攻击时消耗）
+        putEquipment("b_occa", "巧可果", HeldItemEffect.RESIST_TYPE, "FIRE|0.5", "受到效果拔群的火属性招式时伤害减半");
+        putEquipment("b_passho", "千香果", HeldItemEffect.RESIST_TYPE, "WATER|0.5", "受到效果拔群的水属性招式时伤害减半");
+        putEquipment("b_wacan", "烛木果", HeldItemEffect.RESIST_TYPE, "ELECTRIC|0.5", "受到效果拔群的电属性招式时伤害减半");
+        putEquipment("b_rindo", "罗子果", HeldItemEffect.RESIST_TYPE, "GRASS|0.5", "受到效果拔群的草属性招式时伤害减半");
+        putEquipment("b_yache", "番荔果", HeldItemEffect.RESIST_TYPE, "ICE|0.5", "受到效果拔群的冰属性招式时伤害减半");
+        putEquipment("b_chople", "莲蒲果", HeldItemEffect.RESIST_TYPE, "FIGHTING|0.5", "受到效果拔群的格斗属性招式时伤害减半");
+        putEquipment("b_kebia", "通通果", HeldItemEffect.RESIST_TYPE, "POISON|0.5", "受到效果拔群的毒属性招式时伤害减半");
+        putEquipment("b_shuca", "腰木果", HeldItemEffect.RESIST_TYPE, "GROUND|0.5", "受到效果拔群的地面属性招式时伤害减半");
+        putEquipment("b_coba", "扁樱果", HeldItemEffect.RESIST_TYPE, "FLYING|0.5", "受到效果拔群的飞行属性招式时伤害减半");
+        putEquipment("b_payapa", "霹霹果", HeldItemEffect.RESIST_TYPE, "PSYCHIC|0.5", "受到效果拔群的超能力属性招式时伤害减半");
+        putEquipment("b_tanga", "莓榴果", HeldItemEffect.RESIST_TYPE, "BUG|0.5", "受到效果拔群的虫属性招式时伤害减半");
+        putEquipment("b_charti", "草蚕果", HeldItemEffect.RESIST_TYPE, "ROCK|0.5", "受到效果拔群的岩石属性招式时伤害减半");
+        putEquipment("b_kasib", "佛柑果", HeldItemEffect.RESIST_TYPE, "GHOST|0.5", "受到效果拔群的幽灵属性招式时伤害减半");
+        putEquipment("b_haban", "刺耳果", HeldItemEffect.RESIST_TYPE, "DARK|0.5", "受到效果拔群的恶属性招式时伤害减半");
+        putEquipment("b_roseli", "洛玫果", HeldItemEffect.RESIST_TYPE, "FAIRY|0.5", "受到效果拔群的妖精属性招式时伤害减半");
+        putEquipment("b_babiri", "灯浆果", HeldItemEffect.RESIST_TYPE, "NORMAL|0.5|ALWAYS",
+                "受到一般属性招式时伤害减半（一般属性无克制关系，故不看效果拔群）");
     }
 
     private void putEquipment(String id, String name, HeldItemEffect effectType, String param, String description) {
@@ -467,12 +606,13 @@ public final class GameData {
         int priority = parseInt(c[7]);
         StatusCondition inflicts = c.length > 8 ? StatusCondition.parse(c[8]) : StatusCondition.NONE;
         int chance = c.length > 9 ? parseInt(c[9]) : 0;
-        // 列序：10 为能力等级变化，11 为技能效果（历史数据中 effect 从未被填写，故前移一位让变化技能书写更自然）。
+        // 列序：10 为能力等级变化，11 为技能效果（历史数据中 effect 从未被填写，故前移一位让变化技能书写更自然），12 为招式标记。
         List<StatChange> statChanges = c.length > 10 ? StatChange.parseAll(c[10]) : List.of();
         MoveEffect effect = c.length > 11 ? MoveEffect.parse(c[11]) : MoveEffect.NONE;
+        Set<MoveFlag> flags = c.length > 12 ? MoveFlag.parseFlags(c[12]) : Set.of();
         String id = c[0].trim();
         moveMap.put(id, new Move(id, c[1].trim(), type, category, power, accuracy, maxPp, priority,
-                effect, inflicts, chance, statChanges));
+                effect, inflicts, chance, statChanges, flags));
     }
 
     /**

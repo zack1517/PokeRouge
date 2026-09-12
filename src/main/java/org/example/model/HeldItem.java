@@ -1,6 +1,9 @@
 package org.example.model;
 
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 可携带装备（持有道具）定义。
@@ -8,7 +11,9 @@ import java.util.Objects;
  * 从外部设置到 {@link Pokemon#setHeldItem}，战斗引擎只读取并应用效果。</p>
  *
  * <p>效果类型见 {@link HeldItemEffect}：属性招式威力提升（木炭等）、效果拔群增伤（达人带）、
- * 回合末回血（剩饭）、攻击吸血（贝壳之铃）、概率先手（先制之爪）、未进化双防提升（进化辉石）。</p>
+ * 回合末回血（剩饭）、攻击吸血（贝壳之铃）、概率先手（先制之爪）、未进化双防提升（进化辉石）
+ * 等。多段参数统一用 {@code |} 分隔，按段位读取见 {@link #textPart(int)} /
+ * {@link #doublePart(int, double)}。</p>
  */
 public class HeldItem {
 
@@ -61,19 +66,19 @@ public class HeldItem {
         return type.isBlank() ? null : type.trim();
     }
 
-    /** 倍率参数（DAMAGE_TYPE 取 {@code |} 之后部分；其余取参数整体）；解析失败返回 1.0。 */
+    /**
+     * 倍率参数。DAMAGE_TYPE 取 {@code |} 之后部分（{@code FIRE|1.2} → 1.2）；
+     * 其余效果取参数整体。若参数整体是多段形式（如 SPEED_MULTIPLIER 的
+     * {@code 0.5|GROUND}），退化为取首段数值。
+     *
+     * @return 倍率；解析失败返回 1.0
+     */
     public double doubleParam() {
-        String number = param;
-        if (effectType == HeldItemEffect.DAMAGE_TYPE) {
-            int sep = param.indexOf('|');
-            if (sep >= 0 && sep + 1 < param.length()) {
-                number = param.substring(sep + 1);
-            }
-        }
+        String number = effectType == HeldItemEffect.DAMAGE_TYPE ? textPart(1) : param;
         try {
             return Double.parseDouble(number.trim());
         } catch (NumberFormatException ex) {
-            return 1.0;
+            return doublePart(0, 1.0);
         }
     }
 
@@ -84,6 +89,175 @@ public class HeldItem {
         } catch (NumberFormatException ex) {
             return 0;
         }
+    }
+
+    /**
+     * 按 {@code |} 切分参数并取第 {@code index} 段原文（0 起）。
+     *
+     * @return 该段原文（已 trim）；越界或为空串时返回 {@code ""}
+     */
+    public String textPart(int index) {
+        if (param.isEmpty() || index < 0) {
+            return "";
+        }
+        String[] parts = param.split("\\|", -1);
+        return index < parts.length ? parts[index].trim() : "";
+    }
+
+    /**
+     * 按 {@code |} 切分参数并取第 {@code index} 段解析为 double（0 起）。
+     *
+     * @return 解析结果；越界或解析失败时返回 {@code fallback}
+     */
+    public double doublePart(int index, double fallback) {
+        String part = textPart(index);
+        if (part.isEmpty()) {
+            return fallback;
+        }
+        try {
+            return Double.parseDouble(part);
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    /** POISON_HEAL 的毒属性回血比例（param 第 1 段）；解析失败返回 0。 */
+    public double healRatio() {
+        return doublePart(0, 0);
+    }
+
+    /** POISON_HEAL 的非毒属性扣血比例（param 第 2 段）；解析失败返回 0。 */
+    public double damageRatio() {
+        return doublePart(1, 0);
+    }
+
+    /** LIFE_ORB 的招式伤害倍率（param 第 1 段）；解析失败返回 1.0。 */
+    public double damageMultiplier() {
+        return doublePart(0, 1.0);
+    }
+
+    /** LIFE_ORB 的每次命中反伤比例（param 第 2 段）；解析失败返回 0。 */
+    public double recoilRatio() {
+        return doublePart(1, 0);
+    }
+
+    /** CHOICE 的修正项（param 第 1 段，{@code SPECIAL} 或 {@code SPEED}）；缺失返回 {@code ""}。 */
+    public String choiceKind() {
+        return textPart(0);
+    }
+
+    /** CHOICE 的修正倍率（param 第 2 段）；解析失败返回 1.0。 */
+    public double choiceMultiplier() {
+        return doublePart(1, 1.0);
+    }
+
+    /** WEATHER_DURATION 的天气英文名（param 第 1 段）；缺失返回 {@code ""}。 */
+    public String weatherParam() {
+        return textPart(0);
+    }
+
+    /** WEATHER_DURATION 的延长后回合数（param 第 2 段）；解析失败返回 0。 */
+    public int durationTurns() {
+        return (int) doublePart(1, 0);
+    }
+
+    /** END_TURN_STATUS 要施加的异常状态英文名（param 第 1 段）；缺失返回 {@code ""}。 */
+    public String statusParam() {
+        return textPart(0);
+    }
+
+    /**
+     * CURE_STATUS 树果能治愈的异常集合。param 为 {@code |} 分隔的异常英文名，填 {@code ALL}
+     * 表示全部异常（含混乱）。无法识别的名称直接跳过。
+     *
+     * @return 可治愈的异常集合；非 CURE_STATUS 或参数为空时返回空集合
+     */
+    public Set<StatusCondition> cureStatuses() {
+        if (effectType != HeldItemEffect.CURE_STATUS || param.isEmpty()) {
+            return Set.of();
+        }
+        if ("ALL".equalsIgnoreCase(param)) {
+            return EnumSet.complementOf(EnumSet.of(StatusCondition.NONE, StatusCondition.FAINTED));
+        }
+        EnumSet<StatusCondition> statuses = EnumSet.noneOf(StatusCondition.class);
+        for (String part : param.split("\\|", -1)) {
+            StatusCondition status = StatusCondition.parse(part.trim());
+            if (status != StatusCondition.NONE) {
+                statuses.add(status);
+            }
+        }
+        return Collections.unmodifiableSet(statuses);
+    }
+
+    /** HEAL_HP 的触发阈值比例（param 第 1 段，HP 不高于最大 HP 的该比例时触发）；解析失败返回 0。 */
+    public double healThresholdRatio() {
+        return doublePart(0, 0);
+    }
+
+    /**
+     * HEAL_HP 的回复量（param 第 2 段）。小于 1 视为最大 HP 的比例，不小于 1 视为固定点数。
+     *
+     * @return 回复量；解析失败返回 0
+     */
+    public double healAmount() {
+        return doublePart(1, 0);
+    }
+
+    /** HEAL_PP 的回复点数（param 整体）；解析失败返回 0。 */
+    public int ppRestoreAmount() {
+        return (int) doublePart(0, 0);
+    }
+
+    /** RESIST_TYPE 减伤属性英文名（param 第 1 段）；缺失返回 {@code ""}。 */
+    public String resistTypeParam() {
+        return textPart(0);
+    }
+
+    /** RESIST_TYPE 的承伤倍率（param 第 2 段）；解析失败返回 1.0。 */
+    public double resistMultiplier() {
+        return doublePart(1, 1.0);
+    }
+
+    /** RESIST_TYPE 是否不要求「效果拔群」（param 第 3 段为 {@code ALWAYS}）；如灯浆果对一般属性。 */
+    public boolean resistUnconditional() {
+        return "ALWAYS".equalsIgnoreCase(textPart(2));
+    }
+
+    /** TERRAIN_SEED 触发所需场地英文名（param 第 1 段）；缺失返回 {@code ""}。 */
+    public String seedTerrainParam() {
+        return textPart(0);
+    }
+
+    /** TYPE_REACTION 触发所需招式属性英文名（param 第 1 段）；缺失返回 {@code ""}。 */
+    public String reactionTypeParam() {
+        return textPart(0);
+    }
+
+    /**
+     * 能力等级联动类装备要提升的能力项英文名（param 第 2 段）。
+     * 适用于 {@link HeldItemEffect#TERRAIN_SEED} 与 {@link HeldItemEffect#TYPE_REACTION}。
+     *
+     * @return 能力项英文名（如 {@code DEFENSE}）；缺失返回 {@code ""}
+     */
+    public String statParam() {
+        return textPart(1);
+    }
+
+    /**
+     * 能力等级联动类装备的提升等级数（param 第 3 段）；解析失败返回 0。
+     * 适用于 {@link HeldItemEffect#TERRAIN_SEED} 与 {@link HeldItemEffect#TYPE_REACTION}。
+     */
+    public int statLevels() {
+        return (int) doublePart(2, 0);
+    }
+
+    /**
+     * 单段数值参数的提升等级数（param 整体）；解析失败返回 0。
+     * 适用于 {@link HeldItemEffect#WEAKNESS_POLICY} / {@link HeldItemEffect#BLUNDER_POLICY} /
+     * {@link HeldItemEffect#THROAT_SPRAY}。
+     */
+    public int statLevelsParam() {
+        return (int) doublePart(0, 0);
     }
 
     @Override

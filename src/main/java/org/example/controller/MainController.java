@@ -3,6 +3,7 @@ package org.example.controller;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -32,6 +33,7 @@ import org.example.util.LogUtil;
 import org.example.util.MusicPlayer;
 import org.example.view.CustomBattleSetupView;
 import org.example.view.CustomBattleView;
+import org.example.view.ItemDexView;
 import org.example.view.MainView;
 import org.example.view.PokedexView;
 import org.example.view.PokemonDetailView;
@@ -111,11 +113,21 @@ public class MainController {
         return player.getParty().stream().mapToInt(Pokemon::getLevel).max().orElse(1);
     }
 
-    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「宝可梦图鉴」进入图鉴页；「自定义战斗」进入模式选择页）。 */
+    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「宝可梦图鉴」「道具图鉴」进入图鉴页；「自定义战斗」进入模式选择页）。 */
     public void showStartScreen() {
         MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环；文件缺失静默降级）
         stage.setScene(new StartView(this::showStarterSelection, this::showContinueSelection,
-                saveManager.store().hasAnySave(), this::showCustomBattle, this::showPokedex).createScene());
+                saveManager.store().hasAnySave(), this::showCustomBattle, this::showPokedex,
+                this::showItemDexFromStart).createScene());
+    }
+
+    /**
+     * 道具图鉴页·启动页入口：此时尚未读档，没有 {@link Player}，因此传 {@code null} 让图鉴
+     * 按「全部未拥有」只读展示（无穿戴 / 脱下操作，仅看效果与售价）。「返回」回到启动页；
+     * 主菜单内的道具图鉴入口（{@link #showItemDex()}）仍带玩家数据，可直接穿脱。
+     */
+    public void showItemDexFromStart() {
+        stage.setScene(new ItemDexView(null, null, this::showStartScreen, "返回主界面").createScene());
     }
 
     /**
@@ -213,9 +225,18 @@ public class MainController {
             chooseSlotForNewGame(trainerName, starter);
             return;
         }
+        GameSession created;
+        try {
+            created = saveManager.newGame(slot, trainerName, starter);
+        } catch (RuntimeException ex) {
+            LogUtil.info("[MainController] 开新游戏失败：" + slot + "（" + ex.getMessage() + "）");
+            infoAlert("无法开始", "清空并初始化 " + slot.displayName() + " 时出错：\n" + ex.getMessage());
+            chooseSlotForNewGame(trainerName, starter);
+            return; // 失败时不动 activeSlot / session，避免把旧会话写进新档位
+        }
         this.activeSlot = slot;
-        this.session = saveManager.newGame(slot, trainerName, starter);
-        this.player = session.getPlayer();
+        this.session = created;
+        this.player = created.getPlayer();
         autoSave(); // 立刻落一次盘，玩家此后即使直接关窗口也有档可继续
         showMainMenu();
     }
@@ -299,6 +320,11 @@ public class MainController {
             }
 
             @Override
+            public void onShowItemDex() {
+                showItemDex();
+            }
+
+            @Override
             public void onBackToStart() {
                 showStartScreen();
             }
@@ -312,6 +338,17 @@ public class MainController {
     public void showPokemonDetail(int initialIndex) {
         stage.setScene(new PokemonDetailView(player, initialIndex, session.mapBackgroundPath(), this::showMainMenu)
                 .createScene());
+    }
+
+    /**
+     * 道具图鉴页：由主菜单「道具图鉴」按钮进入。
+     *
+     * <p>全量列出商店商品目录（16 件消耗品 + 77 件装备），标注已拥有 / 未拥有与穿戴者；
+     * 已拥有的装备可在本页直接穿戴 / 脱下（写的就是玩家装备库，与详情页共用同一模型方法），
+     * 因此这里不做二次校验，也不与金币 / 存档交互。「返回」重建主菜单以同步队伍变化。</p>
+     */
+    public void showItemDex() {
+        stage.setScene(new ItemDexView(player, session.mapBackgroundPath(), this::showMainMenu).createScene());
     }
 
     /**
@@ -633,10 +670,18 @@ public class MainController {
     /** 本次商店的商品库存；为 null 表示当前不在商店。 */
     private ShopStock currentShopStock;
 
-    /** 打开商店：按当前段生成库存。 */
+    /** 打开商店：按当前段生成库存（装备池排除已拥有的装备）。 */
     private void openShop() {
-        currentShopStock = ShopStock.forSegment(session.getSegment());
+        currentShopStock = ShopStock.forSegment(session.getSegment(), new Random(), ownedEquipmentIds());
         showShopScene();
+    }
+
+    /** 玩家已拥有的装备 id（装备全库唯一，已拥有者不再上架）。 */
+    private Set<String> ownedEquipmentIds() {
+        if (player == null) {
+            return Set.of();
+        }
+        return player.getEquipment().stream().map(HeldItem::getId).collect(Collectors.toSet());
     }
 
     private void showShopScene() {
@@ -647,9 +692,13 @@ public class MainController {
         stage.setScene(new ShopView(session, currentShopStock, this::buyFromShop, this::leaveShop).createScene());
     }
 
-    /** 购买：校验金币 → 扣款 → 入背包 → 刷新货架。 */
+    /** 购买：校验金币 → 扣款 → 消耗品入背包 / 装备入库 → 刷新货架。 */
     private void buyFromShop(ShopStock.Entry entry) {
         if (entry == null || player == null) {
+            return;
+        }
+        if (entry.isEquipment()) {
+            buyEquipment(entry);
             return;
         }
         Item item = GameData.instance().item(entry.itemId());
@@ -663,6 +712,34 @@ public class MainController {
         }
         player.getBag().add(item, 1);
         LogUtil.info("商店购买: " + entry.itemName() + " x1，花费 " + entry.price() + " 金币");
+        showShopScene();
+    }
+
+    /**
+     * 购买装备：装备全库唯一，已拥有则提示并直接下架；否则扣款入库。
+     * 入库后把该件移出货架，避免同一件重复购买。
+     */
+    private void buyEquipment(ShopStock.Entry entry) {
+        HeldItem equipment = GameData.instance().equipment(entry.itemId());
+        if (equipment == null) {
+            infoAlert("数据异常", "商店装备不存在：" + entry.itemId());
+            return;
+        }
+        if (player.getEquipment().contains(equipment)) {
+            infoAlert("已拥有", "你已经拥有【" + equipment.getName() + "】了，本次不上架该装备。");
+            currentShopStock = currentShopStock.withoutEntry(entry.itemId());
+            showShopScene();
+            return;
+        }
+        if (!session.getRogueRunData().spendGold(entry.price())) {
+            infoAlert("金币不足", "还需 " + (entry.price() - session.getRogueRunData().getGold()) + " 金币。");
+            return;
+        }
+        player.addEquipment(equipment);
+        LogUtil.info("商店购买装备: " + equipment.getName() + "，花费 " + entry.price() + " 金币");
+        LogUtil.info("获得装备【" + equipment.getName() + "】：" + equipment.getDescription()
+                + "\n可在主菜单点击精灵名，在详情页中穿戴。");
+        currentShopStock = currentShopStock.withoutEntry(entry.itemId());
         showShopScene();
     }
 
