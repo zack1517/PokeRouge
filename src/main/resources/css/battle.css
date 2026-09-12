@@ -1,0 +1,19 @@
+/* 战斗场景样式表（2026-09-11 样式改版，整合「临时/react」Web 版战斗页设计）。
+   仅承载内联 setStyle 无法表达的部分（ProgressBar 内部 .track/.bar），
+   其余样式集中在 BattleView 内联样式里；本表不改变任何尺寸。 */
+
+/* HP 条：棕底 + 深蓝细描边（react 信息卡 HP 条样式）；
+   填充色由 -fx-accent 内联按血量设置（绿/黄/红三段渐变，见 BattleView.refreshHp）。 */
+.battle-hp > .track {
+    -fx-background-color: #7a6a50;
+    -fx-background-radius: 3;
+    -fx-border-color: #2a3a5c;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+}
+
+.battle-hp > .bar {
+    -fx-background-color: -fx-accent;
+    -fx-background-radius: 2;
+    -fx-background-insets: 0;
+}

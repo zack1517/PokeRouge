@@ -72,6 +72,12 @@ import java.util.function.IntPredicate;
  * 战斗背景由流程按战斗类型传入（2026-09-11 素材按类型分类：野怪 / 路人 / 道馆 / Boss，
  * 见 {@link org.example.GameSession#battleBackgroundFor(org.example.model.OptionType)}）；未指定时默认野外图。</p>
  *
+ * <p>2026-09-11 样式改版（整合「临时/react」Web 版战斗页设计）：信息卡为奶油米色渐变 + 深海军蓝描边硬阴影、
+ * 行动按钮与技能 / 道具 / 精灵格为马卡龙四色（黄 / 蓝 / 绿 / 红）硬底按钮、日志与详情卡为金框白芯、
+ * HP 条为棕底 + 绿 / 黄 / 红渐变填充、属性徽章按属性分色。仅调整配色 / 描边 / 圆角 / 阴影等视觉样式：
+ * 全部描边改由背景层内缩模拟（不占 padding），各按钮、文本、贴图（宝可梦立绘区域）的大小与位置均不变；
+ * HP 条内部轨道样式在 {@code /css/battle.css}。</p>
+ *
  * <p>全局等比缩放由 {@link org.example.util.UiScale} 统一施加（本类布局按 640×426.67 设计，3:2）。</p>
  */
 public class BattleView {
@@ -149,14 +155,16 @@ public class BattleView {
      */
     private static final int MAX_LOG_ROWS = 4;
     /**
-     * 日志态左块外框（与右侧行动区视觉分隔）：浅白底 + 细灰边 + 圆角；
+     * 日志态左块外框（与右侧行动区视觉分隔）：金框白芯（react 战斗日志样式）——
+     * 外层深海军蓝细描边 + 宝可梦金边框 + 白芯，全部画在背景层（不改 padding，文本位置不变）。
      * 纵向空间紧凑（内容区高约 99，场况 18 + 日志 4×18 + 间距 2 约 92），故上下 padding 仅 2。
      * 技能面板态由 showMoveMenu 清除本样式（左块那时放技能格，不套日志框）。
      */
     private static final String LEFT_LOG_FRAME_CSS =
-            "-fx-background-color: rgba(255, 255, 255, 0.55); -fx-background-radius: 8;"
-                    + " -fx-border-color: #c9c9c9; -fx-border-width: 1; -fx-border-radius: 8;"
-                    + " -fx-padding: 2 10;";
+            "-fx-background-color: rgba(6, 22, 42, 0.55), rgba(255, 203, 5, 0.92), #ffffff;"
+                    + " -fx-background-insets: -2, 0, 3; -fx-background-radius: 18, 16, 13;"
+                    + " -fx-padding: 2 10;"
+                    + "-fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.4, 0, 4);";
     /** 场况行（天气/场地）文本：深色粗体小字（浅底无描边，同日志区样式基调）。 */
     private final Label fieldStatus = new Label();
     private final VBox logLines = new VBox(0); // 战斗日志行（showLog 重建，保留最近 MAX_LOG_ROWS 行）
@@ -220,7 +228,12 @@ public class BattleView {
         // 飞行道具/闪光等临时特效节点挂在此层，坐标经 sceneToLocal 换算，不受 UiScale 缩放影响。
         effectLayer.setMouseTransparent(true);
         effectLayer.setPickOnBounds(false);
-        return UiScale.scene(new StackPane(root, spriteLayer, effectLayer));
+        Scene scene = UiScale.scene(new StackPane(root, spriteLayer, effectLayer));
+        java.net.URL css = BattleView.class.getResource("/css/battle.css"); // HP 条棕底等内部部件样式
+        if (css != null) {
+            scene.getStylesheets().add(css.toExternalForm());
+        }
+        return scene;
     }
 
     // ------------------------------------------------------------------
@@ -237,14 +250,14 @@ public class BattleView {
         return top;
     }
 
-    /** 敌信息卡（左上，与己方卡同款，见 {@link #buildStatCard}）。 */
+    /** 敌信息卡（左上；圆角 / 阴影朝左上，见 {@link #buildStatCard}）。 */
     private VBox buildEnemyCard() {
-        return buildStatCard(wildName, wildType, wildLv, wildHpBar, wildHpText, wildStatus);
+        return buildStatCard(wildName, wildType, wildLv, wildHpBar, wildHpText, wildStatus, true);
     }
 
     /** 中部区域：中央留空展示主背景（立绘悬浮其上，见 {@link #buildSpriteLayer()}）；右下角己方信息卡。 */
     private Parent buildCenter() {
-        VBox card = buildStatCard(playerName, playerType, playerLv, playerHpBar, playerHpText, playerStatus);
+        VBox card = buildStatCard(playerName, playerType, playerLv, playerHpBar, playerHpText, playerStatus, false);
         // 关键：center 是 StackPane，默认会把卡片拉高到与中部区域同高；宽高都限定为内容自然尺寸，再以 BOTTOM_RIGHT 归位到右下。
         card.setMaxHeight(Region.USE_PREF_SIZE);
         card.setMaxWidth(Region.USE_PREF_SIZE);
@@ -295,7 +308,7 @@ public class BattleView {
     private Parent buildBottom() {
         // 左块：场况（天气/场地，无数据时留空）+ 战斗日志（深色文字；白字黑描边方案因 JavaFX 描边渲染性能
         // 问题废弃——动态中文描边每字符 ~50ms 光栅且无缓存，见 MAX_LOG_ROWS 注释）
-        fieldStatus.setStyle(YH + "-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #333;");
+        fieldStatus.setStyle(YH + "-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #0b2a42;");
         leftPanel.setStyle(LEFT_LOG_FRAME_CSS); // 初始即日志态：带外框（showMoveMenu 切换技能面板时清除）
         leftPanel.getChildren().setAll(fieldStatus, logLines);
         VBox.setVgrow(logLines, Priority.ALWAYS);
@@ -321,19 +334,20 @@ public class BattleView {
      * （无异常时整行隐藏，卡高自动回落）。
      */
     private VBox buildStatCard(Label name, Label type, Label lv,
-                               ProgressBar hpBar, Label hpText, Label status) {
-        VBox card = battleCard();
+                               ProgressBar hpBar, Label hpText, Label status, boolean enemy) {
+        VBox card = battleCard(enemy);
         HBox line1 = new HBox(6);
         line1.setAlignment(Pos.CENTER_LEFT);
-        name.setStyle(YH + "-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #1c1c1c;");
+        name.setStyle(YH + "-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #1a2a3a;");
         type.setStyle(chip());
-        lv.setStyle(YH + "-fx-font-size: 13px; -fx-text-fill: #6a6a6a;");
+        lv.setStyle(YH + "-fx-font-size: 13px; -fx-text-fill: #4a5b70;");
         line1.getChildren().addAll(name, type, lv);
 
         HBox line2 = new HBox(6);
         line2.setAlignment(Pos.CENTER_LEFT);
         hpBar.setPrefWidth(130);
-        hpText.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #333; -fx-font-weight: bold;");
+        hpBar.getStyleClass().add("battle-hp"); // 棕底 + 渐变填充（/css/battle.css）
+        hpText.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #1a2a3a; -fx-font-weight: bold;");
         line2.getChildren().addAll(hpBar, hpText);
 
         status.setStyle(statusChip());
@@ -450,17 +464,28 @@ public class BattleView {
         return hud;
     }
 
-    /** 信息卡通用底：近不透明实底圆角卡。 */
-    private VBox battleCard() {
+    /**
+     * 信息卡通用底：奶油米色渐变 + 深海军蓝描边 + 对角圆角 + 硬阴影（react 信息卡）。
+     * 敌卡圆角朝左上（18 4 18 4）、阴影左下；己方卡镜像（4 18 4 18 / 阴影右下）。
+     * 描边由背景层内缩模拟（不占 padding → 卡内文本位置与改版前完全一致）。
+     */
+    private VBox battleCard(boolean enemy) {
         VBox card = new VBox(3);
-        card.setStyle("-fx-background-color: rgba(250, 250, 250, 0.94); -fx-background-radius: 10;"
-                + "-fx-padding: 6 12;");
+        String radius = enemy ? "18 4 18 4, 15 1 15 1" : "4 18 4 18, 1 15 1 15";
+        String shadow = enemy ? "-4, 4" : "4, 4";
+        card.setStyle("-fx-background-color: " + POKE_INK + ", linear-gradient(to bottom right, #f5f0e8, #e8dfc8);"
+                + "-fx-background-radius: " + radius + "; -fx-background-insets: 0, 3;"
+                + "-fx-padding: 6 12;"
+                + "-fx-effect: dropshadow(gaussian, rgba(42, 58, 92, 0.85), 0, 1, " + shadow + ");");
         return card;
     }
 
-    /** 底栏信息卡紧凑底样式（与 {@link #battleCard()} 同视觉，纵向 padding 6→3，适配 1/4 底栏 ≈99 内容区）。 */
-    private static final String BOTTOM_CARD_CSS = "-fx-background-color: rgba(250, 250, 250, 0.94);"
-            + "-fx-background-radius: 10; -fx-padding: 3 10;";
+    /** 底栏信息卡紧凑底样式（金框白芯，与 {@link #battleCard(boolean)} 同为 react 体系，纵向 padding 6→3，适配 1/4 底栏 ≈99 内容区）。 */
+    private static final String BOTTOM_CARD_CSS =
+            "-fx-background-color: rgba(6, 22, 42, 0.55), rgba(255, 203, 5, 0.92), #ffffff;"
+                    + " -fx-background-insets: -2, 0, 3; -fx-background-radius: 18, 16, 13;"
+                    + " -fx-padding: 3 10;"
+                    + "-fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.4, 0, 4);";
 
     /** 占位弹性空白（把右上角信息块顶到最右）。 */
     private Region spacer() {
@@ -470,6 +495,57 @@ public class BattleView {
     }
 
     private static final String YH = "-fx-font-family: 'Microsoft YaHei'; ";
+
+    // ---- react 战斗页设计色板（2026-09-11 样式改版；描边一律由背景层内缩模拟，不占 padding）----
+    /** 深海军蓝：信息卡 / 按钮描边与卡内主文字色。 */
+    private static final String POKE_INK = "#2a3a5c";
+
+    /** 马卡龙按钮配色（背景 / 描边 / 文字 / 硬阴影色；对应 react 黄=战斗、蓝=背包、绿=精灵、红=逃跑）。 */
+    private record PokeTone(String bg, String border, String text, String shadow) { }
+
+    private static final PokeTone TONE_YELLOW = new PokeTone("#f8d030", "#b07818", "#3a2000", "#b07818");
+    private static final PokeTone TONE_BLUE = new PokeTone("#6890f0", "#2850b0", "#ffffff", "#2850b0");
+    private static final PokeTone TONE_GREEN = new PokeTone("#78c850", "#286820", "#ffffff", "#286820");
+    private static final PokeTone TONE_RED = new PokeTone("#f85888", "#a01840", "#ffffff", "#a01840");
+    /** 马卡龙四色轮换表（技能 / 道具 / 精灵格按格索引取色）。 */
+    private static final PokeTone[] TONE_CYCLE = {TONE_YELLOW, TONE_BLUE, TONE_GREEN, TONE_RED};
+
+    /**
+     * 马卡龙按钮样式：描边色垫底 + 面色内缩 2px 作芯（不占 padding）+ 向下 3px 硬阴影（react poke-button）。
+     * {@code sizeCss} 由调用方给出字号 / 尺寸等不变项。
+     */
+    private static String toneCss(PokeTone tone, String sizeCss) {
+        return YH + sizeCss + "-fx-background-color: " + tone.border() + ", " + tone.bg() + ";"
+                + "-fx-background-radius: 7, 5; -fx-background-insets: 0, 2;"
+                + "-fx-text-fill: " + tone.text() + ";"
+                + "-fx-effect: dropshadow(gaussian, " + tone.shadow() + ", 0, 1, 0, 3);";
+    }
+
+    /** 灰态按钮样式（禁用 / PP 不足 / 倒下格：与马卡龙按钮同构，仅换灰阶）。 */
+    private static String greyToneCss(String sizeCss) {
+        return YH + sizeCss + "-fx-background-color: #b9c2cc, #e9e9e9;"
+                + "-fx-background-radius: 7, 5; -fx-background-insets: 0, 2;"
+                + "-fx-text-fill: #8a8a8a;";
+    }
+
+    /** 属性徽章样式（react TypeBadge：按属性分色；电 / 冰等浅色属性用深字保证可读）。 */
+    private static String chipFor(Pokemon p) {
+        ElementType primary = p == null ? null : p.getSpecies().getTypes().stream().findFirst().orElse(null);
+        if (primary == null) {
+            return chip();
+        }
+        return YH + "-fx-background-color: " + primary.getColorCode() + "; -fx-background-radius: 9;"
+                + "-fx-padding: 1 8; -fx-font-size: 12px; -fx-text-fill: " + badgeTextColor(primary) + ";"
+                + "-fx-font-weight: bold;";
+    }
+
+    /** 浅色属性（亮底）用深海军蓝字，其余用白字。 */
+    private static String badgeTextColor(ElementType type) {
+        return switch (type) {
+            case ELECTRIC, ICE, GROUND, STEEL, NORMAL, ROCK, BUG, FAIRY -> POKE_INK;
+            default -> "#ffffff";
+        };
+    }
 
     /** 属性徽章样式。 */
     private static String chip() {
@@ -485,6 +561,7 @@ public class BattleView {
     public void refreshPokemon(Pokemon player, Pokemon wild) {
         playerName.setText(player.getName());
         playerType.setText(typeOf(player));
+        playerType.setStyle(chipFor(player)); // 属性徽章按属性分色
         playerLv.setText("Lv." + player.getLevel());
         refreshHp(playerHpBar, playerHpText, player);
         applyStatusBadge(playerStatus, player);
@@ -492,6 +569,7 @@ public class BattleView {
 
         wildName.setText(wild.getName());
         wildType.setText(typeOf(wild));
+        wildType.setStyle(chipFor(wild)); // 属性徽章按属性分色
         wildLv.setText("Lv." + wild.getLevel());
         refreshHp(wildHpBar, wildHpText, wild);
         applyStatusBadge(wildStatus, wild);
@@ -534,7 +612,7 @@ public class BattleView {
     /** 战斗日志行：深色文字（与场况行同字体基调）；不换行，超长截断防溢出。 */
     private Label logLine(String line) {
         Label l = new Label(line.length() <= 40 ? line : line.substring(0, 39) + "…");
-        l.setStyle(YH + "-fx-font-size: 13px; -fx-text-fill: #333;");
+        l.setStyle(YH + "-fx-font-size: 13px; -fx-text-fill: #0b2a42;");
         l.setWrapText(false);
         return l;
     }
@@ -548,27 +626,22 @@ public class BattleView {
         grid.setHgap(6);
         grid.setVgap(6);
         grid.setAlignment(Pos.CENTER);
-        grid.add(gridButton("战斗", false, e -> onSkills.run()), 0, 0);
-        grid.add(gridButton("背包", false, e -> onBag.run()), 1, 0);
+        grid.add(gridButton("战斗", false, TONE_YELLOW, e -> onSkills.run()), 0, 0);
+        grid.add(gridButton("背包", false, TONE_BLUE, e -> onBag.run()), 1, 0);
         // 无论是否有可换精灵都能点开队伍菜单（倒下/当前出战精灵在菜单内禁用）
-        grid.add(gridButton("精灵", false, e -> onOpenParty.run()), 0, 1);
-        grid.add(gridButton("逃跑", false, e -> actions.onRun()), 1, 1);
+        grid.add(gridButton("精灵", false, TONE_GREEN, e -> onOpenParty.run()), 0, 1);
+        grid.add(gridButton("逃跑", false, TONE_RED, e -> actions.onRun()), 1, 1);
         actionBox.getChildren().add(grid);
     }
 
-    /** 主菜单 2×2 网格按钮：等大（92×32），禁用态灰字灰底不透明。 */
-    private Button gridButton(String text, boolean disabled, javafx.event.EventHandler<javafx.event.ActionEvent> handler) {
+    /** 主菜单 2×2 网格按钮：等大（92×32），马卡龙色 + 深描边硬底阴影（禁用态灰化）。 */
+    private Button gridButton(String text, boolean disabled, PokeTone tone,
+                              javafx.event.EventHandler<javafx.event.ActionEvent> handler) {
         Button b = new Button(text);
         b.setMaxWidth(200);
-        b.setStyle(YH + "-fx-font-size: 14px; -fx-pref-width: 92px; -fx-pref-height: 32px;"
-                + "-fx-background-color: #ffffff; -fx-background-radius: 6;"
-                + "-fx-border-color: #c9c9c9; -fx-border-radius: 6; -fx-text-fill: #222;");
+        String size = "-fx-font-size: 14px; -fx-pref-width: 92px; -fx-pref-height: 32px;";
+        b.setStyle(disabled ? greyToneCss(size) : toneCss(tone, size));
         b.setDisable(disabled);
-        if (disabled) {
-            b.setStyle(YH + "-fx-font-size: 14px; -fx-pref-width: 92px; -fx-pref-height: 32px;"
-                    + "-fx-background-color: #d9d9d9; -fx-background-radius: 6;"
-                    + "-fx-border-color: #c2c2c2; -fx-border-radius: 6; -fx-text-fill: #7f7f7f;");
-        }
         b.setOnAction(handler);
         return b;
     }
@@ -593,13 +666,13 @@ public class BattleView {
         for (int i = 0; i < 4; i++) {
             MoveSlot slot = i < slots.size() ? slots.get(i) : null;
             if (slot == null) {
-                grid.add(skillCell("—", "未习得", true, null), i % 2, i / 2);
+                grid.add(skillCell("—", "未习得", true, null, i), i % 2, i / 2);
                 continue;
             }
             boolean exhausted = slot.exhausted();
             String pp = exhausted ? "PP 不足" : "PP " + slot.getPp() + "/" + slot.getMove().getMaxPp();
             // 按钮第二行只保留 PP（2026-09-09：威力/属性不再进按钮，集中展示在右侧技能信息卡）
-            Button b = skillCell(slot.getMove().getName(), pp, exhausted, slot);
+            Button b = skillCell(slot.getMove().getName(), pp, exhausted, slot, i);
             // 悬停联动：右侧信息卡切换为当前技能（PP 不足也可查看，仅不能点击出招）
             b.setOnMouseEntered(e -> updateMoveInfo(slot));
             if (!exhausted) {
@@ -621,15 +694,13 @@ public class BattleView {
         leftPanel.getChildren().setAll(fieldStatus, logLines);
     }
 
-    /** 技能格（两行：技能名 / PP）；grey=PP 不足格（可悬停查看详情，点击无动作）；null slot 真禁用占位。 */
-    private Button skillCell(String name, String sub, boolean grey, MoveSlot slot) {
+    /** 技能格（两行：技能名 / PP）；grey=PP 不足格（可悬停查看详情，点击无动作）；null slot 真禁用占位；colorIndex 取马卡龙轮换色。 */
+    private Button skillCell(String name, String sub, boolean grey, MoveSlot slot, int colorIndex) {
         Button b = new Button(name + "\n" + sub);
         b.setFocusTraversable(false);
-        b.setStyle(YH + "-fx-font-size: 11px; -fx-pref-width: 168px; -fx-pref-height: 32px;"
-                + "-fx-background-color: " + (grey ? "#e9e9e9" : "#ffffff") + "; -fx-background-radius: 6;"
-                + "-fx-border-color: " + (grey ? "#c8c8c8" : "#c9c9c9") + "; -fx-border-radius: 6;"
-                + "-fx-text-fill: " + (grey ? "#8a8a8a" : "#222222") + ";"
-                + "-fx-line-spacing: 1; -fx-padding: 1 4;");
+        String size = "-fx-font-size: 11px; -fx-pref-width: 168px; -fx-pref-height: 32px;"
+                + "-fx-line-spacing: 1; -fx-padding: 1 4;";
+        b.setStyle(grey ? greyToneCss(size) : toneCss(TONE_CYCLE[colorIndex % TONE_CYCLE.length], size));
         b.setDisable(slot == null); // 未习得占位格真禁用（无详情可看）；PP 不足格保留悬停联动
         return b;
     }
@@ -638,17 +709,17 @@ public class BattleView {
      * 卡宽固定为常量（效果行 wrap 上限 170 + 卡 padding 24 = 194）：否则悬停不同技能时文本长短变化会
      * 改变 actionBox pref 宽，牵动左块 2×2 技能格水平位移（2026-09-09 实测悬停短文本技能时网格右移 7px）。 */
     private VBox buildMoveInfoCard() {
-        VBox card = battleCard();
+        VBox card = battleCard(false);
         card.setStyle(BOTTOM_CARD_CSS); // 1/4 底栏：紧凑底样式
         card.setSpacing(2);
         card.setPrefWidth(194);
-        moveInfoName.setStyle(YH + "-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #1c1c1c;");
+        moveInfoName.setStyle(YH + "-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #1a2a3a;");
         moveInfoMeta.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #2f5d9e;");
-        moveInfoStats.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
-        moveInfoPp.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
+        moveInfoStats.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #1a2a3a;");
+        moveInfoPp.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #1a2a3a;");
         moveInfoEffect.setWrapText(true);
         moveInfoEffect.setMaxWidth(170);
-        moveInfoEffect.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #777;");
+        moveInfoEffect.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #5a6a7e;");
         card.getChildren().addAll(moveInfoName, moveInfoMeta, moveInfoStats, moveInfoPp, moveInfoEffect);
         return card;
     }
@@ -675,7 +746,7 @@ public class BattleView {
         String ppText = "PP " + slot.getPp() + " / " + slot.getMaxPp();
         moveInfoPp.setText(exhausted ? ppText + "（PP 不足）" : ppText);
         moveInfoPp.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: "
-                + (exhausted ? "#c03030;" : "#333;"));
+                + (exhausted ? "#c03030;" : "#1a2a3a;"));
         String effect = moveEffectText(move);
         moveInfoEffect.setText(effect);
         boolean hasEffect = !effect.isEmpty();
@@ -727,12 +798,10 @@ public class BattleView {
         return "可能使目标陷入" + name + "状态（" + chance + "%）";
     }
 
-    /** 小号紧凑按钮（技能面板状态行右侧「返回」）。 */
+    /** 小号紧凑按钮（技能面板状态行右侧「返回」）：黄底棕边（react 返回按钮）。 */
     private Button compactButton(String text) {
         Button b = new Button(text);
-        b.setStyle(YH + "-fx-font-size: 11px; -fx-padding: 1 8;"
-                + "-fx-background-radius: 6; -fx-background-color: #ffffff;"
-                + "-fx-border-color: #c9c9c9; -fx-border-radius: 6; -fx-text-fill: #222;");
+        b.setStyle(toneCss(TONE_YELLOW, "-fx-font-size: 11px; -fx-padding: 1 8;"));
         return b;
     }
 
@@ -766,7 +835,7 @@ public class BattleView {
         for (int i = 0; i < items.size(); i++) {
             ItemButton entry = items.get(i);
             int index = i;
-            Button b = itemCell(entry.text(), entry.disabled());
+            Button b = itemCell(entry.text(), entry.disabled(), i);
             b.setOnMouseEntered(e -> updateItemInfo(entry));
             if (!entry.disabled()) {
                 b.setOnAction(e -> onPick.accept(index));
@@ -787,28 +856,26 @@ public class BattleView {
         updateItemInfo(items.isEmpty() ? null : items.get(0)); // 打开面板默认展示第一个道具
     }
 
-    /** 道具格（一行：名称 ×数量）；grey=当前无可用目标（可悬停查看说明，点击无动作）。 */
-    private Button itemCell(String text, boolean grey) {
+    /** 道具格（一行：名称 ×数量）；grey=当前无可用目标（可悬停查看说明，点击无动作）；colorIndex 取马卡龙轮换色。 */
+    private Button itemCell(String text, boolean grey, int colorIndex) {
         Button b = new Button(text);
         b.setFocusTraversable(false);
-        b.setStyle(YH + "-fx-font-size: 12px; -fx-pref-width: 115px; -fx-pref-height: 28px;"
-                + "-fx-background-color: " + (grey ? "#e9e9e9" : "#ffffff") + "; -fx-background-radius: 6;"
-                + "-fx-border-color: " + (grey ? "#c8c8c8" : "#c9c9c9") + "; -fx-border-radius: 6;"
-                + "-fx-text-fill: " + (grey ? "#8a8a8a" : "#222222") + "; -fx-padding: 2 4;");
+        String size = "-fx-font-size: 12px; -fx-pref-width: 115px; -fx-pref-height: 28px; -fx-padding: 2 4;";
+        b.setStyle(grey ? greyToneCss(size) : toneCss(TONE_CYCLE[colorIndex % TONE_CYCLE.length], size));
         return b;
     }
 
     /** 道具信息卡（右块，宽度与精灵信息卡一致）：道具名 + 效果说明。 */
     private VBox buildItemInfoCard() {
-        VBox card = battleCard();
+        VBox card = battleCard(false);
         card.setStyle(BOTTOM_CARD_CSS); // 1/4 底栏：紧凑底样式
         card.setSpacing(2);
         card.setPrefWidth(PARTY_INFO_CARD_WIDTH);
         card.setAlignment(Pos.TOP_LEFT);
-        itemInfoName.setStyle(YH + "-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #1c1c1c;");
+        itemInfoName.setStyle(YH + "-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #1a2a3a;");
         itemInfoDesc.setWrapText(true);
         itemInfoDesc.setMaxWidth(210);
-        itemInfoDesc.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
+        itemInfoDesc.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #1a2a3a;");
         card.getChildren().addAll(itemInfoName, itemInfoDesc);
         return card;
     }
@@ -899,7 +966,7 @@ public class BattleView {
             int index = i;
             Pokemon p = index < party.size() ? party.get(index) : null;
             if (p == null) {
-                grid.add(partyCell("—", "空位", true, true), index % 3, index / 3);
+                grid.add(partyCell("—", "空位", true, true, index), index % 3, index / 3);
                 continue;
             }
             boolean fainted = p.isFainted();
@@ -911,7 +978,7 @@ public class BattleView {
                 sub = sub + "  " + badge;
             }
             Button b = partyCell((active ? "★ " : "") + p.getName(), "Lv." + p.getLevel() + "  " + sub,
-                    grey.test(index), false);
+                    grey.test(index), false, index);
             // 悬停联动：详情卡切换（倒下/出战也可查看）；点击仅合法目标可选中
             b.setOnMouseEntered(e -> updatePartyInfo(p));
             if (selectable.test(index)) {
@@ -926,15 +993,13 @@ public class BattleView {
         updatePartyInfo(party.isEmpty() ? null : party.get(0)); // 打开面板默认展示第一只
     }
 
-    /** 精灵格（两行：名称 / 等级+血量）：grey=倒下（可悬停查看详情、点击无动作）；空位真禁用（无详情可看）。 */
-    private Button partyCell(String name, String sub, boolean grey, boolean disabled) {
+    /** 精灵格（两行：名称 / 等级+血量）：grey=倒下（可悬停查看详情、点击无动作）；空位真禁用（无详情可看）；colorIndex 取马卡龙轮换色。 */
+    private Button partyCell(String name, String sub, boolean grey, boolean disabled, int colorIndex) {
         Button b = new Button(name + "\n" + sub);
         b.setFocusTraversable(false);
-        b.setStyle(YH + "-fx-font-size: 11px; -fx-pref-width: 115px; -fx-pref-height: 32px;"
-                + "-fx-background-color: " + (grey ? "#e9e9e9" : "#ffffff") + "; -fx-background-radius: 6;"
-                + "-fx-border-color: " + (grey ? "#c8c8c8" : "#c9c9c9") + "; -fx-border-radius: 6;"
-                + "-fx-text-fill: " + (grey ? "#8a8a8a" : "#222222") + ";"
-                + "-fx-line-spacing: 1; -fx-padding: 1 4;");
+        String size = "-fx-font-size: 11px; -fx-pref-width: 115px; -fx-pref-height: 32px;"
+                + "-fx-line-spacing: 1; -fx-padding: 1 4;";
+        b.setStyle(grey ? greyToneCss(size) : toneCss(TONE_CYCLE[colorIndex % TONE_CYCLE.length], size));
         b.setDisable(disabled);
         return b;
     }
@@ -946,25 +1011,26 @@ public class BattleView {
     /** 精灵信息卡（右块）：名称+属性+等级 / HP 条 / 状态+经验（同行） / 能力值两行。
      * 卡宽与行数均固定：悬停不同精灵时文本变化只在卡内布局，不牵动左块网格（防抖原则，同技能卡）。 */
     private VBox buildPartyInfoCard() {
-        VBox card = battleCard();
+        VBox card = battleCard(false);
         card.setStyle(BOTTOM_CARD_CSS); // 1/4 底栏：紧凑底样式（卡为 6 行信息，padding 6→3）
         card.setSpacing(2);
         card.setPrefWidth(PARTY_INFO_CARD_WIDTH);
         HBox line1 = new HBox(6);
         line1.setAlignment(Pos.CENTER_LEFT);
-        partyInfoName.setStyle(YH + "-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #1c1c1c;");
+        partyInfoName.setStyle(YH + "-fx-font-size: 13px; -fx-font-weight: bold; -fx-text-fill: #1a2a3a;");
         partyInfoType.setStyle(chip());
-        partyInfoLv.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #6a6a6a;");
+        partyInfoLv.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #4a5b70;");
         line1.getChildren().addAll(partyInfoName, partyInfoType, partyInfoLv);
         HBox line2 = new HBox(6);
         line2.setAlignment(Pos.CENTER_LEFT);
         partyInfoHpBar.setPrefWidth(118);
-        partyInfoHpText.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333; -fx-font-weight: bold;");
+        partyInfoHpBar.getStyleClass().add("battle-hp"); // 棕底 + 渐变填充（/css/battle.css）
+        partyInfoHpText.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #1a2a3a; -fx-font-weight: bold;");
         line2.getChildren().addAll(partyInfoHpBar, partyInfoHpText);
-        partyInfoStatus.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #777;");
-        partyInfoStat1.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #333;");
-        partyInfoStat2.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #333;");
-        partyInfoExp.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #777;");
+        partyInfoStatus.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #5a6a7e;");
+        partyInfoStat1.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #22344c;");
+        partyInfoStat2.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #22344c;");
+        partyInfoExp.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #5a6a7e;");
         // 1/4 底栏压缩：状态与经验合并同行（左状态 / 右经验），卡由 6 行降至 5 行，行数仍恒定不抖动
         Region expGap = new Region();
         HBox.setHgrow(expGap, Priority.ALWAYS);
@@ -990,6 +1056,7 @@ public class BattleView {
         }
         partyInfoName.setText(p.getName());
         partyInfoType.setText(typeOf(p));
+        partyInfoType.setStyle(chipFor(p)); // 属性徽章按属性分色
         partyInfoLv.setText("Lv." + p.getLevel());
         refreshHp(partyInfoHpBar, partyInfoHpText, p);
         String badge = statusBadgeText(p);
@@ -1059,27 +1126,22 @@ public class BattleView {
     // 按钮工厂 / 样式
     // ------------------------------------------------------------------
 
-    /** 通用按钮（子菜单使用，180 宽单行）。 */
+    /** 通用按钮（子菜单使用，185 宽单行）：白底深蓝描边（浅色次要按钮，与马卡龙按钮同构）。 */
     private Button wideButton(String text, boolean disabled) {
         Button b = new Button(text);
-        b.setStyle(YH + "-fx-font-size: 13px; -fx-pref-width: 185px; -fx-pref-height: 30px;"
-                + "-fx-background-color: #ffffff; -fx-background-radius: 6;"
-                + "-fx-border-color: #c9c9c9; -fx-border-radius: 6; -fx-text-fill: #222;");
+        String size = "-fx-font-size: 13px; -fx-pref-width: 185px; -fx-pref-height: 30px;";
+        b.setStyle(disabled ? greyToneCss(size)
+                : YH + size + "-fx-background-color: " + POKE_INK + ", #ffffff;"
+                + "-fx-background-radius: 7, 5; -fx-background-insets: 0, 2;"
+                + "-fx-text-fill: #1a2a3a;"
+                + "-fx-effect: dropshadow(gaussian, rgba(42, 58, 92, 0.45), 0, 1, 0, 3);");
         b.setDisable(disabled);
-        if (disabled) {
-            b.setStyle(YH + "-fx-font-size: 13px; -fx-pref-width: 185px; -fx-pref-height: 30px;"
-                    + "-fx-background-color: #d9d9d9; -fx-background-radius: 6;"
-                    + "-fx-border-color: #c2c2c2; -fx-border-radius: 6; -fx-text-fill: #7f7f7f;");
-        }
         return b;
     }
 
     private Button styledButton(String text) {
         Button b = new Button(text);
-        b.setStyle(YH + "-fx-font-size: 13px;"
-                + "-fx-padding: 5 16; -fx-background-radius: 6;"
-                + "-fx-background-color: #ffffff; -fx-border-color: #c9c9c9;"
-                + "-fx-border-radius: 6; -fx-text-fill: #222;");
+        b.setStyle(toneCss(TONE_YELLOW, "-fx-font-size: 13px; -fx-padding: 5 16;"));
         return b;
     }
 
@@ -1586,12 +1648,13 @@ public class BattleView {
         bar.setProgress(Math.max(0, ratio));
         text.setText("HP " + p.getCurrentHp() + " / " + p.getMaxHp());
         String color;
+        // react HP 条：>50% 绿、>20% 黄、其余红，均为渐变填充（棕底 track 见 /css/battle.css）
         if (ratio > 0.5) {
-            color = "limegreen";
+            color = "linear-gradient(to right, #48c840, #78f060)";
         } else if (ratio > 0.2) {
-            color = "#f0a020";
+            color = "linear-gradient(to right, #f8b800, #f8d840)";
         } else {
-            color = "#e04040";
+            color = "linear-gradient(to right, #f83800, #f86830)";
         }
         bar.setStyle("-fx-accent: " + color + ";");
     }
