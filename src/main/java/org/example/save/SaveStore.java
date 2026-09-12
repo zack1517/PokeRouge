@@ -264,5 +264,10 @@ public final class SaveStore {
         public boolean empty() {
             return !exists;
         }
+
+        /** 该档位里队伍是否已无可用成员（有成员但全部倒下）；档位列表据此变灰标注。 */
+        public boolean teamWiped() {
+            return summary != null && summary.teamWiped();
+        }
     }
 }

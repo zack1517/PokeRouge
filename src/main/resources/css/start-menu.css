@@ -242,29 +242,54 @@
     -fx-background-color: #123c63;
 }
 
-/* 表单标注（字段名）与说明文字：白字 + 光晕投影（复杂背景上保持清晰，同标题体系） */
+/* 表单标注（字段名）与说明文字：深蓝字 + 白描边（白卡内外同样清晰，与标题体系一致） */
 .starter-caption {
     -fx-font-family: 'Microsoft YaHei';
     -fx-font-size: 11px;
     -fx-font-weight: bold;
-    -fx-text-fill: white;
-    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.65), 10, 0.15, 0, 2);
+    -fx-text-fill: #123c63;
+    -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 2.0, 1.0, 0, 0);
 }
 
 .starter-note {
     -fx-font-family: 'Microsoft YaHei';
     -fx-font-size: 11px;
-    -fx-text-fill: rgba(255, 255, 255, 0.96);
-    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.65), 10, 0.15, 0, 2);
+    -fx-text-fill: #123c63;
+    -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 2.0, 1.0, 0, 0);
 }
 
-/* ---------- 悬浮子页·存档位选择（SaveSlotView）：白底圆角档位行 + 小号胶囊按钮 ---------- */
-/* 与输入框同族：深蓝描边环 + 白底填充（先写的层在底层） */
-.slot-row {
+/* 表单白卡（初始宝可梦选择页）：白底蓝环卡（与档位卡 / 队伍配置页面板同族） */
+.starter-card {
     -fx-background-color: #123c63, rgba(255, 255, 255, 0.92);
     -fx-background-insets: 0, 1.5;
     -fx-background-radius: 14, 12.5;
+    -fx-padding: 12 18 14 18;
     -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 10, 0.08, 0, 3);
+}
+
+/* ---------- 悬浮子页·存档位选择（SaveSlotView）：2×2 白底圆角档位卡 + 小号胶囊按钮 ---------- */
+/* 与输入框同族：深蓝描边环 + 白底填充（先写的层在底层）；四卡等高（高度由代码统一） */
+.slot-card {
+    -fx-background-color: #123c63, rgba(255, 255, 255, 0.92);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 14, 12.5;
+    -fx-padding: 10 12 10 12;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 10, 0.08, 0, 3);
+}
+
+/* 当前档位：金环标识（与队伍首发格 / 选中态同色系） */
+.slot-card-current {
+    -fx-background-color: #DAA520, rgba(255, 255, 255, 0.94);
+}
+
+/* 队伍已全倒下：整卡灰化（背景 / 描边 / 标题同步转灰，配合代码内联的灰色摘要） */
+.slot-card-wiped {
+    -fx-background-color: #9aa4b0, rgba(240, 242, 245, 0.92);
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.28), 8, 0.06, 0, 2);
+}
+
+.slot-card-wiped .slot-name {
+    -fx-text-fill: #7d8794;
 }
 
 .slot-name {
@@ -274,16 +299,36 @@
     -fx-text-fill: #123c63;
 }
 
+/* 「当前」徽章：黄色小胶囊（与队伍配置页首发徽章同款） */
+.slot-badge {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 7.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #5c4600;
+    -fx-background-color: linear-gradient(to bottom, #ffd83d, #f0b000);
+    -fx-background-radius: 999;
+    -fx-padding: 1 5;
+    -fx-effect: dropshadow(gaussian, rgba(240, 176, 0, 0.45), 4, 0.05, 0, 1);
+}
+
 .slot-detail {
     -fx-font-family: 'Microsoft YaHei';
     -fx-font-size: 11px;
-    /* 文本颜色由代码按档位状态内联覆盖（空档灰 / 正常深灰 / 损坏红） */
+    /* 文本颜色由代码按档位状态内联覆盖（空档灰 / 正常深灰 / 损坏红 / 全倒下灰） */
+}
+
+/* 状态警示行（队伍已全倒下）：橙金小字 */
+.slot-warn {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #C77C00;
 }
 
 /* 行内操作按钮：小号胶囊（与启动页胶囊同族配色；禁用灰化保留外形） */
 .slot-action {
     -fx-font-family: 'Microsoft YaHei';
-    -fx-font-size: 12px;
+    -fx-font-size: 11px;
     -fx-font-weight: bold;
     -fx-text-fill: #123c63;
     -fx-background-color:
@@ -296,7 +341,7 @@
             #ffcb05 100%);
     -fx-background-insets: 0, 2, 4;
     -fx-background-radius: 999, 996.5, 994;
-    -fx-padding: 5 12;
+    -fx-padding: 4 12;
     -fx-cursor: hand;
     -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 7, 0.05, 0, 2);
     -fx-focus-color: transparent;
@@ -328,6 +373,39 @@
     -fx-cursor: default;
 }
 
+/* 删除按钮：白底红字小胶囊（危险操作的低调入口；悬停环加深）；空档时禁用灰化 */
+.slot-delete {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #b23c3c;
+    -fx-background-color: #b23c3c, rgba(255, 255, 255, 0.96);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 999, 997.5;
+    -fx-padding: 4 12;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.25), 6, 0.05, 0, 2);
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.slot-delete:hover {
+    -fx-background-color: #8f2f2f, rgba(255, 242, 242, 1.0);
+    -fx-effect: dropshadow(gaussian, rgba(143, 47, 47, 0.45), 8, 0.08, 0, 2);
+}
+
+.slot-delete:disabled,
+.slot-delete:disabled > * {
+    -fx-opacity: 1; /* 覆盖 modena 0.4 透明度，用实色灰化 */
+}
+
+.slot-delete:disabled {
+    -fx-background-color: #7d8794, linear-gradient(to bottom, #efefef, #d8d8d8);
+    -fx-text-fill: #7d8794;
+    -fx-cursor: default;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.15), 4, 0.03, 0, 1);
+}
+
 /* ---------- 悬浮子页·内部事件页（RogueFloorView）：段位信息卡 ---------- */
 /* （返回胶囊已改为直接复用 .menu-pill 共享胶囊组件，不再单设小号样式） */
 /* 段位信息卡：与存档页 .slot-row 同族的白底圆角卡（深蓝描边环 insets 双层），按顶栏体量缩小 */
@@ -345,4 +423,59 @@
    保留原内边距，横幅占位尺寸与位置保持不变 */
 .rogue-banner {
     -fx-padding: 4 26 5 26;
+}
+
+/* ---------- 通用主行动大胶囊（黄→金渐变芯，表单页 / 悬浮子页底部主按钮共用） ---------- */
+.primary-pill {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #123c63,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.92) 0%,
+            #ffcb05 18%,
+            #eea800 78%,
+            #ffcb05 100%);
+    -fx-background-insets: 0, 2, 4.5;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-padding: 8 26;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 12, 0.08, 0, 4);
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.primary-pill:hover {
+    -fx-background-color:
+        rgba(255, 255, 255, 1.0),
+        #2a75bb,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.95) 0%,
+            #ffd83d 18%,
+            #f0b000 78%,
+            #ffd83d 100%);
+    -fx-effect: dropshadow(gaussian, rgba(255, 203, 5, 0.55), 15, 0.15, 0, 3);
+}
+
+.primary-pill:pressed {
+    -fx-background-insets: 1, 2.6, 5;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 6, 0.05, 0, 2);
+}
+
+.primary-pill:disabled,
+.primary-pill:disabled > * {
+    -fx-opacity: 1; /* 覆盖 modena 0.4 透明度，用实色灰化 */
+}
+
+.primary-pill:disabled {
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #7d8794,
+        linear-gradient(to bottom, #efefef 0%, #d8d8d8 78%, #e4e4e4 100%);
+    -fx-text-fill: #7d8794;
+    -fx-cursor: default;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.18), 5, 0.04, 0, 2);
 }

@@ -317,6 +317,7 @@ public final class SaveCodec {
         int gold = 0;
         long savedAt = 0L;
         int partySize = 0;
+        int aliveCount = 0;
         if (text != null) {
             for (String raw : text.split("\r?\n", -1)) {
                 String line = raw.trim();
@@ -338,13 +339,20 @@ public final class SaveCodec {
                         }
                     }
                     case KEY_SAVED_AT -> savedAt = softLong(field(parts, 1), savedAt);
-                    case KEY_POKEMON -> partySize++;
+                    case KEY_POKEMON -> {
+                        partySize++;
+                        // 第 15 个字段是剩余 HP：为 0 记倒下；字段缺失（旧档）按存活计，避免误报「全倒下」
+                        int hp = parts.size() > 14 ? softInt(field(parts, 14), 1) : 1;
+                        if (hp > 0) {
+                            aliveCount++;
+                        }
+                    }
                     default -> {
                     }
                 }
             }
         }
-        return new SaveSummary(slot, playerName, partySize, segment, ap, gold, savedAt);
+        return new SaveSummary(slot, playerName, partySize, aliveCount, segment, ap, gold, savedAt);
     }
 
     // ------------------------------------------------------------------

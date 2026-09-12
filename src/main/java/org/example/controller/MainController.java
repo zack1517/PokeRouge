@@ -203,6 +203,11 @@ public class MainController {
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.NEW_GAME, saveManager.store().statuses(),
                 null,
                 slot -> confirmNewGame(slot, trainerName, starter),
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        chooseSlotForNewGame(trainerName, starter); // 删除后重进选档页（空档立即可用）
+                    }
+                },
                 this::showStartScreen).createScene());
     }
 
@@ -225,6 +230,11 @@ public class MainController {
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.CONTINUE, saveManager.store().statuses(),
                 activeSlot,
                 this::loadFromSlot,
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        showContinueSelection();
+                    }
+                },
                 this::showStartScreen).createScene());
     }
 
@@ -340,6 +350,11 @@ public class MainController {
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.CONTINUE, saveManager.store().statuses(),
                 activeSlot,
                 this::loadFromSlot,
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        showLoadSelection();
+                    }
+                },
                 this::showMainMenu).createScene());
     }
 
@@ -385,6 +400,11 @@ public class MainController {
                     infoAlert("保存成功", "进度已保存到 " + slot.displayName()
                             + "，之后的自动存档也会记录到这个档位。");
                 },
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        chooseSlotToSave(); // 删除后重进选档页（空档可写；删的若是当前档也已置空）
+                    }
+                },
                 this::showMainMenu).createScene());
     }
 
@@ -418,6 +438,38 @@ public class MainController {
         ButtonType cancel = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(overwrite, cancel);
         return alert.showAndWait().filter(overwrite::equals).isPresent();
+    }
+
+    /**
+     * 删除指定档位的存档（二次确认后执行）。
+     *
+     * <p>删除的若正是当前档位，会把 {@link #activeSlot} 置空 —— 之后的自动存档自然跳过，
+     * 避免悄悄把刚删掉的档位又写回去；玩家可经由「保存游戏」重新选择档位。</p>
+     *
+     * @return 是否真的执行了删除（取消或失败时为 {@code false}）
+     */
+    private boolean confirmAndDelete(SaveSlot slot) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("删除存档");
+        alert.setHeaderText(null);
+        alert.setContentText("删除会永久清除 " + slot.displayName() + " 的进度与图鉴成长，确定继续吗？");
+        ButtonType delete = new ButtonType("删除", ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancel = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(delete, cancel);
+        if (alert.showAndWait().filter(delete::equals).isEmpty()) {
+            return false;
+        }
+        try {
+            saveManager.store().delete(slot);
+        } catch (RuntimeException ex) {
+            LogUtil.info("[MainController] 删除存档失败：" + slot + "（" + ex.getMessage() + "）");
+            infoAlert("删除失败", "删除 " + slot.displayName() + " 时出错：\n" + ex.getMessage());
+            return false;
+        }
+        if (slot == activeSlot) {
+            activeSlot = null; // 刚删的就是当前档：置空后自动存档跳过，避免又写回来
+        }
+        return true;
     }
 
     // ------------------------------------------------------------------
