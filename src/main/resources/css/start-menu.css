@@ -193,6 +193,15 @@
     -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.60), 12, 0.25, 0, 4);
 }
 
+/* ---------- 子页标题·无卡底版（与商店页 / 队伍配置页同款：白描边 + 深蓝字） ---------- */
+.page-title {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 20px;
+    -fx-font-weight: 900;
+    -fx-text-fill: #123c63;
+    -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 2.0, 1.0, 0, 0);
+}
+
 /* ---------- 悬浮子页表单（初始宝可梦选择页）：白底胶囊输入/下拉 + 白字标注 ---------- */
 /* 与胶囊按钮同族的白底深蓝描边环（insets 双层背景技巧） */
 .starter-input,
@@ -258,13 +267,9 @@
     -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 2.0, 1.0, 0, 0);
 }
 
-/* 表单白卡（初始宝可梦选择页）：白底蓝环卡（与档位卡 / 队伍配置页面板同族） */
+/* 表单卡（初始宝可梦选择页）：去除卡片底 —— 输入 / 下拉 / 说明直接悬浮于背景（与内外层「无卡底」标题同理念） */
 .starter-card {
-    -fx-background-color: #123c63, rgba(255, 255, 255, 0.92);
-    -fx-background-insets: 0, 1.5;
-    -fx-background-radius: 14, 12.5;
     -fx-padding: 12 18 14 18;
-    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 10, 0.08, 0, 3);
 }
 
 /* ---------- 悬浮子页·存档位选择（SaveSlotView）：2×2 白底圆角档位卡 + 小号胶囊按钮 ---------- */

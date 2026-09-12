@@ -30,9 +30,9 @@ import org.example.pokemon.service.PokemonServiceImpl;
  * 初始宝可梦选择页（启动页「开始游戏」进入）。
  *
  * <p>与商店页 / 队伍配置页同一套视觉体系：顶栏「返回胶囊 + 白描边深蓝字标题 + 副提示 +
- * 新游戏信息卡」，中部为白底蓝环表单卡（训练家名称输入、初始宝可梦下拉与说明），底部为
- * 黄→金大胶囊「带它开始冒险」；样式集中在 {@code /css/start-menu.css}
- * （.starter-* 表单系列 + .primary-pill 主按钮 + 胶囊 / 暗角 / .rogue-info 共享规范）。</p>
+ * 新游戏信息卡」，中部为无卡底表单（训练家名称输入、初始宝可梦下拉与说明直接悬浮于背景），
+ * 底部为黄→金大胶囊「带它开始冒险」；样式集中在 {@code /css/start-menu.css}
+ * （.starter-* 表单系列 + .page-title 标题 + .primary-pill 主按钮 + 胶囊 / 暗角 / .rogue-info 共享规范）。</p>
  *
  * <p>接线不变：选好初始精灵后进入存档位选择（新游戏）；「返回」（或 Esc）不创建精灵直接回启动页。</p>
  */
@@ -149,7 +149,7 @@ public final class StarterSelectionView {
     /** 顶栏一行：左「返回」胶囊（启动页同款）/ 中标题（白描边深蓝字 + 副提示）/ 右新游戏信息卡。 */
     private StackPane buildHeader() {
         Label title = new Label("选择初始宝可梦");
-        title.getStyleClass().add("subpage-title");
+        title.getStyleClass().add("page-title");
         Label hint = new Label("初始宝可梦由宝可梦库创建，之后将直接进入对战流程。");
         hint.getStyleClass().add("starter-note");
         VBox center = new VBox(2, title, hint);

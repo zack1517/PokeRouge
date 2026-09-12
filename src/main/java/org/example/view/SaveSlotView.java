@@ -31,10 +31,10 @@ import java.util.function.Consumer;
  * 存档位选择页：一屏列出 4 个存档位，供「新游戏」「继续游戏」「保存游戏」三种用途复用。
  *
  * <p>布局与商店页 / 队伍配置页同族：顶栏「返回胶囊 + 白描边深蓝字标题 + 当前档位信息卡」，
- * 内容为 2×2 方形档位卡（白底蓝环卡；当前档位金环；队伍已全倒下的档位自动变灰并标注
- * 「队伍已全倒下」，继续游戏时不可选），卡内主操作按钮为小号黄→金胶囊，「删除」为白底红字
- * 小胶囊（空档禁用）；样式见 {@code /css/start-menu.css} 的 .slot-* 系列，「返回」由
- * {@link FloatingMenu} 紧凑胶囊承载（与启动页同款），Esc 亦返回。</p>
+ * 内容为 2×2 紧凑方形档位卡（白底蓝环卡；当前档位金环；队伍已全倒下的档位自动变灰并标注
+ * 「队伍已全倒下」，继续游戏时不可选），卡内摘要按两行窄幅排版，主操作按钮为小号黄→金胶囊，
+ * 「删除」为白底红字小胶囊（空档禁用）；样式见 {@code /css/start-menu.css} 的 .slot-* 系列，
+ * 「返回」由 {@link FloatingMenu} 紧凑胶囊承载（与启动页同款），Esc 亦返回。</p>
  *
  * <p>每张卡展示档位名（当前档加「当前」徽章）、{@link org.example.save.SaveSummary#describe()}
  * 摘要与可用状态，按钮文案随 {@link Purpose} 变化。选择与删除结果经回调交回控制器 ——
@@ -48,8 +48,11 @@ public final class SaveSlotView {
     /** 共享样式表（胶囊按钮/图标/暗角/标题/档位卡，与启动页同一份）。 */
     private static final String STYLE_SHEET = "/css/start-menu.css";
 
-    /** 档位卡统一高度（设计像素；四卡等高的方形排列基线）。 */
-    private static final double CARD_HEIGHT = 122;
+    /** 档位卡统一高度（设计像素；四卡等高的紧凑排列基线）。 */
+    private static final double CARD_HEIGHT = 110;
+
+    /** 2×2 网格总宽上限（设计像素）：每卡 256 宽，两侧留白使卡片群居中收拢。 */
+    private static final double GRID_MAX_WIDTH = 520;
 
     /** 入场动效（与内层页卡片同一组参数基线：错峰上浮淡入）。 */
     private static final double ENTRANCE_RISE = 11;
@@ -155,7 +158,7 @@ public final class SaveSlotView {
     /** 顶栏一行：左「返回」胶囊（启动页同款）/ 中标题（白描边深蓝字 + 副提示）/ 右当前档位信息卡。 */
     private StackPane buildHeader() {
         Label title = new Label(purpose.title());
-        title.getStyleClass().add("subpage-title");
+        title.getStyleClass().add("page-title");
         Label hint = new Label(purpose.hint());
         hint.getStyleClass().add("starter-note");
         VBox center = new VBox(2, title, hint);
@@ -204,6 +207,7 @@ public final class SaveSlotView {
         GridPane grid = new GridPane();
         grid.setHgap(8);
         grid.setVgap(8);
+        grid.setMaxWidth(GRID_MAX_WIDTH); // 收窄卡群：每卡 256 设计宽，避免横向顶满窗口
         for (int c = 0; c < 2; c++) {
             ColumnConstraints column = new ColumnConstraints();
             column.setPercentWidth(50);
@@ -235,7 +239,7 @@ public final class SaveSlotView {
         detail.setWrapText(true);
         detail.setStyle("-fx-text-fill: " + detailColor(status) + ";"); // 按档位状态着色（空档灰 / 正常深灰 / 损坏红 / 全倒下灰）
 
-        VBox texts = new VBox(3, nameRow, detail);
+        VBox texts = new VBox(2, nameRow, detail);
         if (wiped) {
             Label warn = new Label("队伍已全倒下");
             warn.getStyleClass().add("slot-warn");
@@ -268,7 +272,7 @@ public final class SaveSlotView {
             buttonRow.getChildren().addAll(gap, delete);
         }
 
-        VBox card = new VBox(3, texts, spacer, buttonRow);
+        VBox card = new VBox(2, texts, spacer, buttonRow);
         card.setMinHeight(CARD_HEIGHT);
         card.setMaxWidth(Double.MAX_VALUE);
         card.getStyleClass().add("slot-card");
@@ -301,7 +305,9 @@ public final class SaveSlotView {
         if (!status.readable()) {
             return "存档已损坏或版本不受支持";
         }
-        return status.summary() != null ? status.summary().describe() : "存档信息缺失";
+        return status.summary() != null
+                ? String.join("\n", status.summary().describeLines())
+                : "存档信息缺失";
     }
 
     private static String detailColor(SaveStore.SlotStatus status) {
