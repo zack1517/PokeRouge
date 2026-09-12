@@ -1,5 +1,14 @@
 package org.example.battle;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Random;
+
 import org.example.model.ElementType;
 import org.example.model.HeldItem;
 import org.example.model.HeldItemEffect;
@@ -10,24 +19,15 @@ import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
 import org.example.model.MoveFlag;
 import org.example.model.MoveSlot;
-import org.example.model.MoveStatChange;
 import org.example.model.Player;
 import org.example.model.Pokemon;
-import org.example.model.StatModifier;
+import org.example.model.Stat;
+import org.example.model.StatChange;
 import org.example.model.StatusCondition;
 import org.example.model.Terrain;
 import org.example.model.Trainer;
 import org.example.model.TypeChart;
 import org.example.model.Weather;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Random;
 
 /**
  * 回合制对战引擎：{@link BattleService} 的默认实现。
@@ -37,9 +37,22 @@ import java.util.Random;
  * 随机）。物理技能取 物攻 vs 物防，特殊技能取 特攻 vs 特防，伤害受克制倍率、STAB(本系加成)
  * 与随机浮动影响。捕捉成功、逃跑成功或一方精灵全部倒下即结束。</p>
  *
+ * <p><b>命中判定</b>：招式按 {@link Move#getAccuracy()} 掷骰，未命中仅追加日志、不造成伤害
+ * 也不施加任何附加效果（PP 已在行动前扣除）。命中率为 {@code -1}（必中）或 {@code >= 100}
+ * 时恒命中，且不消耗随机数。</p>
+ *
+ * <p><b>能力等级</b>：变化类技能可增减自身或对方的物攻、物防、特攻、特防、速度等级
+ * （{@link Move#getStatChanges()}，幅度 -6 ~ +6，按 {@link Pokemon#stageMultiplier(int)} 换算），
+ * 等级为挥发性状态，离场（换宠、倒下）与战斗开始时清零。</p>
+ *
  * <p><b>训练师轮战</b>（{@link #getTrainer()} 非空）：战斗持续到某一方队伍精灵全部倒下为止。
  * 不可逃跑、不可捕捉训练师的精灵；敌方当前出战精灵倒下后自动派出下一只健康的（敌方不会主动
  * 换宠），天气/场地与技能 PP 跨整场持续。胜利时经验按整队被击败对手一次性结算。</p>
+ *
+ * <p><b>己方倒下后的补位</b>：玩家出战精灵倒下且队伍仍有健康精灵时，引擎<b>不自动补位</b>，
+ * 而是进入「等待玩家选择替补」状态（{@link #isAwaitingReplacement()}）：此时所有回合行动方法
+ * 都抛 {@link IllegalStateException}，必须先调用 {@link #chooseReplacement(int)} 选出一只接着
+ * 上场（不消耗回合、敌方不会行动）。队伍已无健康精灵时直接判 {@link Status#PLAYER_LOSE}。</p>
  *
  * <p><b>职责边界</b>：本引擎只做战斗演算与胜负结算，<b>不负责经验增加、升级、学招与进化</b>。
  * 结算出胜利后把「参战且未倒下的己方精灵」与「被击败的对手」交给外部成长模块
@@ -70,6 +83,9 @@ public class BattleEngine implements BattleService {
     /** 目标陷入睡眠 / 麻痹时的捕捉率加成系数（其余状态无加成）。 */
     private static final double CAPTURE_STATUS_BONUS = 2.0;
 
+    /** 守住首次使用的成功百分比；连续使用每多一次右移一位（50%、25%、12%……），最低 1%。 */
+    private static final int PROTECT_BASE_CHANCE = 100;
+
     private final Player player;
     /** 野生战斗中的敌方野生精灵；训练师轮战（{@code trainer} 非空）时为 {@code null}。 */
     private final Pokemon wild;
@@ -88,6 +104,8 @@ public class BattleEngine implements BattleService {
     private final List<LearnChoice> pendingLearns = new ArrayList<>();
 
     private Status status = Status.ONGOING;
+    /** 是否正等待玩家为倒下的出战精灵选择替补（战斗仍未结束，但一切回合行动都被挂起）。 */
+    private boolean awaitingReplacement = false;
     /** 当前天气（无天气为 {@link Weather#NONE}）。 */
     private Weather weather = Weather.NONE;
     /** 当前场地（无场地为 {@link Terrain#NONE}）。 */
@@ -108,6 +126,8 @@ public class BattleEngine implements BattleService {
     private final Map<String, String> lastMoves = new HashMap<>();
     /** 节拍器连续使用次数表：精灵 uuid → 连续使用同一招式的次数（换招即归 1）。 */
     private final Map<String, Integer> consecutiveUses = new HashMap<>();
+    /** 满队时挂起的已捕捉精灵（队伍已满暂未入队，待玩家放生腾位或放弃；非满队捕捉为 {@code null}）。 */
+    private Pokemon pendingCaptured;
 
     public BattleEngine(Player player, Pokemon wild) {
         this(player, wild, null, new Random(), BattleDataPorts.none(), BattleGrowthPort.none());
@@ -210,6 +230,12 @@ public class BattleEngine implements BattleService {
         } else if (wild == null || wild.isFainted()) {
             throw new IllegalArgumentException("野生精灵无效");
         }
+        // 挥发性战斗状态（能力等级、守住、寄生种子）不写入存档，每场战斗都从干净状态开始
+        player.getActive().clearVolatileState();
+        Pokemon opponent = trainer != null ? trainer.getActive() : wild;
+        if (opponent != null) {
+            opponent.clearVolatileState();
+        }
         events.add(BattleEvent.battleStart()); // 开场事件：界面据此播放双方进场动画
     }
 
@@ -252,6 +278,35 @@ public class BattleEngine implements BattleService {
     @Override
     public boolean isOngoing() {
         return status == Status.ONGOING;
+    }
+
+    @Override
+    public boolean isAwaitingReplacement() {
+        return awaitingReplacement;
+    }
+
+    /**
+     * 己方出战精灵倒下后由玩家选择下一只上场精灵：不消耗回合，敌方不会行动。
+     *
+     * <p>上场精灵从中立状态开始（清除能力等级、守住、寄生种子等挥发性状态），并压入一条
+     * 「放出」演出事件供界面播放换宠动画。</p>
+     */
+    @Override
+    public List<String> chooseReplacement(int partyIndex) {
+        int mark = log.size();
+        if (!awaitingReplacement) {
+            throw new IllegalStateException("当前不需要选择上场的精灵");
+        }
+        Pokemon target = player.switchTo(partyIndex);
+        if (target == null) {
+            append("倒下的精灵不能上场，请选择其他精灵。");
+            return slice(mark);
+        }
+        awaitingReplacement = false;
+        append("你派出了 " + target.getName() + "！");
+        target.clearVolatileState(); // 上场即从中立状态开始
+        events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, target.getName(), BattleEvent.hpOf(target)));
+        return slice(mark);
     }
 
     @Override
@@ -327,7 +382,7 @@ public class BattleEngine implements BattleService {
     @Override
     public List<String> useMove(MoveSlot slot) {
         int mark = log.size();
-        requireOngoing();
+        requirePlayerAction();
         MoveSlot usable = usableSlot(playerActive(), slot);
         if (usable == null) {
             // 苹野果：招式 PP 全部耗尽时先补 PP 再重试（补不上才放弃本回合，与 PP 不足同样处理）
@@ -346,17 +401,22 @@ public class BattleEngine implements BattleService {
             return slice(mark);
         }
 
-        // 决定本回合先后手：双方都行动，比较计入异常状态后的实际速度
+        // 决定本回合先后手：双方都行动，先比较先制度，再比较计入异常状态后的实际速度
         Pokemon foe = foeActive();
-        boolean playerFirst = firstMover(playerActive(), foe);
+        Move playerMove = usable.getMove();
+        // 敌方技能由随机抽取产生；仅当必须知道它才能比较先制度时才预先取出，
+        // 避免在「双方先制度都是 0」这一绝大多数情况下改变随机数消耗顺序
+        MoveSlot foeSlot = needsFoeMoveForOrder(foe, playerMove) ? pickFoeMove() : null;
+        boolean playerFirst = firstMover(playerActive(), playerMove, foe,
+                foeSlot == null ? null : foeSlot.getMove());
 
         if (playerFirst) {
             playerAct(usable, foe);
             if (isOngoing() && !foe.isFainted() && !playerActive().isFainted()) {
-                foeTurn();
+                foeTurn(foeSlot);
             }
         } else {
-            foeTurn();
+            foeTurn(foeSlot);
             if (isOngoing() && !playerActive().isFainted() && !foe.isFainted()) {
                 playerAct(usable, foe);
             }
@@ -429,13 +489,69 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 本回合先后手：先制之爪概率触发；其次后攻之尾（仅一方携带时携带方后出手）；
-     * 未分胜负时按计入异常状态后的实际速度比较；速度相同则随机。
+     * 本回合先后手。
+     *
+     * <p>先比较先制度（{@link Move#getPriority()}，高者无视速度先手）；先制度相同时才按计入异常
+     * 状态后的实际速度比较，速度相同则随机（先制之爪在速度判定阶段生效）。</p>
+     *
+     * @param foeMove 敌方本回合使用的技能；{@code null} 表示未预先抽取，此时要求敌方全部可用技能
+     *                的先制度一致（由 {@link #needsFoeMoveForOrder} 保证），或敌方只能挣扎
      */
-    private boolean firstMover(Pokemon playerPokemon, Pokemon foe) {
+    private boolean firstMover(Pokemon playerPokemon, Move playerMove, Pokemon foe, Move foeMove) {
         if (foe == null) {
             return true;
         }
+        int playerPriority = playerMove == null ? 0 : playerMove.getPriority();
+        if (foeMove != null) {
+            int foePriority = foeMove.getPriority();
+            return playerPriority != foePriority ? playerPriority > foePriority
+                    : speedOrder(playerPokemon, foe);
+        }
+        int[] range = foePriorityRange(foe);
+        if (playerPriority < range[0]) {
+            return false; // 敌方全部可用技能的先制度都高于玩家
+        }
+        if (playerPriority > range[1]) {
+            return true; // 玩家先制度高于敌方全部可用技能
+        }
+        return speedOrder(playerPokemon, foe); // 先制度相同：回退速度判定
+    }
+
+    /** 敌方可用技能的先制度区间 {@code [min, max]}；无可用技能（只能挣扎）时为 {@code [0, 0]}。 */
+    private static int[] foePriorityRange(Pokemon foe) {
+        int min = Integer.MAX_VALUE;
+        int max = Integer.MIN_VALUE;
+        for (MoveSlot slot : foe.getMoveSlots()) {
+            if (slot.exhausted()) {
+                continue;
+            }
+            int priority = slot.getMove().getPriority();
+            min = Math.min(min, priority);
+            max = Math.max(max, priority);
+        }
+        return min == Integer.MAX_VALUE ? new int[]{0, 0} : new int[]{min, max};
+    }
+
+    /**
+     * 是否需要预先抽取敌方技能才能判定先后手：仅当敌方可用技能的先制度不唯一
+     * （有高有低）且玩家的先制度落在该区间内时为真。
+     * <p>绝大多数战斗里双方技能先制度都是 0，此处返回 {@code false}，随机数的消耗顺序与
+     * 未实现先制度时完全一致。</p>
+     */
+    private static boolean needsFoeMoveForOrder(Pokemon foe, Move playerMove) {
+        if (foe == null) {
+            return false;
+        }
+        int[] range = foePriorityRange(foe);
+        if (range[0] == range[1]) {
+            return false;
+        }
+        int playerPriority = playerMove == null ? 0 : playerMove.getPriority();
+        return playerPriority >= range[0] && playerPriority <= range[1];
+    }
+
+    /** 先制度相同时的出手顺序：先制之爪概率触发；未分出高下时按计入异常状态后的实际速度比较；速度相同则随机。 */
+    private boolean speedOrder(Pokemon playerPokemon, Pokemon foe) {
         boolean playerClaw = quickClawTriggers(playerPokemon);
         boolean foeClaw = quickClawTriggers(foe);
         if (playerClaw != foeClaw) {
@@ -511,7 +627,7 @@ public class BattleEngine implements BattleService {
     @Override
     public List<String> useItem(Item item, int partyIndex) {
         int mark = log.size();
-        requireOngoing();
+        requirePlayerAction();
         if (item == null || player.getBag().countOf(item) <= 0) {
             return slice(mark);
         }
@@ -526,7 +642,7 @@ public class BattleEngine implements BattleService {
             boolean caught = tryCapture(item);
             events.add(BattleEvent.capture(item.getName(), caught));
             if (!caught && isOngoing() && !wild.isFainted() && !playerActive().isFainted()) {
-                foeTurn();
+                foeTurn(null);
             }
             finishRound();
             return slice(mark);
@@ -548,7 +664,7 @@ public class BattleEngine implements BattleService {
             }
             player.getBag().consume(item);
             append("使用了【" + item.getName() + "】，" + target.getName() + " 回复了 " + healed + " HP");
-            events.add(BattleEvent.item(item.getName()));
+            events.add(BattleEvent.item(item.getName(), BattleEvent.hpOf(playerActive())));
         } else if (item.getCategory() == ItemCategory.CURE) {
             if (!cureWithItem(target, item)) {
                 append(target.getName() + " 没有可解除的异常状态，【" + item.getName() + "】没有使用。");
@@ -556,13 +672,13 @@ public class BattleEngine implements BattleService {
             }
             player.getBag().consume(item);
             append("使用了【" + item.getName() + "】");
-            events.add(BattleEvent.item(item.getName()));
+            events.add(BattleEvent.item(item.getName(), BattleEvent.hpOf(playerActive())));
         } else {
             append("该道具暂时无法使用");
             return slice(mark);
         }
         if (isOngoing() && !foeActive().isFainted() && !playerActive().isFainted()) {
-            foeTurn();
+            foeTurn(null);
         }
         finishRound();
         return slice(mark);
@@ -583,7 +699,7 @@ public class BattleEngine implements BattleService {
     @Override
     public List<String> tryRun() {
         int mark = log.size();
-        requireOngoing();
+        requirePlayerAction();
         if (trainer != null) {
             append("与训练师的对战中无法逃跑！");
             return slice(mark);
@@ -601,7 +717,7 @@ public class BattleEngine implements BattleService {
         append("逃跑失败……");
         events.add(BattleEvent.run(false));
         if (!wild.isFainted() && !playerActive().isFainted()) {
-            foeTurn();
+            foeTurn(null);
         }
         finishRound();
         return slice(mark);
@@ -615,7 +731,7 @@ public class BattleEngine implements BattleService {
     @Override
     public List<String> switchActive(int partyIndex) {
         int mark = log.size();
-        requireOngoing();
+        requirePlayerAction();
         Pokemon current = playerActive();
         Pokemon target = player.switchTo(partyIndex);
         if (current == null || target == null || target == current) {
@@ -626,14 +742,15 @@ public class BattleEngine implements BattleService {
         if (current.clearConfusion()) {
             append(current.getName() + " 的混乱解除了！");
         }
-        current.clearFlinch();
-        current.clearStatStages();
         append("你派出了 " + target.getName() + "！");
         events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, target.getName()));
+        // 能力等级与守住/寄生种子/畏缩都是挥发性状态：下场的精灵放弃自己的状态，上场的精灵从中立状态开始
+        current.clearVolatileState();
+        target.clearVolatileState();
         // 场地种子：换上的精灵在场地已开启时立即触发
         applyTerrainSeed(target, terrain);
         if (!foeActive().isFainted() && !target.isFainted()) {
-            foeTurn();
+            foeTurn(null);
         }
         finishRound();
         return slice(mark);
@@ -643,7 +760,12 @@ public class BattleEngine implements BattleService {
     // 内部流程
     // ------------------------------------------------------------------
 
-    private void foeTurn() {
+    /**
+     * 敌方回合行动。
+     *
+     * @param preselected 先后手判定阶段已预先抽取的敌方技能；{@code null} 表示在此处再抽取
+     */
+    private void foeTurn(MoveSlot preselected) {
         if (status != Status.ONGOING) {
             return;
         }
@@ -654,7 +776,8 @@ public class BattleEngine implements BattleService {
         if (!canAct(foe)) {
             return;
         }
-        MoveSlot usable = pickFoeMove();
+        MoveSlot usable = preselected != null && !preselected.exhausted()
+                ? preselected : pickFoeMove();
         if (usable == null) {
             // 苹野果：全部招式 PP 耗尽时先补 PP，补不上才挣扎
             usable = healPpWithBerry(foe, null);
@@ -666,10 +789,11 @@ public class BattleEngine implements BattleService {
             int dealt = playerActive().takeDamage(dmg);
             append("对 " + playerActive().getName() + " 造成了 " + dealt + " 点伤害");
             events.add(BattleEvent.hit(BattleEvent.Side.PLAYER, playerActive().getName(),
-                    ElementType.NORMAL, MoveCategory.PHYSICAL));
+                    ElementType.NORMAL, MoveCategory.PHYSICAL, BattleEvent.hpOf(playerActive())));
             if (playerActive().isFainted()) {
                 append(playerActive().getName() + " 倒下了！");
-                events.add(BattleEvent.faint(BattleEvent.Side.PLAYER, playerActive().getName()));
+                events.add(BattleEvent.faint(BattleEvent.Side.PLAYER, playerActive().getName(),
+                        BattleEvent.hpOf(playerActive())));
             }
         } else {
             usable.use();
@@ -725,7 +849,8 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 执行一次行动：变化类技能应用天气/场地效果并按概率施加异常状态，其余（物理/特殊）技能正常造成伤害。
+     * 执行一次行动：先做粉末免疫、守住与命中判定；变化类技能应用能力等级变化、天气/场地效果并按概率
+     * 施加异常状态，其余（物理/特殊）技能正常造成伤害。
      *
      * <p>粉末类招式（{@link MoveFlag#POWDER}）在入口处统一拦截，携带防尘护目镜的防守方不受影响 ——
      * 催眠粉/毒粉都是变化招，若只在伤害路径里判定会漏掉它们。</p>
@@ -736,56 +861,86 @@ public class BattleEngine implements BattleService {
                     + "，粉末类招式没有命中！");
             return;
         }
-        // 命中判定：粉末免疫先行判定，故未命中不会把「免疫」误报成「打空」
-        if (!rollHit(move)) {
-            append(attacker.getName() + " 的【" + move.getName() + "】没有命中！");
+        // 守住优先于命中判定：被守住挡下的技能既不掷命中骰子，也不产生命中演出
+        if (blocksWithProtect(defender)) {
+            return;
+        }
+        // 未命中：PP 已在行动前扣除，此处仅追加日志并按打空保险给使用者加成
+        if (!moveHits(attacker, move)) {
             applyBlunderPolicy(attacker);
             return;
         }
+        // 连续使用守住的成功率递减，「守住连续次数」在改用其它技能后清零
+        if (attacker != null && move.getEffect() != MoveEffect.PROTECT) {
+            attacker.setProtectStreak(0);
+        }
         if (move.isStatus()) {
-            applyStatusMove(attacker, defender, move);
+            // 纯变化招：能力等级 / 天气场地 / 专属效果 / 异常状态互不排斥；都没有时提示无效果
+            if (move.hasStatChanges()) {
+                applyStatChanges(attacker, defender, move);
+            }
+            if (move.getEffect() != MoveEffect.NONE
+                    || (!move.hasInfliction() && !move.hasStatChanges())) {
+                applyFieldEffect(attacker, defender, move.getEffect());
+            }
+            tryInflict(move, defender);
+            // 爽喉喷雾与属性反应装备：叫声等声音类变化招同样能触发爽喉喷雾
+            applyThroatSpray(attacker, move);
+            applyTypeReaction(defender, move);
+            events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
+                    MoveCategory.STATUS, BattleEvent.hpOf(defender)));
             return;
         }
         performAttack(attacker, defender, move);
     }
 
     /**
-     * 变化类招式的结算：天气/场地效果、异常状态、能力等级变化三者互不排斥；三者都没有时提示无效果。
+     * 守住判定：目标当回合处于守住状态时完全免疫本次技能。
      *
-     * <p>爽喉喷雾与属性反应装备也在本路径结算 —— 叫声等声音类变化招同样能触发爽喉喷雾。</p>
+     * @return 是否被守住挡下（为真时调用方需直接返回）
      */
-    private void applyStatusMove(Pokemon attacker, Pokemon defender, Move move) {
-        boolean effective = false;
-        if (move.getEffect() != MoveEffect.NONE) {
-            applyFieldEffect(attacker, move.getEffect());
-            effective = true;
+    private boolean blocksWithProtect(Pokemon defender) {
+        if (defender == null || defender.isFainted() || !defender.isProtected()) {
+            return false;
         }
-        if (move.hasInfliction()) {
-            tryInflict(move, defender);
-            effective = true;
-        }
-        if (move.hasStatChanges()) {
-            applyMoveStatChanges(attacker, defender, move);
-            effective = true;
-        }
-        if (!effective) {
-            append("但是什么也没有发生……");
-        }
-        applyThroatSpray(attacker, move);
-        applyTypeReaction(defender, move);
-        events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
-                MoveCategory.STATUS));
+        append(defender.getName() + " 用守住挡下了攻击！");
+        return true;
     }
 
     /**
-     * 命中判定：按 {@link Move#getAccuracy()} 百分比掷骰。
+     * 命中判定。
      *
-     * <p>{@code accuracy < 0}（数据中用负数表示）与 {@code accuracy >= 100} 均视为必定命中，
-     * 因此不消耗随机数 —— 保证原有「必中招式」的随机序列不变。</p>
+     * <p>命中率为 {@code -1}（必中）或 {@code >= 100} 时恒判定命中，且<b>不消耗任何随机数</b>
+     * （保证无命中判定的历史随机序列完全不变）；仅 {@code 0 ~ 99} 的命中率会掷一次骰。</p>
+     *
+     * <p>未命中不产生演出事件（招式动画已在行动开始时播报），仅追加日志；PP 已在行动前扣除。</p>
+     *
+     * @return 本次行动是否命中（未命中时调用方需直接返回）
      */
-    private boolean rollHit(Move move) {
+    private boolean moveHits(Pokemon attacker, Move move) {
         int accuracy = move.getAccuracy();
-        return accuracy < 0 || accuracy >= 100 || random.nextInt(100) < accuracy;
+        if (accuracy < 0 || accuracy >= 100) {
+            return true;
+        }
+        if (random.nextInt(100) < accuracy) {
+            return true;
+        }
+        append(attacker.getName() + " 的【" + move.getName() + "】没有命中！");
+        return false;
+    }
+
+    /**
+     * 应用招式附带的能力等级增减。
+     *
+     * <p>逐条转交 {@link #applyStatChange(Pokemon, Stat, int, Pokemon)} 结算，使「招式造成的能力变化」
+     * 与「装备触发的能力变化」共用同一套口径：同样受清净坠饰（对手造成的下降无效）与能力等级上下限
+     * 约束，日志措辞也完全一致。</p>
+     */
+    private void applyStatChanges(Pokemon attacker, Pokemon defender, Move move) {
+        for (StatChange change : move.getStatChanges()) {
+            Pokemon target = change.recipient() == StatChange.Recipient.SELF ? attacker : defender;
+            applyStatChange(target, change.stat(), change.delta(), attacker);
+        }
     }
 
     /**
@@ -839,13 +994,14 @@ public class BattleEngine implements BattleService {
     /** 混乱自伤：按威力 {@value StatusCondition#CONFUSION_SELF_HIT_POWER} 的无属性物理招式对自身结算。 */
     private void selfHit(Pokemon p) {
         append(p.getName() + " 因混乱攻击了自己！");
-        events.add(BattleEvent.hit(sideOf(p), nameOf(p), ElementType.NORMAL, MoveCategory.PHYSICAL));
         double base = (2.0 * p.getLevel() / 5.0 + 2.0) * StatusCondition.CONFUSION_SELF_HIT_POWER
                 * ((double) p.effectiveAttack() / Math.max(1, p.effectiveDefense())) / 50.0 + 2.0;
         int dealt = p.takeDamage(Math.max(1, (int) base));
+        events.add(BattleEvent.hit(sideOf(p), nameOf(p), ElementType.NORMAL, MoveCategory.PHYSICAL,
+                BattleEvent.hpOf(p)));
         append("自伤了 " + dealt + " 点伤害");
         if (p.isFainted()) {
-            events.add(BattleEvent.faint(sideOf(p), nameOf(p)));
+            events.add(BattleEvent.faint(sideOf(p), nameOf(p), BattleEvent.hpOf(p)));
             append(p.getName() + " 倒下了！");
         }
     }
@@ -901,8 +1057,13 @@ public class BattleEngine implements BattleService {
         return min + random.nextInt(max - min + 1);
     }
 
-    /** 应用变化类技能的天气/场地效果；无对应效果视为失败。 */
-    private void applyFieldEffect(Pokemon attacker, MoveEffect effect) {
+    /**
+     * 应用变化类技能的专属效果。
+     *
+     * <p>天气 / 场地类技能切换全场天气或场地；{@link MoveEffect#PROTECT}、{@link MoveEffect#LEECH_SEED}、
+     * {@link MoveEffect#REST} 为招式专属效果，分别实现守住、寄生种子与睡觉；其余情况视为无效果。</p>
+     */
+    private void applyFieldEffect(Pokemon attacker, Pokemon defender, MoveEffect effect) {
         if (effect == null || effect == MoveEffect.NONE) {
             append("但是什么也没有发生……");
             return;
@@ -917,7 +1078,74 @@ public class BattleEngine implements BattleService {
             setTerrain(t);
             return;
         }
-        append("但是什么也没有发生……");
+        switch (effect) {
+            case PROTECT -> applyProtect(attacker);
+            case LEECH_SEED -> applyLeechSeed(defender);
+            case REST -> applyRest(attacker);
+            default -> append("但是什么也没有发生……");
+        }
+    }
+
+    /**
+     * 守住：当回合免疫所有指向自己的技能；连续使用成功率递减（{@value #PROTECT_BASE_CHANCE} 按
+     * 连续次数右移，最低 1%）。失败时不进入守住状态，但仍计入连续次数。
+     */
+    private void applyProtect(Pokemon p) {
+        if (p == null || p.isFainted()) {
+            return;
+        }
+        int streak = p.getProtectStreak();
+        int chance = Math.max(1, PROTECT_BASE_CHANCE >> Math.min(streak, 30));
+        if (random.nextInt(100) >= chance) {
+            append(p.getName() + " 的守住没有成功……");
+            p.setProtectStreak(streak + 1);
+            return;
+        }
+        p.setProtected(true);
+        p.setProtectStreak(streak + 1);
+        append(p.getName() + " 保护了自己！");
+    }
+
+    /**
+     * 寄生种子：让目标被种下种子，之后每回合结束被吸取最大 HP 的 1/8。草系免疫，重复使用无效。
+     */
+    private void applyLeechSeed(Pokemon defender) {
+        if (defender == null || defender.isFainted()) {
+            return;
+        }
+        if (defender.hasType(ElementType.GRASS)) {
+            append(defender.getName() + " 因属性免疫，寄生种子没有效果！");
+            return;
+        }
+        if (defender.isSeeded()) {
+            append(defender.getName() + " 已经被种下了寄生种子！");
+            return;
+        }
+        defender.setSeeded(true);
+        append(defender.getName() + " 被种下了寄生种子！");
+    }
+
+    /**
+     * 睡觉：HP 回满并陷入 {@value StatusCondition#REST_SLEEP_TURNS} 回合睡眠。HP 已满或已处于
+     * 其它主要异常状态时失败（并提示原因）。
+     */
+    private void applyRest(Pokemon p) {
+        if (p == null || p.isFainted()) {
+            return;
+        }
+        if (p.getCurrentHp() >= p.getMaxHp()) {
+            append(p.getName() + " 的 HP 已经是满的，睡觉失败了……");
+            return;
+        }
+        if (p.getStatus() != StatusCondition.NONE) {
+            append(p.getName() + " 已经处于" + p.getStatus().getDisplayName() + "状态，无法睡觉……");
+            return;
+        }
+        int healed = p.heal(p.getMaxHp() - p.getCurrentHp());
+        append(p.getName() + " 的 HP 恢复了 " + healed + " 点！");
+        if (p.tryApplyStatus(StatusCondition.SLEEP, StatusCondition.REST_SLEEP_TURNS)) {
+            append(p.getName() + " 睡着了！");
+        }
     }
 
     /**
@@ -1009,7 +1237,7 @@ public class BattleEngine implements BattleService {
         String surviveMessage = survivedByHeldItem(defender, damage);
         int dealt = defender.takeDamage(surviveMessage == null ? damage : defender.getCurrentHp() - 1);
         events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
-                move.getCategory()));
+                move.getCategory(), BattleEvent.hpOf(defender)));
         applyLifeSteal(attacker, dealt);
         applyLifeOrbRecoil(attacker, dealt);
         StringBuilder sb = new StringBuilder();
@@ -1032,7 +1260,7 @@ public class BattleEngine implements BattleService {
         // 凸凸头盔：携带者被接触类招式命中时反伤攻击方（攻击方倒下也照常结算）
         applyContactPunish(attacker, defender, move);
         if (defender.isFainted()) {
-            events.add(BattleEvent.faint(sideOf(defender), nameOf(defender)));
+            events.add(BattleEvent.faint(sideOf(defender), nameOf(defender), BattleEvent.hpOf(defender)));
             append(defender.getName() + " 倒下了！");
             return;
         }
@@ -1123,26 +1351,16 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 应用招式附带的能力等级变化（{@link MoveStatChange}）：带 {@code SELF} 的项作用于使用者自己，
-     * 其余作用于招式目标。清净坠饰可让携带者免疫对手造成的下降。
-     */
-    private void applyMoveStatChanges(Pokemon attacker, Pokemon defender, Move move) {
-        for (MoveStatChange change : move.getStatChanges()) {
-            applyStatChange(change.self() ? attacker : defender, change.stat(), change.delta(), attacker);
-        }
-    }
-
-    /**
      * 结算一次能力等级变化并播报日志。
      *
      * @param target 被改变者；为空或已倒下时不结算
-     * @param stat   能力项；{@link StatModifier#HP} 没有等级，不结算
+     * @param stat   能力项；为空时不结算
      * @param delta  期望变化量（正为提升、负为降低）
      * @param source 变化的来源方；{@code null} 或与 {@code target} 相同时视为「自身造成」，
      *               不受清净坠饰影响
      */
-    private void applyStatChange(Pokemon target, StatModifier stat, int delta, Pokemon source) {
-        if (target == null || target.isFainted() || stat == null || stat == StatModifier.HP || delta == 0) {
+    private void applyStatChange(Pokemon target, Stat stat, int delta, Pokemon source) {
+        if (target == null || target.isFainted() || stat == null || delta == 0) {
             return;
         }
         // 清净坠饰：对手造成的能力下降无效
@@ -1175,8 +1393,8 @@ public class BattleEngine implements BattleService {
         int levels = Math.max(1, policy.statLevelsParam());
         consumeHeldItem(defender);
         append(defender.getName() + " 的" + policy.getName() + " 发动了！");
-        applyStatChange(defender, StatModifier.ATTACK, levels, defender);
-        applyStatChange(defender, StatModifier.SP_ATTACK, levels, defender);
+        applyStatChange(defender, Stat.ATTACK, levels, defender);
+        applyStatChange(defender, Stat.SP_ATTACK, levels, defender);
     }
 
     /**
@@ -1191,7 +1409,7 @@ public class BattleEngine implements BattleService {
         int levels = Math.max(1, policy.statLevelsParam());
         consumeHeldItem(attacker);
         append(attacker.getName() + " 的" + policy.getName() + " 发动了！");
-        applyStatChange(attacker, StatModifier.SPEED, levels, attacker);
+        applyStatChange(attacker, Stat.SPEED, levels, attacker);
     }
 
     /**
@@ -1207,7 +1425,7 @@ public class BattleEngine implements BattleService {
         int levels = Math.max(1, spray.statLevelsParam());
         consumeHeldItem(attacker);
         append(attacker.getName() + " 的" + spray.getName() + " 发动了！");
-        applyStatChange(attacker, StatModifier.SP_ATTACK, levels, attacker);
+        applyStatChange(attacker, Stat.SP_ATTACK, levels, attacker);
     }
 
     /**
@@ -1221,7 +1439,7 @@ public class BattleEngine implements BattleService {
         }
         HeldItem item = defender.getHeldItem();
         ElementType trigger = ElementType.parse(item.reactionTypeParam());
-        StatModifier stat = StatModifier.parse(item.statParam());
+        Stat stat = Stat.parse(item.statParam());
         if (trigger == null || trigger != move.getType() || stat == null) {
             return;
         }
@@ -1246,7 +1464,7 @@ public class BattleEngine implements BattleService {
             return;
         }
         HeldItem seed = p.getHeldItem();
-        StatModifier stat = StatModifier.parse(seed.statParam());
+        Stat stat = Stat.parse(seed.statParam());
         if (parseTerrain(seed.seedTerrainParam()) != active || stat == null) {
             return;
         }
@@ -1443,18 +1661,69 @@ public class BattleEngine implements BattleService {
         }
         if (caught) {
             append("咔哒…… 球停止了晃动！");
-            append("成功捕捉了野生的 " + wild.getName() + "！");
             status = Status.CAUGHT;
+            // 先给参战精灵结算捕捉奖励（1.5 倍击倒经验），再把新成员加入队伍：
+            // 避免被捕捉的精灵自己给自己发经验
+            BattleGrowthPort.Settlement settlement = growthPort.settleCapture(survivors(), wild);
+            for (String line : settlement.log()) {
+                append(line);
+            }
+            pendingLearns.addAll(settlement.pendingLearns());
             // 被捕捉的精灵加入玩家队伍，后续可再次派出；统一走受保护的 addPokemon 入口以维护队伍容量。
             if (!player.getParty().contains(wild)) {
-                player.addPokemon(wild);
+                if (player.addPokemon(wild)) {
+                    append("成功捕捉了野生的 " + wild.getName() + "！它加入了你的队伍！");
+                } else {
+                    // 队伍已满：挂起待玩家放生腾位（见 capturedAwaitingRelease / releaseToMakeRoom）
+                    pendingCaptured = wild;
+                    append("成功捕捉了野生的 " + wild.getName() + "！");
+                    append("但你的队伍已满，需要放生一只队内精灵才能收下它！");
+                }
             }
-            // 申报捕捉事件：捕捉次数驱动的局外成长（个体值加成）由成长模块自行判定
-            growthPort.onCaptured(wild.getSpecies().getId());
             return true;
         }
         append("野生的 " + wild.getName() + " 挣脱了出来！");
         return false;
+    }
+
+    @Override
+    public Pokemon capturedAwaitingRelease() {
+        return pendingCaptured;
+    }
+
+    @Override
+    public boolean releaseToMakeRoom(int partyIndex) {
+        if (pendingCaptured == null) {
+            return false;
+        }
+        List<Pokemon> party = player.getParty();
+        if (partyIndex < 0 || partyIndex >= party.size()) {
+            return false;
+        }
+        Pokemon released = party.get(partyIndex);
+        HeldItem carried = released.getHeldItem();
+        if (carried != null) {
+            player.unequip(released); // 脱下即返还：装备仍在玩家装备库中
+        }
+        if (!player.removePokemon(released)) {
+            return false;
+        }
+        player.addPokemon(pendingCaptured);
+        append("你放生了 " + released.getName() + (carried != null
+                ? "！它携带的【" + carried.getName() + "】已返还装备库。" : "！"));
+        append(pendingCaptured.getName() + " 加入了你的队伍！");
+        pendingCaptured = null;
+        return true;
+    }
+
+    @Override
+    public boolean discardCaptured() {
+        if (pendingCaptured == null) {
+            return false;
+        }
+        append("你放走了野生的 " + pendingCaptured.getName() + "……");
+        pendingCaptured = null;
+        return true;
     }
 
     /**
@@ -1466,7 +1735,7 @@ public class BattleEngine implements BattleService {
                 ? CAPTURE_STATUS_BONUS : 1.0;
     }
 
-    /** 回合结束结算：胜负判定、敌方出战倒下后的自动替换/续战、玩家精灵倒下后的自动换宠。 */
+    /** 回合结束结算：胜负判定、敌方出战倒下后的自动替换/续战、玩家精灵倒下后的补位挂起。 */
     private void resolveRoundEnd() {
         if (status != Status.ONGOING) {
             return;
@@ -1496,14 +1765,17 @@ public class BattleEngine implements BattleService {
                 return;
             }
             append(trainer.getName() + " 派出了 " + next.getName() + "！");
-            events.add(BattleEvent.sendOut(BattleEvent.Side.FOE, next.getName()));
+            next.clearVolatileState(); // 上场即从中立状态开始
+            events.add(BattleEvent.sendOut(BattleEvent.Side.FOE, next.getName(),
+                    BattleEvent.hpOf(next)));
         }
 
         if (playerDown) {
             append(pa.getName() + " 倒下了……");
-            if (player.switchToNextHealthy() != null) {
-                append("你派出了 " + playerActive().getName() + "！");
-                events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, playerActive().getName()));
+            if (player.hasHealthyPokemon()) {
+                // 不自动补位：挂起等待玩家选择下一只上场精灵（见 chooseReplacement）
+                awaitingReplacement = true;
+                append("请选择接下来上场的精灵！");
             } else {
                 status = Status.PLAYER_LOSE;
                 append("你已没有能战斗的精灵，战败了……");
@@ -1516,11 +1788,18 @@ public class BattleEngine implements BattleService {
      * 再做胜负判定与自动换宠，最后推进天气/场地持续回合。
      */
     private void finishRound() {
+        // 守住只覆盖当回合：回合结束后立即解除，下一回合需要重新使用
+        Pokemon pa = playerActive();
+        Pokemon foe = foeActive();
+        if (pa != null) {
+            pa.setProtected(false);
+        }
+        if (foe != null) {
+            foe.setProtected(false);
+        }
         if (status != Status.ONGOING) {
             return;
         }
-        Pokemon pa = playerActive();
-        Pokemon foe = foeActive();
         boolean bothStanding = foe != null && !foe.isFainted() && pa != null && !pa.isFainted();
         if (bothStanding) {
             applyFieldEndEffects(pa);
@@ -1543,7 +1822,7 @@ public class BattleEngine implements BattleService {
 
     /**
      * 回合末天气/场地效果：沙暴/冰雹对双方扣血（防尘护目镜携带者免疫），青草场地对双方回复；
-     * 随后结算携带装备与异常状态。
+     * 随后结算寄生种子、携带装备与异常状态。
      */
     private void applyFieldEndEffects(Pokemon pa) {
         Pokemon foe = foeActive();
@@ -1557,6 +1836,8 @@ public class BattleEngine implements BattleService {
         leftoversHeal(foe);
         poisonSludgeEffect(pa);
         poisonSludgeEffect(foe);
+        leechSeedDrain(pa, foe);
+        leechSeedDrain(foe, pa);
         statusEndTurn(pa);
         statusEndTurn(foe);
         // 宝珠类装备在异常状态结算之后生效，因此本回合不会立即吃到新异常状态的扣血
@@ -1607,6 +1888,32 @@ public class BattleEngine implements BattleService {
         }
         if (p.tryApplyStatus(condition, 0)) {
             append(p.getName() + " 因" + orb.getName() + "陷入了" + condition.getDisplayName() + "状态！");
+        }
+    }
+
+    /**
+     * 寄生种子回合末结算：被种下的精灵损失最大 HP 的 1/8，等量回复对方出战精灵。
+     *
+     * @param drained     被种下的精灵
+     * @param beneficiary 吸取方（对方出战精灵）
+     */
+    private void leechSeedDrain(Pokemon drained, Pokemon beneficiary) {
+        if (drained == null || drained.isFainted() || !drained.isSeeded()) {
+            return;
+        }
+        int dealt = drained.takeDamage(Math.max(1, drained.getMaxHp() / 8));
+        append("寄生种子吸取了 " + drained.getName() + " 的养分，失去了 " + dealt + " HP！");
+        if (drained.isFainted()) {
+            events.add(BattleEvent.faint(sideOf(drained), nameOf(drained), BattleEvent.hpOf(drained)));
+            append(drained.getName() + " 倒下了！");
+            return;
+        }
+        if (beneficiary == null || beneficiary.isFainted()) {
+            return;
+        }
+        int healed = beneficiary.heal(dealt);
+        if (healed > 0) {
+            append(beneficiary.getName() + " 恢复了 " + healed + " HP！");
         }
     }
 
@@ -1756,7 +2063,7 @@ public class BattleEngine implements BattleService {
                 p.increaseBadlyPoisonCounter();
             }
             if (p.isFainted()) {
-                events.add(BattleEvent.faint(sideOf(p), nameOf(p)));
+                events.add(BattleEvent.faint(sideOf(p), nameOf(p), BattleEvent.hpOf(p)));
                 append(p.getName() + " 倒下了！");
                 return;
             }
@@ -1788,7 +2095,7 @@ public class BattleEngine implements BattleService {
         int dealt = p.takeDamage(Math.max(1, (int) (p.getMaxHp() * weather.chipRatio())));
         append(weather.getDisplayName() + " 侵蚀着 " + p.getName() + "，造成了 " + dealt + " 点伤害！");
         if (p.isFainted()) {
-            events.add(BattleEvent.faint(sideOf(p), nameOf(p)));
+            events.add(BattleEvent.faint(sideOf(p), nameOf(p), BattleEvent.hpOf(p)));
             append(p.getName() + " 倒下了！");
         }
     }
@@ -1832,13 +2139,19 @@ public class BattleEngine implements BattleService {
      * 已经拿到的经验）。本引擎不自行计算经验、不判定升级 / 学招 / 进化：成长模块返回的日志文本行
      * 原样追加，返回的「技能栏已满」挂起学招项进入待抉择队列。未注入成长端口时本方法无副作用。</p>
      *
+     * <p>训练师战按训练师配置的经验倍率申报（如训练家对战 / 火箭队事件 1.2 倍），
+     * 野生遭遇为 1 倍。</p>
+     *
      * @param defeated 刚被击败的对手（野生精灵或训练师队伍中倒下的一只）
      */
     private void settleGrowth(Pokemon defeated) {
         if (defeated == null) {
             return;
         }
-        BattleGrowthPort.Settlement settlement = growthPort.settle(survivors(), List.of(defeated));
+        int numerator = trainer == null ? 1 : trainer.getExpNumerator();
+        int denominator = trainer == null ? 1 : trainer.getExpDenominator();
+        BattleGrowthPort.Settlement settlement =
+                growthPort.settle(survivors(), List.of(defeated), numerator, denominator);
         for (String line : settlement.log()) {
             append(line);
         }
@@ -1879,9 +2192,16 @@ public class BattleEngine implements BattleService {
         return result;
     }
 
-    private void requireOngoing() {
+    /**
+     * 校验当前可以发起回合行动：战斗未结束，且没有等待玩家选择的替补精灵
+     * （己方出战精灵倒下后必须先调用 {@link #chooseReplacement(int)}）。
+     */
+    private void requirePlayerAction() {
         if (status != Status.ONGOING) {
             throw new IllegalStateException("战斗已结束，状态: " + status);
+        }
+        if (awaitingReplacement) {
+            throw new IllegalStateException("需要先选择上场的精灵");
         }
     }
 

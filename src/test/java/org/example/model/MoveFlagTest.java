@@ -101,12 +101,12 @@ class MoveFlagTest {
     @Test
     void 构造器归一空标记() {
         Move nullFlags = new Move("growl", "叫声", ElementType.NORMAL, MoveCategory.STATUS, 0, 100, 40,
-                0, MoveEffect.NONE, StatusCondition.NONE, 0, null);
+                0, MoveEffect.NONE, StatusCondition.NONE, 0, (Set<MoveFlag>) null);
         assertTrue(nullFlags.getFlags().isEmpty(), "null 应归一为空集");
         assertFalse(nullFlags.isContact());
 
         Move emptyFlags = new Move("growl", "叫声", ElementType.NORMAL, MoveCategory.STATUS, 0, 100, 40,
-                0, MoveEffect.NONE, StatusCondition.NONE, 0, Set.of());
+                0, MoveEffect.NONE, StatusCondition.NONE, 0, Set.<MoveFlag>of());
         assertTrue(emptyFlags.getFlags().isEmpty(), "空集应归一为空集");
     }
 

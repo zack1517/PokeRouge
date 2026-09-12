@@ -8,11 +8,11 @@ import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
 import org.example.model.MoveFlag;
 import org.example.model.MoveSlot;
-import org.example.model.MoveStatChange;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.Species;
-import org.example.model.StatModifier;
+import org.example.model.Stat;
+import org.example.model.StatChange;
 import org.example.model.Stats;
 import org.example.model.StatusCondition;
 import org.example.model.Weather;
@@ -1244,22 +1244,22 @@ class BattleEngineHeldItemTest {
     /** 叫声：声音类变化招，令目标物攻 −1。 */
     private static final Move GROWL_MOVE = new Move("m_growl", "叫声", ElementType.NORMAL,
             MoveCategory.STATUS, 0, 100, 40, 0, MoveEffect.NONE, StatusCondition.NONE, 0,
-            Set.of(MoveFlag.SOUND), MoveStatChange.parse("ATTACK|-1"));
+            StatChange.parseAll("OPPONENT:ATTACK:-1"), Set.of(MoveFlag.SOUND));
 
     /** 摇尾巴：非声音类变化招，令目标物防 −1。 */
     private static final Move TAIL_WHIP_MOVE = new Move("m_tail_whip", "摇尾巴", ElementType.NORMAL,
             MoveCategory.STATUS, 0, 100, 40, 0, MoveEffect.NONE, StatusCondition.NONE, 0,
-            Set.of(), MoveStatChange.parse("DEFENSE|-1"));
+            StatChange.parseAll("OPPONENT:DEFENSE:-1"), Set.of());
 
     /** 硬邦邦：必中的自强化变化招，令自身物防 +1。 */
     private static final Move HARDEN_MOVE = new Move("m_harden", "硬邦邦", ElementType.NORMAL,
             MoveCategory.STATUS, 0, -1, 40, 0, MoveEffect.NONE, StatusCondition.NONE, 0,
-            Set.of(), MoveStatChange.parse("DEFENSE|1|SELF"));
+            StatChange.parseAll("SELF:DEFENSE:+1"), Set.of());
 
     /** 高速移动：令自身速度 +2。 */
     private static final Move AGILITY_MOVE = new Move("m_agility", "高速移动", ElementType.PSYCHIC,
             MoveCategory.STATUS, 0, -1, 40, 0, MoveEffect.NONE, StatusCondition.NONE, 0,
-            Set.of(), MoveStatChange.parse("SPEED|2|SELF"));
+            StatChange.parseAll("SELF:SPEED:+2"), Set.of());
 
     /** 命中率 0 的招式：必定打空（{@code < 0} 才是必中，故 0 仍会掷骰且永不命中）。 */
     private static final Move NEVER_HIT_MOVE = new Move("m_never", "失手", ElementType.NORMAL,
@@ -1268,27 +1268,27 @@ class BattleEngineHeldItemTest {
     @Test
     void 叫声降低目标的物攻一级() {
         BattleEngine engine = engineAfterPlayerAttack(GROWL_MOVE, null, null, IDLE_MOVE, 42);
-        assertEquals(-1, engine.foeActive().getStatStage(StatModifier.ATTACK), "目标物攻应降 1 级");
-        assertEquals(0, engine.playerActive().getStatStage(StatModifier.ATTACK), "不应影响使用者");
-        assertTrue(engine.getLog().stream().anyMatch(line -> line.contains("攻击降低了")),
+        assertEquals(-1, engine.foeActive().getStatStage(Stat.ATTACK), "目标物攻应降 1 级");
+        assertEquals(0, engine.playerActive().getStatStage(Stat.ATTACK), "不应影响使用者");
+        assertTrue(engine.getLog().stream().anyMatch(line -> line.contains("物攻降低了")),
                 "日志应播报物攻下降");
     }
 
     @Test
     void 摇尾巴降低目标的物防一级() {
         BattleEngine engine = engineAfterPlayerAttack(TAIL_WHIP_MOVE, null, null, IDLE_MOVE, 42);
-        assertEquals(-1, engine.foeActive().getStatStage(StatModifier.DEFENSE));
-        assertTrue(engine.getLog().stream().anyMatch(line -> line.contains("防御降低了")));
+        assertEquals(-1, engine.foeActive().getStatStage(Stat.DEFENSE));
+        assertTrue(engine.getLog().stream().anyMatch(line -> line.contains("物防降低了")));
     }
 
     @Test
     void 自强化招式作用于使用者自己() {
         BattleEngine engine = engineAfterPlayerAttack(HARDEN_MOVE, null, null, IDLE_MOVE, 42);
-        assertEquals(1, engine.playerActive().getStatStage(StatModifier.DEFENSE), "硬邦邦应提升自身物防");
-        assertEquals(0, engine.foeActive().getStatStage(StatModifier.DEFENSE), "不应影响目标");
+        assertEquals(1, engine.playerActive().getStatStage(Stat.DEFENSE), "硬邦邦应提升自身物防");
+        assertEquals(0, engine.foeActive().getStatStage(Stat.DEFENSE), "不应影响目标");
 
         BattleEngine fast = engineAfterPlayerAttack(AGILITY_MOVE, null, null, IDLE_MOVE, 42);
-        assertEquals(2, fast.playerActive().getStatStage(StatModifier.SPEED), "高速移动应提升自身速度 2 级");
+        assertEquals(2, fast.playerActive().getStatStage(Stat.SPEED), "高速移动应提升自身速度 2 级");
     }
 
     @Test
@@ -1307,7 +1307,7 @@ class BattleEngineHeldItemTest {
         BattleEngine engine = new BattleEngine(player, foe, new Random(42));
         engine.useMove(mine.getMoveSlots().get(0));
         engine.useMove(mine.getMoveSlots().get(0));
-        assertEquals(-2, engine.foeActive().getStatStage(StatModifier.ATTACK));
+        assertEquals(-2, engine.foeActive().getStatStage(Stat.ATTACK));
         int mineHp = engine.playerActive().getCurrentHp();
         engine.useMove(mine.getMoveSlots().get(1));
         int lostWithDebuff = mineHp - engine.playerActive().getCurrentHp();
@@ -1327,7 +1327,7 @@ class BattleEngineHeldItemTest {
         for (int i = 0; i < 5; i++) {
             engine.useMove(mine.getMoveSlots().get(0));
         }
-        assertEquals(Pokemon.MAX_STAT_STAGE, engine.playerActive().getStatStage(StatModifier.SPEED));
+        assertEquals(Pokemon.MAX_STAT_STAGE, engine.playerActive().getStatStage(Stat.SPEED));
         assertTrue(engine.getLog().stream().anyMatch(line -> line.contains("已经无法再提高了")),
                 "到上限后应播报无法再提高");
     }
@@ -1417,7 +1417,7 @@ class BattleEngineHeldItemTest {
         player.addPokemon(mine);
         BattleEngine engine = new BattleEngine(player, foe, new Random(42));
         engine.useMove(mine.getMoveSlots().get(0));
-        assertEquals(0, engine.foeActive().getStatStage(StatModifier.ATTACK), "变化招应被禁止");
+        assertEquals(0, engine.foeActive().getStatStage(Stat.ATTACK), "变化招应被禁止");
         assertTrue(engine.getLog().stream().anyMatch(line -> line.contains("无法使用变化招式")));
         assertEquals(40, mine.getMoveSlots().get(0).getCurrentPp(), "被禁止时不应消耗 PP");
 
@@ -1436,46 +1436,46 @@ class BattleEngineHeldItemTest {
         player.addPokemon(mine);
         BattleEngine engine = new BattleEngine(player, foe, new Random(42));
         engine.useMove(mine.getMoveSlots().get(0));
-        assertEquals(0, engine.playerActive().getStatStage(StatModifier.ATTACK), "AI 不应选用变化招");
+        assertEquals(0, engine.playerActive().getStatStage(Stat.ATTACK), "AI 不应选用变化招");
     }
 
     @Test
     void 清净坠饰免疫对手造成的能力下降() {
         BattleEngine protectedEngine = engineAfterPlayerAttack(GROWL_MOVE, null, CLEAR_AMULET, IDLE_MOVE, 42);
-        assertEquals(0, protectedEngine.foeActive().getStatStage(StatModifier.ATTACK), "坠饰应免疫下降");
+        assertEquals(0, protectedEngine.foeActive().getStatStage(Stat.ATTACK), "坠饰应免疫下降");
         assertEquals(CLEAR_AMULET, protectedEngine.foeActive().getHeldItem(), "免疫不应消耗坠饰");
         assertTrue(protectedEngine.getLog().stream().anyMatch(line -> line.contains("没有被降低")));
 
         BattleEngine plain = engineAfterPlayerAttack(GROWL_MOVE, null, null, IDLE_MOVE, 42);
-        assertEquals(-1, plain.foeActive().getStatStage(StatModifier.ATTACK), "无坠饰时仍应被降低");
+        assertEquals(-1, plain.foeActive().getStatStage(Stat.ATTACK), "无坠饰时仍应被降低");
     }
 
     @Test
     void 清净坠饰不影响自身造成的能力变化() {
         BattleEngine engine = engineAfterPlayerAttack(TAIL_WHIP_MOVE, CLEAR_AMULET, null, IDLE_MOVE, 42);
-        assertEquals(-1, engine.foeActive().getStatStage(StatModifier.DEFENSE), "由对手造成，不受坠饰影响");
+        assertEquals(-1, engine.foeActive().getStatStage(Stat.DEFENSE), "由对手造成，不受坠饰影响");
 
         // 硬邦邦是「自身造成」的提升，坠饰不应拦截（本来也只拦下降）
         BattleEngine self = engineAfterPlayerAttack(HARDEN_MOVE, CLEAR_AMULET, null, IDLE_MOVE, 42);
-        assertEquals(1, self.playerActive().getStatStage(StatModifier.DEFENSE));
+        assertEquals(1, self.playerActive().getStatStage(Stat.DEFENSE));
     }
 
     @Test
     void 弱点保险被效果拔群命中后提升双攻并消耗() {
         // 水打火：效果拔群
         Pokemon triggered = attackedDefender(WATER_MOVE, WEAKNESS_POLICY, ElementType.WATER, ElementType.FIRE);
-        assertEquals(2, triggered.getStatStage(StatModifier.ATTACK), "物攻应 +2");
-        assertEquals(2, triggered.getStatStage(StatModifier.SP_ATTACK), "特攻应 +2");
+        assertEquals(2, triggered.getStatStage(Stat.ATTACK), "物攻应 +2");
+        assertEquals(2, triggered.getStatStage(Stat.SP_ATTACK), "特攻应 +2");
         assertNull(triggered.getHeldItem(), "触发后应消耗");
 
         Pokemon plain = attackedDefender(WATER_MOVE, null, ElementType.WATER, ElementType.FIRE);
-        assertEquals(0, plain.getStatStage(StatModifier.ATTACK));
+        assertEquals(0, plain.getStatStage(Stat.ATTACK));
     }
 
     @Test
     void 弱点保险在非效果拔群时不触发() {
         Pokemon untouched = attackedDefender(WATER_MOVE, WEAKNESS_POLICY, ElementType.WATER, ElementType.NORMAL);
-        assertEquals(0, untouched.getStatStage(StatModifier.ATTACK), "非效果拔群不应触发");
+        assertEquals(0, untouched.getStatStage(Stat.ATTACK), "非效果拔群不应触发");
         assertEquals(WEAKNESS_POLICY, untouched.getHeldItem(), "未触发不应消耗");
     }
 
@@ -1490,7 +1490,7 @@ class BattleEngineHeldItemTest {
         player.addPokemon(mine);
         BattleEngine engine = new BattleEngine(player, foe, new Random(42));
         engine.useMove(mine.getMoveSlots().get(0));
-        assertEquals(2, mine.getStatStage(StatModifier.SPEED), "打空后速度应 +2");
+        assertEquals(2, mine.getStatStage(Stat.SPEED), "打空后速度应 +2");
         assertNull(mine.getHeldItem(), "触发后应消耗");
         assertTrue(engine.getLog().stream().anyMatch(line -> line.contains("没有命中")));
     }
@@ -1512,13 +1512,13 @@ class BattleEngineHeldItemTest {
         Player player = new Player("玩家");
         player.addPokemon(mine);
         new BattleEngine(player, foe, new Random(42)).useMove(mine.getMoveSlots().get(0));
-        return new int[]{mine.getStatStage(StatModifier.SPEED), mine.getHeldItem() == null ? 0 : 1};
+        return new int[]{mine.getStatStage(Stat.SPEED), mine.getHeldItem() == null ? 0 : 1};
     }
 
     @Test
     void 爽喉喷雾在使用声音类招式后提升特攻并消耗() {
         BattleEngine engine = engineAfterPlayerAttack(GROWL_MOVE, THROAT_SPRAY, null, IDLE_MOVE, 42);
-        assertEquals(1, engine.playerActive().getStatStage(StatModifier.SP_ATTACK), "使用声音招后特攻应 +1");
+        assertEquals(1, engine.playerActive().getStatStage(Stat.SP_ATTACK), "使用声音招后特攻应 +1");
         assertNull(engine.playerActive().getHeldItem(), "触发后应消耗");
         assertTrue(engine.getLog().stream().anyMatch(line -> line.contains("爽喉喷雾")));
     }
@@ -1526,7 +1526,7 @@ class BattleEngineHeldItemTest {
     @Test
     void 爽喉喷雾对非声音类招式不触发() {
         BattleEngine engine = engineAfterPlayerAttack(TAIL_WHIP_MOVE, THROAT_SPRAY, null, IDLE_MOVE, 42);
-        assertEquals(0, engine.playerActive().getStatStage(StatModifier.SP_ATTACK), "非声音招不应触发");
+        assertEquals(0, engine.playerActive().getStatStage(Stat.SP_ATTACK), "非声音招不应触发");
         assertEquals(THROAT_SPRAY, engine.playerActive().getHeldItem(), "未触发不应消耗");
     }
 
@@ -1536,25 +1536,25 @@ class BattleEngineHeldItemTest {
                 200, 100, 40, 0, MoveEffect.NONE, StatusCondition.NONE, 0,
                 Set.of(MoveFlag.SOUND));
         BattleEngine engine = engineAfterPlayerAttack(soundAttack, THROAT_SPRAY, null, IDLE_MOVE, 42);
-        assertEquals(1, engine.playerActive().getStatStage(StatModifier.SP_ATTACK));
+        assertEquals(1, engine.playerActive().getStatStage(Stat.SP_ATTACK));
         assertNull(engine.playerActive().getHeldItem());
     }
 
     @Test
     void 属性反应装备受到对应属性招式后提升能力并消耗() {
         Pokemon bulb = attackedDefender(WATER_MOVE, ABSORB_BULB, ElementType.WATER, ElementType.NORMAL);
-        assertEquals(1, bulb.getStatStage(StatModifier.SP_ATTACK), "球根应提升特攻");
+        assertEquals(1, bulb.getStatStage(Stat.SP_ATTACK), "球根应提升特攻");
         assertNull(bulb.getHeldItem(), "触发后应消耗");
 
         Pokemon battery = attackedDefender(ELECTRIC_MOVE, CELL_BATTERY, ElementType.ELECTRIC, ElementType.NORMAL);
-        assertEquals(1, battery.getStatStage(StatModifier.ATTACK), "充电电池应提升物攻");
+        assertEquals(1, battery.getStatStage(Stat.ATTACK), "充电电池应提升物攻");
         assertNull(battery.getHeldItem());
     }
 
     @Test
     void 属性反应装备对非对应属性招式不触发() {
         Pokemon bulb = attackedDefender(FIRE_MOVE, ABSORB_BULB, ElementType.FIRE, ElementType.NORMAL);
-        assertEquals(0, bulb.getStatStage(StatModifier.SP_ATTACK), "球根只对水属性招式反应");
+        assertEquals(0, bulb.getStatStage(Stat.SP_ATTACK), "球根只对水属性招式反应");
         assertEquals(ABSORB_BULB, bulb.getHeldItem(), "未触发不应消耗");
     }
 
@@ -1582,7 +1582,7 @@ class BattleEngineHeldItemTest {
         player.addPokemon(mine);
         BattleEngine engine = new BattleEngine(player, foe, new Random(42));
         engine.useMove(mine.getMoveSlots().get(0));
-        assertEquals(1, mine.getStatStage(StatModifier.DEFENSE), "电气场地应触发电气种子");
+        assertEquals(1, mine.getStatStage(Stat.DEFENSE), "电气场地应触发电气种子");
         assertNull(mine.getHeldItem(), "触发后应消耗");
         assertTrue(engine.getLog().stream().anyMatch(line -> line.contains("电气种子")));
     }
@@ -1598,7 +1598,7 @@ class BattleEngineHeldItemTest {
         Player player = new Player("玩家");
         player.addPokemon(mine);
         new BattleEngine(player, foe, new Random(42)).useMove(mine.getMoveSlots().get(0));
-        assertEquals(0, mine.getStatStage(StatModifier.DEFENSE), "青草场地不应触发电气种子");
+        assertEquals(0, mine.getStatStage(Stat.DEFENSE), "青草场地不应触发电气种子");
         assertEquals(TERRAIN_SEED_ELECTRIC, mine.getHeldItem(), "未触发不应消耗");
     }
 
@@ -1617,7 +1617,7 @@ class BattleEngineHeldItemTest {
         BattleEngine engine = new BattleEngine(player, foe, new Random(42));
         engine.useMove(first.getMoveSlots().get(0));
         engine.switchActive(1);
-        assertEquals(1, second.getStatStage(StatModifier.DEFENSE), "电气种子应在换上时触发");
+        assertEquals(1, second.getStatStage(Stat.DEFENSE), "电气种子应在换上时触发");
         assertNull(second.getHeldItem(), "触发后应消耗");
     }
 

@@ -102,6 +102,12 @@ public final class RouteConfig {
         return 90 + Math.max(1, segment) * 30;
     }
 
+    /**
+     * 普通节点战败全灭救援的行动点代价（§4.3）：野生 / 路人训练家战败全灭不结束游戏，
+     * 而是消耗该点数行动点恢复全队状态；剩余行动点不足该值时置 0。
+     */
+    public static final int DEFEAT_RESCUE_AP_COST = 2;
+
     // ------------------------------------------------------------------
     // 节点自回血（§4.4）
     // ------------------------------------------------------------------
@@ -149,34 +155,82 @@ public final class RouteConfig {
     // 敌人强度（随段推进增强）
     // ------------------------------------------------------------------
 
-    /** 野外精灵相对玩家先发的等级加成。 */
+    /** 野外精灵相对队伍最高等级的等级加成：⌊段号/2⌋（向下取整）。 */
     public static int wildLevelBonus(int segment) {
+        return Math.max(1, segment) / 2;
+    }
+
+    /** 路人训练家相对队伍最高等级的等级加成：段号 - 1。 */
+    public static int trainerLevelBonus(int segment) {
         return Math.max(1, segment) - 1;
     }
 
-    /** 路人训练家相对玩家先发的等级加成。 */
-    public static int trainerLevelBonus(int segment) {
-        return Math.max(1, segment) + 1;
+    /**
+     * 路人训练家队伍数量下限（按段）：1 段 1 只、2 段 1 只、3 段 2 只、4 段 3 只；
+     * 第 5 段保持随机 1~2 只。
+     */
+    public static int trainerPartyMin(int segment) {
+        int seg = Math.max(1, segment);
+        return switch (seg) {
+            case 1, 2 -> 1;
+            case 3 -> 2;
+            case 4 -> 3;
+            default -> 1; // 第 5 段保持随机 1~2
+        };
     }
 
-    /** 道馆战相对玩家先发的等级加成。 */
+    /**
+     * 路人训练家队伍数量上限（按段）：1 段 1 只、2 段 2 只、3 段 2 只、4 段 3 只；
+     * 第 5 段保持随机 1~2 只。
+     */
+    public static int trainerPartyMax(int segment) {
+        int seg = Math.max(1, segment);
+        return switch (seg) {
+            case 1 -> 1;
+            case 2, 3 -> 2;
+            case 4 -> 3;
+            default -> 2; // 第 5 段保持随机 1~2
+        };
+    }
+
+    /** 道馆战相对队伍最高等级的等级加成（仅第 5 段及以后的道馆主使用；1~4 段走 {@link #gymFixedLevel}）。 */
     public static int gymLevelBonus(int segment) {
         return 2 + Math.max(1, segment) * 2;
     }
 
-    /** 四天王连打相对玩家先发的等级加成。 */
+    /**
+     * 道馆馆主固定等级表（仅 1~4 段）：11 / 17 / 24 / 32。
+     * 第 5 段道馆主保持相对队伍最高等级的等级加成（见 {@link #gymLevelBonus}），不走本表；
+     * {@code default} 仅为非法段号的防御性兑底。
+     */
+    public static int gymFixedLevel(int segment) {
+        return switch (Math.max(1, segment)) {
+            case 1 -> 11;
+            case 2 -> 17;
+            case 3 -> 24;
+            default -> 32;
+        };
+    }
+
+    /** 道馆战的对手宝可梦数量：1~4 段固定为 2 / 3 / 3 / 4；第 5 段起沿用旧公式。 */
+    public static int gymPartySize(int segment) {
+        int seg = Math.max(1, segment);
+        return switch (seg) {
+            case 1 -> 2;
+            case 2, 3 -> 3;
+            case 4 -> 4;
+            default -> Math.min(3, 1 + seg / 2);
+        };
+    }
+
+    /** 四天王连打相对队伍最高等级的等级加成。 */
     public static int eliteFourLevelBonus(int segment) {
         return 4 + Math.max(1, segment) * 2;
     }
 
-    /** 冠军战相对玩家先发的等级加成。 */
+    /** 冠军战相对队伍最高等级的等级加成。 */
     public static int championLevelBonus(int segment) {
         return 6 + Math.max(1, segment) * 3;
-    }
-
-    /** 道馆战的对手宝可梦数量。 */
-    public static int gymPartySize(int segment) {
-        return Math.min(3, 1 + Math.max(1, segment) / 2);
     }
 
     /** 四天王连打的对手宝可梦数量。 */
@@ -248,22 +302,22 @@ public final class RouteConfig {
         return 520 + Math.max(1, segment) * 120;
     }
 
-    /** 火箭队队员战相对玩家先发的等级加成（难度显著高于常规节点，§5.2）。 */
+    /** 火箭队队员战相对队伍最高等级的等级加成：段号 - 1（与路人训练家同口径，§5.2）。 */
     public static int rocketLevelBonus(int segment) {
-        return 3 + Math.max(1, segment) * 2;
+        return Math.max(1, segment) - 1;
     }
 
-    /** 火箭队首领战相对玩家先发的等级加成。 */
+    /** 火箭队首领战相对队伍最高等级的等级加成。 */
     public static int rocketBossLevelBonus(int segment) {
         return 5 + Math.max(1, segment) * 3;
     }
 
-    /** 神兽偶遇相对玩家先发的等级加成（神兽强度高于普通野生精灵）。 */
+    /** 神兽偶遇相对队伍最高等级的等级加成（神兽强度高于普通野生精灵）。 */
     public static int legendaryLevelBonus(int segment) {
         return 4 + Math.max(1, segment) * 3;
     }
 
-    /** 首领侵略战相对玩家先发的等级加成。 */
+    /** 首领侵略战相对队伍最高等级的等级加成。 */
     public static int bossAggressionLevelBonus(int segment) {
         return 7 + Math.max(1, segment) * 3;
     }

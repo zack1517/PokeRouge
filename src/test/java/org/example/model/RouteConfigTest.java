@@ -1,9 +1,8 @@
 package org.example.model;
 
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * {@link RouteConfig} 的单元测试：把《需求文档》§4 里「行动点上限随进度提升」「商店随进展变多、
@@ -77,8 +76,27 @@ class RouteConfigTest {
                 "四天王强于同段道馆");
         assertTrue(RouteConfig.championLevelBonus(3) > RouteConfig.eliteFourLevelBonus(3),
                 "冠军最强");
-        assertTrue(RouteConfig.trainerLevelBonus(1) > RouteConfig.wildLevelBonus(1),
-                "路人训练家强于野外精灵");
+        assertTrue(RouteConfig.trainerLevelBonus(3) > RouteConfig.wildLevelBonus(3),
+                "第 3 段起路人训练家强于野外精灵（训练家段号-1 > 野生段号/2）");
+    }
+
+    @Test
+    void 野生与训练家与火箭队等级加成公式() {
+        // 野生遭遇：P + ⌊段号/2⌋
+        assertEquals(0, RouteConfig.wildLevelBonus(1));
+        assertEquals(1, RouteConfig.wildLevelBonus(2));
+        assertEquals(1, RouteConfig.wildLevelBonus(3));
+        assertEquals(2, RouteConfig.wildLevelBonus(4));
+        assertEquals(2, RouteConfig.wildLevelBonus(5));
+        // 路人训练家：P + (段号 - 1)
+        assertEquals(0, RouteConfig.trainerLevelBonus(1));
+        assertEquals(1, RouteConfig.trainerLevelBonus(2));
+        assertEquals(2, RouteConfig.trainerLevelBonus(3));
+        assertEquals(4, RouteConfig.trainerLevelBonus(5));
+        // 火箭队队员：P + (段号 - 1)
+        assertEquals(0, RouteConfig.rocketLevelBonus(1));
+        assertEquals(1, RouteConfig.rocketLevelBonus(2));
+        assertEquals(4, RouteConfig.rocketLevelBonus(5));
     }
 
     @Test
@@ -90,10 +108,41 @@ class RouteConfigTest {
     }
 
     @Test
+    void 道馆主前四段固定等级与数量第五段沿用旧公式() {
+        assertEquals(2, RouteConfig.gymPartySize(1));
+        assertEquals(3, RouteConfig.gymPartySize(2));
+        assertEquals(3, RouteConfig.gymPartySize(3));
+        assertEquals(4, RouteConfig.gymPartySize(4));
+        assertEquals(11, RouteConfig.gymFixedLevel(1));
+        assertEquals(17, RouteConfig.gymFixedLevel(2));
+        assertEquals(24, RouteConfig.gymFixedLevel(3));
+        assertEquals(32, RouteConfig.gymFixedLevel(4));
+        // 第 5 段道馆主保持旧行为：数量 3 只，等级走相对队伍最高等级的加成公式
+        assertEquals(3, RouteConfig.gymPartySize(5));
+        assertEquals(12, RouteConfig.gymLevelBonus(5));
+    }
+
+    @Test
+    void 路人训练家数量按段配置且第五段保持随机() {
+        assertEquals(1, RouteConfig.trainerPartyMin(1));
+        assertEquals(1, RouteConfig.trainerPartyMax(1));
+        assertEquals(1, RouteConfig.trainerPartyMin(2));
+        assertEquals(2, RouteConfig.trainerPartyMax(2), "2 段应为 1~2 只随机");
+        assertEquals(2, RouteConfig.trainerPartyMin(3));
+        assertEquals(2, RouteConfig.trainerPartyMax(3));
+        assertEquals(3, RouteConfig.trainerPartyMin(4));
+        assertEquals(3, RouteConfig.trainerPartyMax(4));
+        // 第 5 段保持现状：随机 1~2 只
+        assertEquals(1, RouteConfig.trainerPartyMin(5));
+        assertEquals(2, RouteConfig.trainerPartyMax(5));
+    }
+
+    @Test
     void 总段数与节点上限已被配置钉住() {
         assertEquals(5, RouteConfig.TOTAL_SEGMENTS);
         assertTrue(RouteConfig.MAX_ROUTE_NODES >= 5, "3 个常驻节点外还要容得下商店与特殊事件");
         assertTrue(RouteConfig.STARTING_GOLD > 0, "新远征必须带得动起始金币");
         assertTrue(RouteConfig.SPECIAL_AP_COST > 0, "普通特殊事件（神兽偶遇）消耗行动点");
+        assertEquals(2, RouteConfig.DEFEAT_RESCUE_AP_COST, "战败全灭救援固定消耗 2 点行动点");
     }
 }

@@ -1,5 +1,9 @@
 package org.example.growth;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
 import org.example.battle.BattleDataPort;
 import org.example.battle.BattleGrowthPort;
 import org.example.battle.BattleService;
@@ -8,16 +12,17 @@ import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.Stats;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-
 /**
  * 成长模块：唯一负责「经验增加、升级、学招、进化」判定的模块。
  *
  * <p>战斗模块每击倒一只对手就把「参战且未倒下的己方精灵」与「刚被击败的那只对手」交给本模块
  * （见 {@link BattleGrowthPort}），由本模块决定经验数值、逐级升级、到级学招与进化，
- * 并把日志文本行与「技能栏已满」的挂起学招项返回。战斗模块本身不含任何成长规则。</p>
+ * 并把日志文本行返回。战斗模块本身不含任何成长规则。</p>
+ *
+ * <p><b>到级学招的取舍规则</b>：升级学到的新技能全部保留进精灵的<b>技能库</b>（无上限，不丢招）；
+ * 出战槽有空位时自动携带新招，已带满 4 招时新招只入技能库，玩家可稍后在宝可梦详情界面
+ * 自由更换出战技能（{@link Pokemon#swapBattleMove}）。因此本模块不再产生「技能满、待抉择」的
+ * 挂起项（{@code pendingLearns} 恒为空）。</p>
  *
  * <p><b>数据来源</b>：本模块不内建数据，技能与种族一律经 {@link BattleDataPort} 查询，
  * 与战斗模块共用同一份外部数据。未注入数据端口时，到级学招与进化降级为无操作，
@@ -29,9 +34,8 @@ import java.util.Objects;
  * 「六维种族值总和 × 等级 / 5」，保证自定义数据仍能结算。</p>
  *
  * <p><b>可见反馈</b>：每次结算都会为每只获得经验的精灵追加一行
- * 「{@code 名字 获得了 N 点经验！}」日志（未升级时附带 {@code （当前/升级所需）} 进度），
- * 升级时再逐行追加「{@code 名字 升到了 Lv.N！}」。因此即便一次击倒不足以升级，
- * 玩家也能从战斗日志中确认经验已经入账。</p>
+ * 「{@code 名字 获得了 N 点经验！}」日志，升级时再逐行追加「{@code 名字 升到了 Lv.N！}」。
+ * 因此即便一次击倒不足以升级，玩家也能从战斗日志中确认经验已经入账。</p>
  *
  * <p><b>图鉴进度</b>：本模块同时维护局外成长进度 {@link GrowthProgress} —— 玩家获胜时按
  * 参战精灵累计「对战次数」（{@link #onBattleWon(List)}，每场一次），野生遭遇被捕捉时
@@ -46,6 +50,18 @@ public final class GrowthService implements BattleGrowthPort {
 
     /** 种族经验值折算系数：经验 = baseExp × 对方等级 ÷ {@value}（对齐原作公式）。 */
     private static final int BASE_EXP_DIVISOR = 7;
+
+    /** 捕捉经验奖励倍率（分子 / 分母）：相当于击败该宝可梦的 1.8 倍经验。 */
+    private static final int CAPTURE_EXP_NUMERATOR = 9;
+    private static final int CAPTURE_EXP_DENOMINATOR = 5;
+
+    /** 训练家对战与火箭队事件的击倒经验倍率（分子 / 分母）：1.5 倍。 */
+    public static final int TRAINER_EXP_NUMERATOR = 3;
+    public static final int TRAINER_EXP_DENOMINATOR = 2;
+
+    /** 道馆战的击倒经验倍率（分子 / 分母）：2.0 倍。 */
+    public static final int GYM_EXP_NUMERATOR = 2;
+    public static final int GYM_EXP_DENOMINATOR = 1;
 
     /** 技能与种族数据的唯一来源。 */
     private final BattleDataPort dataPort;
@@ -87,9 +103,15 @@ public final class GrowthService implements BattleGrowthPort {
 
     @Override
     public Settlement settle(List<Pokemon> survivors, List<Pokemon> defeated) {
+        return settle(survivors, defeated, 1, 1);
+    }
+
+    @Override
+    public Settlement settle(List<Pokemon> survivors, List<Pokemon> defeated,
+                             int expNumerator, int expDenominator) {
         List<String> log = new ArrayList<>();
         List<BattleService.LearnChoice> pending = new ArrayList<>();
-        int exp = totalExp(defeated);
+        int exp = totalExp(defeated) * expNumerator / expDenominator;
         if (exp > 0 && survivors != null) {
             for (Pokemon p : survivors) {
                 if (p == null || p.isFainted()) {
@@ -115,6 +137,29 @@ public final class GrowthService implements BattleGrowthPort {
     }
 
     @Override
+    public Settlement settleCapture(List<Pokemon> survivors, Pokemon caught) {
+        List<String> log = new ArrayList<>();
+        List<BattleService.LearnChoice> pending = new ArrayList<>();
+        // 捕捉次数照常累计（图鉴 / 个体值加成）
+        onCaptured(caught == null ? null : caught.getSpecies().getId());
+        if (caught == null) {
+            return new Settlement(log, pending);
+        }
+        // 捕捉成功奖励 1.5 倍击倒经验，与击倒结算同口径（升级 / 学招 / 进化即时判定）；
+        // 被捕捉的精灵本身不参与发放（奖励只给参战的己方精灵）
+        int exp = captureExpOf(caught);
+        if (exp > 0 && survivors != null) {
+            for (Pokemon p : survivors) {
+                if (p == null || p.isFainted() || p == caught) {
+                    continue;
+                }
+                grow(p, exp, log, pending);
+            }
+        }
+        return new Settlement(log, pending);
+    }
+
+    @Override
     public List<String> resolveLearn(BattleService.LearnChoice choice, int forgetSlotIndex) {
         List<String> log = new ArrayList<>();
         if (choice == null) {
@@ -126,6 +171,8 @@ public final class GrowthService implements BattleGrowthPort {
             return log;
         }
         if (forgetSlotIndex >= 0 && forgetSlotIndex < p.getMoveSlots().size()) {
+            // 新招先入技能库（永久保留），再替换出战槽；被换下的招仍留在库中可再换回
+            p.learnMoveToPool(move);
             Move forgotten = p.replaceMove(forgetSlotIndex, move);
             if (forgotten == null) {
                 log.add(p.getName() + " 想学习【" + move.getName() + "】，但没有可遗忘的槽位。");
@@ -143,23 +190,18 @@ public final class GrowthService implements BattleGrowthPort {
     // 成长结算
     // ------------------------------------------------------------------
 
-    /**
-     * 结算一只精灵的经验与成长：<b>先追加一行「获得了 N 点经验」的可见反馈</b>
-     * （未升级时附带「当前经验 / 升级所需」进度，便于玩家确认经验确实入账），
-     * 再逐级追加升级日志，并处理到级学招与进化。
-     */
+    /** 结算一只精灵的经验与成长：先入账经验并输出「获得经验」日志，再逐级追加升级日志并处理到级学招与进化。 */
     private void grow(Pokemon p, int exp, List<String> log, List<BattleService.LearnChoice> pending) {
         if (p.getLevel() >= Pokemon.MAX_LEVEL) {
-            return;
+            return; // 满级不再累积经验，也不输出日志
         }
         int before = p.getLevel();
         int gainedLevels = p.addExp(exp);
+        // 经验在击倒对手的当次结算即到账：无论是否升级都输出日志，让玩家在战斗中立刻看到经验获得
+        log.add(p.getName() + " 获得了 " + exp + " 点经验！");
         if (gainedLevels <= 0) {
-            log.add(p.getName() + " 获得了 " + exp + " 点经验！（"
-                    + p.getExp() + "/" + p.expToNextLevel() + "）");
             return;
         }
-        log.add(p.getName() + " 获得了 " + exp + " 点经验！");
         for (int lv = before + 1; lv <= p.getLevel(); lv++) {
             log.add(p.getName() + " 升到了 Lv." + lv + "！");
             learnAt(p, lv, log, pending);
@@ -167,7 +209,7 @@ public final class GrowthService implements BattleGrowthPort {
         }
     }
 
-    /** 等级达到习得表要求时尝试学会新技能：有空槽直接学会；4 招全满则挂起等待玩家抉择。 */
+    /** 等级达到习得表要求时尝试学会新技能：全部保留进技能库；出战槽有空位则自动携带。 */
     private void learnAt(Pokemon p, int level, List<String> log,
                          List<BattleService.LearnChoice> pending) {
         String moveId = p.getSpecies().moveLearnedAt(level);
@@ -175,15 +217,17 @@ public final class GrowthService implements BattleGrowthPort {
             return;
         }
         Move move = dataPort.findMove(moveId);
-        if (move == null || p.hasMove(move)) {
+        if (move == null || p.knowsMove(move.getId())) {
             return;
         }
-        if (p.moveSlotsFull()) {
-            pending.add(new BattleService.LearnChoice(p, move));
-            return;
+        boolean full = p.moveSlotsFull();
+        p.learnMoveToPool(move);
+        if (full) {
+            log.add(p.getName() + " 学会了【" + move.getName()
+                    + "】，已收入技能库（可在宝可梦详情界面更换出战技能）。");
+        } else {
+            log.add(p.getName() + " 记住了【" + move.getName() + "】！");
         }
-        p.learnMove(move);
-        log.add(p.getName() + " 记住了【" + move.getName() + "】！");
     }
 
     /** 达到进化等级时进化为目标形态（种族由数据端口提供；重新演算属性并回满状态）。 */
@@ -242,5 +286,10 @@ public final class GrowthService implements BattleGrowthPort {
         int total = stats.getHp() + stats.getAttack() + stats.getDefense()
                 + stats.getSpAttack() + stats.getSpDefense() + stats.getSpeed();
         return Math.max(MIN_EXP, total * defeated.getLevel() / 5);
+    }
+
+    /** 捕捉成功的经验奖励：相当于击败该宝可梦的 {@value #CAPTURE_EXP_NUMERATOR}/{@value #CAPTURE_EXP_DENOMINATOR} 倍经验。 */
+    private static int captureExpOf(Pokemon caught) {
+        return expOf(caught) * CAPTURE_EXP_NUMERATOR / CAPTURE_EXP_DENOMINATOR;
     }
 }

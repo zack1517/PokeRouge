@@ -28,10 +28,10 @@ class SaveCodecTest {
                                 340L, "POISON", 2, 3, 1, 27,
                                 List.of(new SaveData.MoveData("tackle", 30),
                                         new SaveData.MoveData("vine-whip", 7)),
-                                "e_life_orb"),
+                                List.of(), "e_life_orb"),
                         new SaveData.PokemonData("charmander", 10,
                                 new SaveData.IvData(12, 12, 12, 12, 12, 12),
-                                0L, "NONE", 0, 0, 0, 30, List.of(), "")),
+                                0L, "NONE", 0, 0, 0, 30, List.of(), List.of(), "")),
                 List.of(new SaveData.ItemData("potion", 3),
                         new SaveData.ItemData("poke-ball", 5)),
                 new SaveData.RunRecord(4, 10, "EXPLORING", 0, 320, true, false),
@@ -95,7 +95,7 @@ class SaveCodecTest {
         String tricky = "小|明\\ 换\n行";
         SaveData original = new SaveData(SaveData.FORMAT_VERSION, tricky, 0,
                 List.of(new SaveData.PokemonData("bulbasaur", 5, null, 0L, null, 0, 0, 0, 1,
-                        List.of(new SaveData.MoveData("tackle", 1)), "")),
+                        List.of(new SaveData.MoveData("tackle", 1)), List.of(), "")),
                 List.of(new SaveData.ItemData("potion", 1)),
                 new SaveData.RunRecord(1, 8, "EXPLORING", 0, 0, false, false),
                 List.of(new SaveData.OptionData(tricky, "WILD", 0, tricky)),
@@ -115,6 +115,43 @@ class SaveCodecTest {
     /** 统计正文记录条数（跳过格式头与格式提示）。 */
     private static long recordLines(String text) {
         return text.lines().filter(line -> !line.startsWith("#")).count();
+    }
+
+    /** 技能库（含未出战技能）必须随存档往返，且未出战的技能写入独立的 KMOVE 行。 */
+    @Test
+    void 技能库随存档往返() {
+        SaveData original = new SaveData(SaveData.FORMAT_VERSION, "小明", 0,
+                List.of(new SaveData.PokemonData("bulbasaur", 12,
+                        new SaveData.IvData(1, 1, 1, 1, 1, 1),
+                        0L, "NONE", 0, 0, 0, 30,
+                        List.of(new SaveData.MoveData("tackle", 10)),
+                        List.of("tackle", "vine-whip", "razor-leaf"), "")),
+                List.of(), SaveData.RunRecord.notStarted(), List.of(), null, 0, null, 1L);
+
+        String text = SaveCodec.render(original);
+        SaveData parsed = SaveCodec.parse(text);
+
+        assertEquals(List.of("tackle", "vine-whip", "razor-leaf"),
+                parsed.party().get(0).knownMoves(), "技能库完整往返");
+        assertTrue(text.contains("KMOVE|0|tackle"), "出战技能同样写入 KMOVE 行：\n" + text);
+        assertTrue(text.contains("KMOVE|0|vine-whip"), "未出战的技能写入 KMOVE 行：\n" + text);
+        assertTrue(text.contains("KMOVE|0|razor-leaf"), "多招未出战技能逐行写入：\n" + text);
+    }
+
+    /** 旧档（技能库机制之前）没有 KMOVE 行：解析层保持空列表（由映射层按出战技能兜底）。 */
+    @Test
+    void 旧档无技能库行时保持空列表() {
+        String text = String.join("\n",
+                "VERSION|" + SaveData.FORMAT_VERSION,
+                "PLAYER|小明",
+                "PP|bulbasaur|5|1|1|1|1|1|1|0|NONE|0|0|0|20",
+                "MOVE|0|0|tackle|8",
+                "RUN|1|8|EXPLORING|0|0|0|0");
+
+        SaveData parsed = SaveCodec.parse(text);
+
+        assertEquals(List.of(), parsed.party().get(0).knownMoves(),
+                "旧档技能库为空，映射层按出战技能兜底");
     }
 
     /** 未知键必须被跳过：老程序读到新版本多写的字段不能崩。 */

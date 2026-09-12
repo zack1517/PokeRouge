@@ -1,5 +1,10 @@
 package org.example.growth;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.example.battle.BattleDataPort;
 import org.example.battle.BattleDataPorts;
 import org.example.battle.BattleGrowthPort;
@@ -10,19 +15,12 @@ import org.example.model.MoveCategory;
 import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.Stats;
-
-import org.junit.jupiter.api.Test;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * 成长模块测试：经验增加、升级、学招与进化全部由成长模块判定，战斗模块只申报击倒与获胜。
@@ -128,7 +126,72 @@ class GrowthServiceTest {
         assertEquals(4, active.getLevel(), "70 点经验应把 1 级精灵升到 4 级");
         assertTrue(settlement.log().contains(active.getName() + " 升到了 Lv.4！"),
                 "逐级升级日志应逐条返回");
+        assertTrue(settlement.log().contains(active.getName() + " 获得了 70 点经验！"),
+                "击倒即结算应输出获得经验日志");
         assertTrue(settlement.pendingLearns().isEmpty());
+    }
+
+    @Test
+    void 经验不足升级时也输出获得经验日志() {
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        // 30 级升级需 2791 点经验，70 点不足以升级：应仍输出「获得经验」日志，让玩家立刻看到经验到账
+        Pokemon active = pokemon(mine, 30, SLAM);
+        Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()),
+                7, SLAM);
+
+        BattleGrowthPort.Settlement settlement =
+                new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe));
+
+        assertEquals(30, active.getLevel(), "70 点经验不应让 30 级精灵升级");
+        assertTrue(settlement.log().contains(active.getName() + " 获得了 70 点经验！"),
+                "即使未升级也应在击倒结算时输出获得经验日志：" + settlement.log());
+        assertTrue(settlement.pendingLearns().isEmpty());
+    }
+
+    @Test
+    void 带倍率的击倒结算按倍率发放经验() {
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        // 训练家 / 火箭队 1.5 倍（3/2）：击倒经验 70 → 105 点，升到 4 级（需 63），不足升 5 级（需 124）
+        Pokemon active = pokemon(mine, 1, SLAM);
+        Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()),
+                7, SLAM);
+
+        BattleGrowthPort.Settlement settlement =
+                new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe), 3, 2);
+
+        assertEquals(4, active.getLevel(), "训练家 / 火箭队击倒应为 1.5 倍经验（70 × 1.5 = 105）");
+        assertTrue(settlement.log().contains(active.getName() + " 获得了 105 点经验！"),
+                "倍率结算日志应输出折算后的经验值：" + settlement.log());
+    }
+
+    @Test
+    void 道馆战击倒经验为两倍() {
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        // 道馆战 2.0 倍（2/1）：击倒经验 70 → 140 点，升到 5 级（需 124），不足升 6 级（需 215）
+        Pokemon active = pokemon(mine, 1, SLAM);
+        Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()),
+                7, SLAM);
+
+        BattleGrowthPort.Settlement settlement =
+                new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe), 2, 1);
+
+        assertEquals(5, active.getLevel(), "道馆战击倒应为 2.0 倍经验（70 × 2 = 140）");
+        assertTrue(settlement.log().contains(active.getName() + " 获得了 140 点经验！"),
+                "道馆战经验日志应输出折算后的经验值：" + settlement.log());
+    }
+
+    @Test
+    void 满级精灵不再输出获得经验日志() {
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        Pokemon maxed = pokemon(mine, Pokemon.MAX_LEVEL, SLAM);
+        Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()),
+                7, SLAM);
+
+        BattleGrowthPort.Settlement settlement =
+                new GrowthService(new RecordingPort()).settle(List.of(maxed), List.of(foe));
+
+        assertEquals(Pokemon.MAX_LEVEL, maxed.getLevel());
+        assertTrue(settlement.log().isEmpty(), "满级精灵不再累积经验，也不应输出经验日志：" + settlement.log());
     }
 
     @Test
@@ -205,7 +268,7 @@ class GrowthServiceTest {
     }
 
     @Test
-    void 未升级时返回带进度的经验日志() {
+    void 未升级时返回经验日志() {
         Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
         Pokemon active = pokemon(mine, 50, SLAM);
         // 50 级升到下一级需 7651 点，70 点经验远不足以升级，但必须能从日志中看到经验入账
@@ -221,8 +284,8 @@ class GrowthServiceTest {
         String line = settlement.log().get(0);
         assertTrue(line.contains(active.getName() + " 获得了 70 点经验！"),
                 "应写明获得经验的具体数值，实际：" + line);
-        assertTrue(line.contains("（70/" + active.expToNextLevel() + "）"),
-                "应附带「当前 / 升级所需」进度，实际：" + line);
+        assertEquals(active.getName() + " 获得了 70 点经验！", line,
+                "未升级时的经验反馈日志即为完整内容，不附带其他片段");
     }
 
     @Test
@@ -293,7 +356,7 @@ class GrowthServiceTest {
     }
 
     @Test
-    void 技能栏已满时挂起等待抉择() {
+    void 技能栏已满时新招自动收入技能库不占出战槽() {
         Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of(2, "m_new"));
         Pokemon active = pokemon(mine, 1, fourMoves());
 
@@ -303,12 +366,12 @@ class GrowthServiceTest {
         BattleGrowthPort.Settlement settlement =
                 new GrowthService(port, new GrowthProgress()).settle(List.of(active), List.of(foe120()));
 
-        assertEquals(1, settlement.pendingLearns().size(), "满 4 招时应挂起一个学习抉择");
-        BattleService.LearnChoice choice = settlement.pendingLearns().get(0);
-        assertEquals(active, choice.pokemon());
-        assertEquals("m_new", choice.move().getId());
-        assertEquals(4, active.getMoveSlots().size(), "挂起期间技能栏不变");
-        assertFalse(knows(active, "m_new"));
+        assertTrue(settlement.pendingLearns().isEmpty(), "满 4 招时不再挂起学习抉择");
+        assertEquals(4, active.getMoveSlots().size(), "出战技能槽仍为 4 招");
+        assertTrue(active.knowsMove("m_new"), "新技能应保留进技能库");
+        assertFalse(knows(active, "m_new"), "出战槽已满，新技能不应自动装入出战槽");
+        assertTrue(settlement.log().stream().anyMatch(line -> line.contains("技能库")),
+                "日志应提示新技能已收入技能库");
     }
 
     @Test
@@ -369,6 +432,8 @@ class GrowthServiceTest {
         List<String> log = growth.resolveLearn(new BattleService.LearnChoice(active, NEW_MOVE), 0);
 
         assertEquals("m_new", active.getMoveSlots().get(0).getMove().getId());
+        assertTrue(active.knowsMove("m_new"), "新技能进入技能库");
+        assertTrue(active.knowsMove("m_slam"), "被换下的技能仍保留在技能库中");
         assertEquals(1, log.size());
         assertTrue(log.get(0).contains("忘记了") && log.get(0).contains("学会了"));
     }
@@ -425,6 +490,42 @@ class GrowthServiceTest {
 
         assertTrue(progress.dexEntries().isEmpty());
         assertEquals(0, progress.globalIvBonus());
+    }
+
+    /** 捕捉成功发放 1.8 倍击倒经验并照常累计捕捉次数（日志与升级即时返回）。 */
+    @Test
+    void 捕捉结算发放一点八倍击倒经验并累计捕捉次数() {
+        GrowthProgress progress = new GrowthProgress();
+        GrowthService growth = new GrowthService(new RecordingPort(), progress);
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        Pokemon active = pokemon(mine, 1, SLAM);
+        // baseExp 70 × 7 ÷ 7 = 70 点击倒经验，捕捉发 70 × 1.8 = 126 点
+        Pokemon caught = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()), 7, SLAM);
+
+        BattleGrowthPort.Settlement settlement = growth.settleCapture(List.of(active), caught);
+
+        // 1 级升 5 级需 124，升 6 级需 215：126 点 → 5 级
+        assertEquals(5, active.getLevel(), "捕捉应发 1.8 倍击倒经验（70 × 1.8 = 126）");
+        assertTrue(settlement.log().contains(active.getName() + " 获得了 126 点经验！"),
+                "捕捉经验日志应在结算时输出：" + settlement.log());
+        assertEquals(1, progress.captureCount("foe_base"), "捕捉次数照常累计");
+        assertEquals(0, progress.battleCount("mine_sp"), "捕捉不累计对战次数");
+    }
+
+    /** 被捕捉的精灵本身不参与经验发放：奖励只给参战的己方精灵。 */
+    @Test
+    void 捕捉结算不给被捕捉的精灵发经验() {
+        GrowthProgress progress = new GrowthProgress();
+        GrowthService growth = new GrowthService(new RecordingPort(), progress);
+        Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
+        Pokemon active = pokemon(mine, 1, SLAM);
+        Pokemon caught = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()), 7, SLAM);
+
+        // 极端场景：被捕捉的精灵已在幸存者列表中（引擎按结算前入队）也不应给自己发经验
+        growth.settleCapture(List.of(active, caught), caught);
+
+        assertEquals(7, caught.getLevel(), "被捕捉的精灵不应获得自己的捕捉经验");
+        assertEquals(5, active.getLevel(), "参战精灵应正常获得 126 点捕捉经验");
     }
 
     /** 玩家获胜申报时按参战精灵累计该族对战次数（图鉴展示用，不影响加成）。 */

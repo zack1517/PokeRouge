@@ -74,21 +74,34 @@ public record SaveData(int version,
      * @param confusionTurns     混乱剩余回合数
      * @param currentHp          当前 HP
      * @param moves              技能槽（含各自剩余 PP）
+     * @param knownMoves         技能库中的技能 id（含出战技能；空列表表示与出战技能相同，兼容旧档）
      * @param heldItemId         携带装备 id；空串表示未携带（或该装备已从数据表移除）
      */
     public record PokemonData(String speciesId, int level, IvData ivs, long exp,
                               String status, int sleepTurns, int badlyPoisonCounter,
                               int confusionTurns, int currentHp, List<MoveData> moves,
-                              String heldItemId) {
+                              List<String> knownMoves, String heldItemId) {
 
         public PokemonData {
             moves = moves == null ? List.of() : List.copyOf(moves);
+            knownMoves = knownMoves == null ? List.of() : List.copyOf(knownMoves);
             ivs = ivs == null ? new IvData(0, 0, 0, 0, 0, 0) : ivs;
             // 异常状态统一用空串表示「无」，避免 null 在写文件时被转义成空字段后又读回 null 之外的值
             status = status == null ? "" : status;
             speciesId = speciesId == null ? "" : speciesId;
             // 未携带装备同样用空串表示，理由同上
             heldItemId = heldItemId == null ? "" : heldItemId;
+        }
+
+        /**
+         * 兼容旧调用（不含技能库与装备）：技能库按「与出战技能相同」处理、装备为空，
+         * 对应技能库机制引入之前的存档与既有测试构造。
+         */
+        public PokemonData(String speciesId, int level, IvData ivs, long exp,
+                           String status, int sleepTurns, int badlyPoisonCounter,
+                           int confusionTurns, int currentHp, List<MoveData> moves) {
+            this(speciesId, level, ivs, exp, status, sleepTurns, badlyPoisonCounter,
+                    confusionTurns, currentHp, moves, List.of(), "");
         }
     }
 

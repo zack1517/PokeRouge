@@ -1,8 +1,8 @@
 package org.example.battle;
 
-import org.example.model.Pokemon;
-
 import java.util.List;
+
+import org.example.model.Pokemon;
 
 /**
  * 战斗模块的<b>成长申报端口</b>。
@@ -46,6 +46,24 @@ public interface BattleGrowthPort {
     Settlement settle(List<Pokemon> survivors, List<Pokemon> defeated);
 
     /**
+     * 击倒一只对手的经验申报（<b>带倍率</b>）：倍率由战斗模块按对手类别提供
+     * （如训练家对战与火箭队事件为 1.2 倍，野生遭遇为 1 倍），分母为 1 时即原口径。
+     *
+     * <p>默认实现按 1 倍转发 {@link #settle}，因此 {@link #none()} 与既有实现无需改动
+     * 即保持原有行为。</p>
+     *
+     * @param survivors      参战且未倒下的己方精灵（引擎已过滤，可能为空列表）
+     * @param defeated       刚被击败的对手
+     * @param expNumerator   经验倍率分子（如 6）
+     * @param expDenominator 经验倍率分母（如 5，表示 6/5 = 1.2 倍）
+     * @return 成长申报结果，不可为 {@code null}
+     */
+    default Settlement settle(List<Pokemon> survivors, List<Pokemon> defeated,
+                              int expNumerator, int expDenominator) {
+        return settle(survivors, defeated);
+    }
+
+    /**
      * 玩家获胜申报（整场战斗只调用一次，用于在图鉴中累计「对战次数」等按场次计的进度）。
      *
      * <p>默认实现为空操作，因此 {@link #none()} 与既有实现无需改动即保持原有行为。</p>
@@ -76,6 +94,23 @@ public interface BattleGrowthPort {
      */
     default void onCaptured(String speciesId) {
         // 默认不记录
+    }
+
+    /**
+     * 野生遭遇被<b>成功捕捉</b>时的成长申报：为参战精灵发放捕捉经验奖励，
+     * 并累计「图鉴捕捉次数」等局外成长进度。
+     *
+     * <p>与 {@link #settle} 同口径返回日志与挂起学招项（捕捉奖励经验导致的升级 / 学招 / 进化
+     * 即时发生）。默认实现只转发 {@link #onCaptured}、不发放经验，因此 {@link #none()} 与
+     * 既有实现无需改动即保持原有行为。</p>
+     *
+     * @param survivors 参战且未倒下的己方精灵（引擎已过滤，可能为空列表）
+     * @param caught    被成功捕捉的野生精灵
+     * @return 成长申报结果，不可为 {@code null}
+     */
+    default Settlement settleCapture(List<Pokemon> survivors, Pokemon caught) {
+        onCaptured(caught == null ? null : caught.getSpecies().getId());
+        return new Settlement(List.of(), List.of());
     }
 
     /** 空端口：不判定任何成长（经验 / 升级 / 学招 / 进化均降级为无操作）。 */

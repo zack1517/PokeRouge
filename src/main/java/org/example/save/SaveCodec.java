@@ -36,6 +36,8 @@ public final class SaveCodec {
     private static final String KEY_RUN = "RUN";
     private static final String KEY_POKEMON = "PP";
     private static final String KEY_MOVE = "MOVE";
+    /** 技能库（未出战的已学会技能）；可选键，旧版本忽略、旧档缺失时技能库按出战技能兜底。 */
+    private static final String KEY_KNOWN_MOVE = "KMOVE";
     private static final String KEY_ITEM = "ITEM";
     private static final String KEY_OPTION = "OPTION";
     private static final String KEY_BOSS = "BOSS";
@@ -94,6 +96,12 @@ public final class SaveCodec {
                         .append('|').append(slot)
                         .append('|').append(escape(m.moveId()))
                         .append('|').append(m.pp())
+                        .append('\n');
+            }
+            // 技能库：完整写出（含出战技能），保证读回后池与存档前一致（旧版本读新档时自动忽略本键）
+            for (String moveId : p.knownMoves()) {
+                sb.append(KEY_KNOWN_MOVE).append('|').append(i)
+                        .append('|').append(escape(moveId))
                         .append('\n');
             }
         }
@@ -155,6 +163,7 @@ public final class SaveCodec {
         SaveData.RunRecord run = SaveData.RunRecord.notStarted();
         List<SaveData.PokemonData> party = new ArrayList<>();
         Map<Integer, List<SaveData.MoveData>> movesByPokemon = new HashMap<>();
+        Map<Integer, List<String>> knownMovesByPokemon = new HashMap<>();
         List<SaveData.ItemData> bag = new ArrayList<>();
         List<SaveData.OptionData> options = new ArrayList<>();
         SaveData.OptionData mandatoryOption = null;
@@ -194,12 +203,18 @@ public final class SaveCodec {
                         parseInt(field(parts, 13), key, lineNo),
                         parseInt(field(parts, 14), key, lineNo),
                         List.of(),
+                        List.of(),
                         field(parts, 15)));
                 case KEY_MOVE -> {
                     int owner = parseInt(field(parts, 1), key, lineNo);
                     movesByPokemon.computeIfAbsent(owner, k -> new ArrayList<>())
                             .add(new SaveData.MoveData(field(parts, 3),
                                     parseInt(field(parts, 4), key, lineNo)));
+                }
+                case KEY_KNOWN_MOVE -> {
+                    int owner = parseInt(field(parts, 1), key, lineNo);
+                    knownMovesByPokemon.computeIfAbsent(owner, k -> new ArrayList<>())
+                            .add(field(parts, 2));
                 }
                 case KEY_ITEM -> bag.add(new SaveData.ItemData(field(parts, 1),
                         parseInt(field(parts, 2), key, lineNo)));
@@ -223,12 +238,28 @@ public final class SaveCodec {
         List<SaveData.PokemonData> partyWithMoves = new ArrayList<>(party.size());
         for (int i = 0; i < party.size(); i++) {
             SaveData.PokemonData p = party.get(i);
+            List<SaveData.MoveData> battleMoves = movesByPokemon.getOrDefault(i, List.of());
+            List<String> known = mergeKnownMoves(battleMoves, knownMovesByPokemon.get(i));
             partyWithMoves.add(new SaveData.PokemonData(p.speciesId(), p.level(), p.ivs(), p.exp(),
                     p.status(), p.sleepTurns(), p.badlyPoisonCounter(), p.confusionTurns(),
-                    p.currentHp(), movesByPokemon.getOrDefault(i, List.of()), p.heldItemId()));
+                    p.currentHp(), battleMoves, known, p.heldItemId()));
         }
         return new SaveData(version, playerName, activeIndex, partyWithMoves, bag, run,
                 options, mandatoryOption, segment, mapBackground, savedAt, story);
+    }
+
+    /** 技能库 = 存档中的 KMOVE 行；旧档缺 {@code KMOVE} 行时保持空列表（由映射层按出战技能兜底）。 */
+    private static List<String> mergeKnownMoves(List<SaveData.MoveData> battleMoves,
+                                                List<String> storedKnown) {
+        List<String> merged = new ArrayList<>();
+        if (storedKnown != null) {
+            for (String moveId : storedKnown) {
+                if (!moveId.isBlank() && !merged.contains(moveId)) {
+                    merged.add(moveId);
+                }
+            }
+        }
+        return merged;
     }
 
     /** 解析 {@code RUN} 行；兼容 v1 的「楼层|点数|是否结束」三字段格式（旧的点数即行动点）。 */

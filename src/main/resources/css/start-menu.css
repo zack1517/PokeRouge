@@ -1,0 +1,311 @@
+/*
+ * PokeRouge · 启动页与悬浮式子页共享样式（胶囊按钮、图标、暗角、标题）。
+ *
+ * 改编自 临时/主界面设计代码（Web/React 版主界面）：
+ * 无卡片悬浮式布局 —— 背景插画铺满，彩色 Logo 与胶囊按钮直接悬浮其上，
+ * 可读性由元素自身的描边、投影与底色承担。
+ *
+ * 尺寸约定：全部数值均为「设计画布 640×426.67」内的逻辑像素，
+ * 由 UiScale 统一放大 1.5 倍渲染（无需在此换算）。
+ *
+ * JavaFX CSS 限制备忘：
+ * - 多层背景「先写的在底层」（如 白边 → 深蓝描边 → 渐变芯 按此顺序书写）；
+ * - 无 CSS transition，位移动画由 StartView 用 Transition 实现；
+ * - 不使用文本描边（stroke），避免中文光栅化卡顿（项目已知陷阱）。
+ */
+
+/* ---------- 整页暗角遮罩（叠在背景图上、内容层之下） ---------- */
+.start-vignette {
+    -fx-background-color: linear-gradient(to bottom,
+        rgba(6, 22, 42, 0.12) 0%,
+        rgba(6, 22, 42, 0.0) 30%,
+        rgba(6, 22, 42, 0.10) 55%,
+        rgba(6, 22, 42, 0.55) 100%);
+}
+
+/* ---------- 彩色 Logo（替换原文字标题） ---------- */
+.start-logo {
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.55), 16, 0.10, 0, 7);
+}
+
+/* ---------- 胶囊菜单按钮 ---------- */
+/* 正常态：白圈(0~2.5) → 深蓝内描边(2.5~5) → 黄→金渐变芯(5+) */
+.menu-pill,
+.menu-pill:hover,
+.menu-pill:focused,
+.menu-pill:armed {
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #123c63,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.92) 0%,
+            #ffcb05 18%,
+            #eea800 78%,
+            #ffcb05 100%);
+    -fx-background-insets: 0, 2.5, 5;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.50), 12, 0.08, 0, 4);
+    -fx-padding: 6 12;
+    -fx-cursor: hand;
+    /* 屏蔽 modena 默认的聚焦环与按下变色（本项目全自定义背景） */
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+/* 选中态：白圈 → 黄描边 → 蓝渐变芯（无顶部白色高光）+ 黄色光晕 */
+.menu-pill:selected {
+    -fx-background-color:
+        rgba(255, 255, 255, 1.0),
+        #ffcb05,
+        linear-gradient(to bottom, #2a75bb 0%, #123c63 100%);
+    -fx-background-insets: 0, 2.5, 5;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-effect: dropshadow(gaussian, rgba(255, 203, 5, 0.55), 16, 0.35, 0, 3);
+}
+
+/* ---------- 按钮内文字 ---------- */
+.menu-title {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+}
+
+.menu-sub {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 7px;
+    -fx-font-weight: bold;
+    -fx-text-fill: rgba(42, 117, 187, 0.85);
+}
+
+.menu-caret {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 8px;
+    -fx-font-weight: bold;
+    -fx-text-fill: rgba(18, 60, 99, 0.85);
+    -fx-opacity: 0;
+}
+
+.menu-pill:selected .menu-title {
+    -fx-text-fill: white;
+}
+
+.menu-pill:selected .menu-sub {
+    -fx-text-fill: #ffcb05;
+}
+
+.menu-pill:selected .menu-caret {
+    -fx-text-fill: #ffcb05;
+    -fx-opacity: 1;
+}
+
+/* ---------- 按钮左侧图标圆底（未选中统一为按钮同款黄色，不再按入口区分色调） ---------- */
+.menu-icon-wrap {
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-border-width: 1.5;
+    -fx-border-color: rgba(255, 255, 255, 0.85);
+}
+
+.menu-tone-yellow,
+.menu-tone-blue,
+.menu-tone-crimson,
+.menu-tone-violet,
+.menu-tone-slate {
+    -fx-background-color: rgba(255, 203, 5, 0.28);
+}
+
+.menu-pill:selected .menu-icon-wrap {
+    -fx-background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ---------- 图标本体（24 单位视口的单色描边图形，缩放到圆底内） ---------- */
+.menu-icon {
+    -fx-fill: transparent;
+    -fx-stroke: #123c63;
+    -fx-stroke-width: 2.4;
+    -fx-stroke-line-cap: round;
+    -fx-stroke-line-join: round;
+    -fx-scale-x: 0.62;
+    -fx-scale-y: 0.62;
+}
+
+.menu-pill:selected .menu-icon {
+    -fx-stroke: white;
+}
+
+/* ---------- 禁用态（无存档时的「继续游戏」）：灰化换肤，保留胶囊外形 ---------- */
+/* 覆盖 modena 的 .button:disabled 0.4 透明度，改用实色灰化（否则叠加后过淡） */
+.menu-pill:disabled,
+.menu-pill:disabled > * {
+    -fx-opacity: 1;
+}
+
+.menu-pill:disabled {
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #7d8794,
+        linear-gradient(to bottom, #e9e9e9 0%, #c7c7c7 78%, #dfdfdf 100%);
+    -fx-cursor: default;
+}
+
+.menu-pill:disabled .menu-title {
+    -fx-text-fill: #7d8794;
+}
+
+.menu-pill:disabled .menu-sub {
+    -fx-text-fill: rgba(125, 135, 148, 0.85);
+}
+
+.menu-pill:disabled .menu-icon-wrap {
+    -fx-background-color: rgba(125, 135, 148, 0.22);
+    -fx-border-color: rgba(255, 255, 255, 0.75);
+}
+
+.menu-pill:disabled .menu-icon {
+    -fx-stroke: #7d8794;
+}
+
+/* ---------- 悬浮子页标题（自定义战斗等悬浮式子页复用；与启动页同字体体系） ---------- */
+.subpage-title {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.60), 12, 0.25, 0, 4);
+}
+
+/* ---------- 悬浮子页表单（初始宝可梦选择页）：白底胶囊输入/下拉 + 白字标注 ---------- */
+/* 与胶囊按钮同族的白底深蓝描边环（insets 双层背景技巧） */
+.starter-input,
+.starter-combo {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 12px;
+    -fx-background-color: #123c63, rgba(255, 255, 255, 0.94);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 999, 997.5;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.05, 0, 3);
+    /* 屏蔽 modena 聚焦环（本项目全自定义背景） */
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.starter-input {
+    -fx-text-fill: #123c63;
+    -fx-prompt-text-fill: rgba(18, 60, 99, 0.45);
+    -fx-alignment: center;
+    -fx-padding: 5 14;
+}
+
+/* 聚焦/展开时描边环转为亮蓝（与按钮悬停同族反馈） */
+.starter-input:focused,
+.starter-combo:focused,
+.starter-combo:showing {
+    -fx-background-color: #2a75bb, rgba(255, 255, 255, 0.98);
+}
+
+.starter-combo {
+    -fx-padding: 1 4;
+}
+
+.starter-combo > .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #123c63;
+    -fx-alignment: center;
+    -fx-padding: 5 6;
+}
+
+.starter-combo > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0 8 0 4;
+}
+
+.starter-combo > .arrow-button > .arrow {
+    -fx-background-color: #123c63;
+}
+
+/* 表单标注（字段名）与说明文字：白字 + 光晕投影（复杂背景上保持清晰，同标题体系） */
+.starter-caption {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.65), 10, 0.15, 0, 2);
+}
+
+.starter-note {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-text-fill: rgba(255, 255, 255, 0.96);
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.65), 10, 0.15, 0, 2);
+}
+
+/* ---------- 悬浮子页·存档位选择（SaveSlotView）：白底圆角档位行 + 小号胶囊按钮 ---------- */
+/* 与输入框同族：深蓝描边环 + 白底填充（先写的层在底层） */
+.slot-row {
+    -fx-background-color: #123c63, rgba(255, 255, 255, 0.92);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 14, 12.5;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 10, 0.08, 0, 3);
+}
+
+.slot-name {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+}
+
+.slot-detail {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    /* 文本颜色由代码按档位状态内联覆盖（空档灰 / 正常深灰 / 损坏红） */
+}
+
+/* 行内操作按钮：小号胶囊（与启动页胶囊同族配色；禁用灰化保留外形） */
+.slot-action {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #123c63,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.92) 0%,
+            #ffcb05 18%,
+            #eea800 78%,
+            #ffcb05 100%);
+    -fx-background-insets: 0, 2, 4;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-padding: 5 12;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 7, 0.05, 0, 2);
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.slot-action:hover {
+    -fx-background-color:
+        rgba(255, 255, 255, 1.0),
+        #2a75bb,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.95) 0%,
+            #ffd83d 18%,
+            #f0b000 78%,
+            #ffd83d 100%);
+}
+
+.slot-action:disabled,
+.slot-action:disabled > * {
+    -fx-opacity: 1; /* 覆盖 modena 0.4 透明度，用实色灰化 */
+}
+
+.slot-action:disabled {
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #7d8794,
+        linear-gradient(to bottom, #e9e9e9 0%, #c7c7c7 78%, #dfdfdf 100%);
+    -fx-text-fill: #7d8794;
+    -fx-cursor: default;
+}

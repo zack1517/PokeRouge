@@ -17,6 +17,7 @@ import org.example.model.ItemStack;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.Species;
+import org.example.model.Stats;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,6 +47,10 @@ public final class SaveDemo {
 
     private static final List<String> FAILURES = new ArrayList<>();
     private static int checks;
+
+    /** 自测数据的固定个体值（全 0）：与读档重建（{@link SaveData.PartyEntry#restore()}）同源，
+     * 保证「采样 → 重建」回环确定可比，不受随机个体值影响。 */
+    private static final Stats ZERO_IV = new Stats(0, 0, 0, 0, 0, 0);
 
     private SaveDemo() {
     }
@@ -505,7 +510,7 @@ public final class SaveDemo {
         Player player = new Player("测试训练家");
         for (int i = 0; i < count; i++) {
             Species s = species.get(i % species.size());
-            Pokemon p = GameData.instance().createPokemon(s.getId(), 10 + 5 * i)
+            Pokemon p = GameData.instance().createPokemon(s.getId(), 10 + 5 * i, ZERO_IV)
                     .orElseThrow(() -> new SaveException("无法创建精灵: " + s.getId()));
             player.addToParty(p);
         }
