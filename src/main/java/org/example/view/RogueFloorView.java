@@ -179,17 +179,12 @@ public class RogueFloorView {
                 + " 段 · " + data.getPhase().getDisplayName());
         segment.setStyle(FONT + " -fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
 
-        Label apIcon = new Label("⚡");
-        apIcon.setStyle("-fx-font-size: 8px;");
         Label ap = new Label("行动点: " + data.getAp() + "/" + data.getApMax());
         ap.setStyle(FONT + " -fx-font-size: 8.5px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
-        Label goldIcon = new Label("🪙");
-        goldIcon.setStyle("-fx-font-size: 8px;");
-        HBox.setMargin(goldIcon, new Insets(0, 0, 0, 7));
         Label gold = new Label("金币: " + data.getGold());
-        gold.setStyle(FONT + " -fx-font-size: 8.5px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
+        gold.setStyle(FONT + " -fx-font-size: 8.5px; -fx-font-weight: bold; -fx-text-fill: #E6A800;");
 
-        HBox stats = new HBox(3, apIcon, ap, goldIcon, gold);
+        HBox stats = new HBox(10, ap, gold);
         stats.setAlignment(Pos.CENTER_LEFT);
 
         VBox panel = new VBox(2, segment, stats);
