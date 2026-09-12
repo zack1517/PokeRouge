@@ -1,6 +1,7 @@
 package org.example.view;
 
 import javafx.beans.binding.Bindings;
+import javafx.beans.binding.DoubleBinding;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -33,6 +34,7 @@ import org.example.util.ImageBackgrounds;
 import org.example.util.UiScale;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +45,7 @@ import java.util.stream.Collectors;
  * 商店界面（《需求文档》§4.2 商店 + §七 界面需求）：用金币购买道具、回复品。
  *
  * <p>只负责展示 {@link ShopStock} 与收集购买意图；金币校验与扣款、入包由控制器完成 ——
- * 购买成功或失败后控制器重建本页以刷新金币与可购状态。</p>
+ * 购买成功后控制器调用 {@link #refresh()} 原地刷新（不重建场景，不重播入场动画）。</p>
  *
  * <p>2026-09-12 按设计稿改版（仅样式与布局调整，回调机制不变），整体只分上下两部分：</p>
  * <ul>
@@ -51,7 +53,8 @@ import java.util.stream.Collectors;
  *       中「商店」标题（白描边 + 深蓝字，与内层「事件遭遇」横幅同款处理）／
  *       右段位信息卡（当前阶段与金币，start-menu.css 的 .rogue-info 同款）；</li>
  *   <li><b>下</b>：左商品信息框（上 1/2 商品图片、下 1/2 名称 →（换行）价格与可购状态 →
- *       （换行）背包拥有数量 →（换行）具体描述；悬停右侧商品行联动更新）、
+ *       （换行）背包拥有数量 →（换行）具体描述；初始直接展示第一件商品，悬停右侧商品行仅
+ *       更新内容、不重建节点 —— 骨架只构建一次，杜绝悬停闪烁）、
  *       右商品列表（纵向排列，单行 = 商品名 / 可否购买状态 / 所需金币 / 购买按钮）。</li>
  * </ul>
  */
@@ -80,8 +83,30 @@ public class ShopView {
     private final Consumer<ShopStock.Entry> onBuy;
     private final Runnable onLeave;
 
-    /** 左栏信息框（悬停右侧商品行时重建内容）；每次构建场景时重建。 */
+    /** 左栏信息框（骨架只构建一次，悬停 / 刷新时仅更新内容，杜绝重建引起的闪烁）。 */
     private VBox detailBox;
+
+    /** 信息框内容节点（持久引用：联动 / 刷新时只改文本、图片与可见性）。 */
+    private ImageView detailImage;
+    private Label detailFallback;
+    private Label detailName;
+    private Label detailPrice;
+    private Label detailState;
+    private Label detailOwned;
+    private Label detailDesc;
+
+    /** 信息框当前展示的商品（null = 货架为空）。 */
+    private ShopStock.Entry currentEntry;
+
+    /** 右上信息卡金币行（购买后原地刷新）。 */
+    private Label goldLabel;
+
+    /** 商品行的状态元素（购买后原地刷新各行的可购状态与购买按钮）。 */
+    private final List<StockRow> stockRows = new ArrayList<>();
+
+    /** 商品行状态元素引用：状态标签与购买按钮。 */
+    private record StockRow(ShopStock.Entry entry, Label state, Button buy) {
+    }
 
     /** 左上角返回胶囊（复用 FloatingMenu 共享胶囊菜单组）；每次构建场景时重建。 */
     private FloatingMenu backMenu;
@@ -156,10 +181,10 @@ public class ShopView {
                 + " 段 · " + data.getPhase().getDisplayName());
         segment.setStyle(FONT + "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
 
-        Label gold = new Label("金币: " + data.getGold());
-        gold.setStyle(FONT + "-fx-font-size: 8.5px; -fx-font-weight: bold; -fx-text-fill: #E6A800;");
+        goldLabel = new Label("金币: " + data.getGold());
+        goldLabel.setStyle(FONT + "-fx-font-size: 8.5px; -fx-font-weight: bold; -fx-text-fill: #E6A800;");
 
-        VBox panel = new VBox(2, segment, gold);
+        VBox panel = new VBox(2, segment, goldLabel);
         panel.setMinWidth(116);
         panel.setMaxWidth(Region.USE_PREF_SIZE);  // 不随 StackPane 拉伸：信息框只包内容（右侧小卡而非通栏）
         panel.setMaxHeight(Region.USE_PREF_SIZE); // 不被头部行高拉伸，只包内容
@@ -173,12 +198,25 @@ public class ShopView {
 
     /** 下部分：左商品信息框（45%）+ 右商品列表（55%），两栏随窗口等高拉伸。 */
     private GridPane buildContent(int gold) {
+        stockRows.clear();
         detailBox = new VBox();
         detailBox.getStyleClass().add("shop-detail");
         detailBox.setPadding(new Insets(INFO_PADDING));
         detailBox.setStyle(infoBoxStyle());
         detailBox.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE); // 随栏位拉伸（VBox 默认只包内容高）
-        showDetailHint();
+
+        if (stock.isEmpty()) {
+            Label empty = new Label("本次货架是空的，下次再来看看。");
+            empty.setWrapText(true);
+            empty.setMaxWidth(Double.MAX_VALUE);
+            empty.setStyle(FONT + "-fx-font-size: 11px; -fx-text-fill: #666;");
+            detailBox.getChildren().setAll(empty);
+        } else {
+            Node skeleton = buildDetailSkeleton();
+            VBox.setVgrow(skeleton, Priority.ALWAYS); // 撑满信息框（行分区才按 50%/50% 生效）
+            detailBox.getChildren().setAll(skeleton);
+            populateDetail(stock.entries().get(0)); // 初始直接展示第一件商品（进入页即有内容）
+        }
 
         GridPane content = new GridPane();
         content.setHgap(12);
@@ -201,57 +239,56 @@ public class ShopView {
         return content;
     }
 
-    /** 信息框默认提示：说明悬停交互（与主菜单中栏同模式）。 */
-    private void showDetailHint() {
-        Label hint = new Label("把光标移到右侧的商品上查看详情。");
-        hint.setWrapText(true);
-        hint.setMaxWidth(Double.MAX_VALUE);
-        hint.setStyle(FONT + "-fx-font-size: 11px; -fx-text-fill: #666;");
-        detailBox.setAlignment(Pos.TOP_LEFT);
-        detailBox.getChildren().setAll(hint);
-    }
+    /** 信息框骨架：内嵌 GridPane 两行严格平分（上 1/2 图片区、下 1/2 文字区）；
+     *  节点只构建一次（{@link #populateDetail} 只改内容），杜绝悬停时重建引起的闪烁。 */
+    private Node buildDetailSkeleton() {
+        // 上 1/2：图片区（图片与首字色块共用区域，按有无素材切换可见性）
+        detailImage = new ImageView();
+        detailImage.setPreserveRatio(true);
+        detailImage.setSmooth(true);
 
-    /** 信息框内容：上 1/2 商品图片、下 1/2 名称 /（换行）价格与可购状态 /（换行）背包拥有数量 /（换行）描述。 */
-    private void showProductDetail(ShopStock.Entry entry, int gold) {
-        Node box = buildProductDetail(entry, gold);
-        VBox.setVgrow(box, Priority.ALWAYS); // 撑满信息框（行分区才按 50%/50% 生效）
-        detailBox.setAlignment(Pos.TOP_LEFT);
-        detailBox.getChildren().setAll(box);
-    }
+        detailFallback = new Label();
+        detailFallback.setAlignment(Pos.CENTER);
+        detailFallback.setStyle(FONT + "-fx-font-size: 56px; -fx-font-weight: bold;"
+                + " -fx-text-fill: white; -fx-background-color: #8a97a5; -fx-background-radius: 10;");
 
-    /** 单个商品详情：内嵌 GridPane 两行严格平分（上 = 图片区、下 = 文字区）。 */
-    private Node buildProductDetail(ShopStock.Entry entry, int gold) {
-        Item item = GameData.instance().item(entry.itemId());
-        boolean affordable = gold >= entry.price();
-
-        // 上 1/2：商品图片（自适应图片区大小；缺图回退「首字色块」）
-        StackPane imagePane = new StackPane();
+        StackPane imagePane = new StackPane(detailImage, detailFallback);
         imagePane.getStyleClass().add("shop-image");
         imagePane.setMinHeight(60);
         imagePane.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE); // 填满上半格
-        imagePane.getChildren().add(productImage(entry.itemName(), imagePane));
+        detailImage.fitWidthProperty().bind(Bindings.createDoubleBinding(
+                () -> Math.max(0, imagePane.getWidth() - IMAGE_INSET), imagePane.widthProperty()));
+        detailImage.fitHeightProperty().bind(Bindings.createDoubleBinding(
+                () -> Math.max(0, imagePane.getHeight() - IMAGE_INSET), imagePane.heightProperty()));
+        DoubleBinding fallbackSide = Bindings.createDoubleBinding( // 首字色块同图片尺寸逻辑（区域短边正方形）
+                () -> Math.max(40, Math.min(imagePane.getWidth(), imagePane.getHeight()) - IMAGE_INSET),
+                imagePane.widthProperty(), imagePane.heightProperty());
+        detailFallback.minWidthProperty().bind(fallbackSide);
+        detailFallback.prefWidthProperty().bind(fallbackSide);
+        detailFallback.maxWidthProperty().bind(fallbackSide);
+        detailFallback.minHeightProperty().bind(fallbackSide);
+        detailFallback.prefHeightProperty().bind(fallbackSide);
+        detailFallback.maxHeightProperty().bind(fallbackSide);
 
         // 下 1/2：名称 →（换行）价格 + 可否购买状态 →（换行）背包拥有数量 →（换行）具体描述
-        Label name = new Label(entry.itemName());
-        name.setStyle(FONT + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
+        detailName = new Label();
+        detailName.setStyle(FONT + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
 
-        Label price = new Label(entry.price() + " 金币");
-        price.setStyle(FONT + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #E6A800;");
-        Label state = new Label(affordable ? "可购买" : "金币不足");
-        state.setStyle(FONT + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: "
-                + (affordable ? "#2e7d32" : "#C62828") + ";");
-        HBox priceRow = new HBox(8, price, state);
+        detailPrice = new Label();
+        detailPrice.setStyle(FONT + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #E6A800;");
+        detailState = new Label();
+        HBox priceRow = new HBox(8, detailPrice, detailState);
         priceRow.setAlignment(Pos.CENTER_LEFT);
 
-        Label owned = new Label("背包已有 ×" + bagCount(entry.itemName()));
-        owned.setStyle(FONT + "-fx-font-size: 11px; -fx-text-fill: #555;");
+        detailOwned = new Label();
+        detailOwned.setStyle(FONT + "-fx-font-size: 11px; -fx-text-fill: #555;");
 
-        Label description = new Label(item == null ? "" : describeItem(item));
-        description.setWrapText(true);
-        description.setMaxWidth(Double.MAX_VALUE);
-        description.setStyle(FONT + "-fx-font-size: 11px; -fx-text-fill: #333;");
+        detailDesc = new Label();
+        detailDesc.setWrapText(true);
+        detailDesc.setMaxWidth(Double.MAX_VALUE);
+        detailDesc.setStyle(FONT + "-fx-font-size: 11px; -fx-text-fill: #333;");
 
-        VBox text = new VBox(6, name, priceRow, owned, description);
+        VBox text = new VBox(6, detailName, priceRow, detailOwned, detailDesc);
         text.getStyleClass().add("shop-text");
         text.setAlignment(Pos.TOP_LEFT);
         text.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE); // 填满下半格
@@ -273,6 +310,31 @@ public class ShopView {
         box.add(imagePane, 0, 0);
         box.add(text, 0, 1);
         return box;
+    }
+
+    /** 更新信息框内容：只改文本 / 图片与可见性，不重建任何节点（悬停联动与购买刷新共用）。 */
+    private void populateDetail(ShopStock.Entry entry) {
+        currentEntry = entry;
+        int gold = session.getRogueRunData().getGold();
+
+        Image image = loadItemIcon(entry.itemName());
+        boolean hasImage = image != null;
+        detailImage.setImage(image);
+        detailImage.setVisible(hasImage);
+        detailImage.setManaged(hasImage); // 不参与布局：缺图时由首字色块顶替
+        detailFallback.setText(entry.itemName().isEmpty() ? "?" : entry.itemName().substring(0, 1));
+        detailFallback.setVisible(!hasImage);
+        detailFallback.setManaged(!hasImage);
+
+        detailName.setText(entry.itemName());
+        detailPrice.setText(entry.price() + " 金币");
+        boolean affordable = gold >= entry.price();
+        detailState.setText(affordable ? "可购买" : "金币不足");
+        detailState.setStyle(stateStyle(affordable));
+        detailOwned.setText("背包已有 ×" + bagCount(entry.itemName()));
+
+        Item item = GameData.instance().item(entry.itemId());
+        detailDesc.setText(item == null ? "" : describeItem(item));
     }
 
     /** 背包中该商品当前的拥有数量（按道具名匹配堆叠；不在背包则为 0）。 */
@@ -319,8 +381,7 @@ public class ShopView {
         name.setStyle(FONT + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #222;");
 
         Label state = new Label(affordable ? "可购买" : "金币不足");
-        state.setStyle(FONT + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: "
-                + (affordable ? "#2e7d32" : "#C62828") + ";");
+        state.setStyle(stateStyle(affordable));
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
@@ -328,18 +389,15 @@ public class ShopView {
         Label price = new Label(entry.price() + " 金币");
         price.setStyle(FONT + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #E6A800;");
 
+        // 购买按钮：行为与悬停样式一次挂好，可购状态由 applyBuyState 切换（原地刷新不重建）
         Button buy = new Button("购买");
         buy.setMinWidth(Region.USE_PREF_SIZE); // 钉宽：不随行收缩
         buy.getStyleClass().add("shop-buy");
-        if (affordable) {
-            buy.setStyle(pillStyle(false));
-            buy.setOnMouseEntered(e -> buy.setStyle(pillStyle(true)));
-            buy.setOnMouseExited(e -> buy.setStyle(pillStyle(false)));
-            buy.setOnAction(e -> onBuy.accept(entry));
-        } else {
-            buy.setStyle(pillDisabledStyle());
-            buy.setDisable(true); // 金币不足：灰化不可点（状态文案已说明原因）
-        }
+        buy.setOnMouseEntered(e -> buy.setStyle(pillStyle(true)));
+        buy.setOnMouseExited(e -> buy.setStyle(pillStyle(false)));
+        buy.setOnAction(e -> onBuy.accept(entry));
+        applyBuyState(buy, affordable);
+        stockRows.add(new StockRow(entry, state, buy));
 
         HBox row = new HBox(8, name, state, spacer, price, buy);
         row.setAlignment(Pos.CENTER_LEFT);
@@ -348,10 +406,48 @@ public class ShopView {
         row.setMaxWidth(Double.MAX_VALUE);
         row.setOnMouseEntered(e -> {
             row.setStyle(rowCardStyle(true));
-            showProductDetail(entry, gold);
+            if (entry != currentEntry) {
+                populateDetail(entry); // 内容级联动：无节点重建，杜绝悬停闪烁
+            }
         });
         row.setOnMouseExited(e -> row.setStyle(rowCardStyle(false)));
         return row;
+    }
+
+    // ------------------------------------------------------------------
+    // 原地刷新（购买后）
+    // ------------------------------------------------------------------
+
+    /**
+     * 购买成功后的原地刷新：金币信息卡、各行的可购状态与购买按钮、信息框（拥有数量与可购状态）。
+     * 只更新已有节点的文本 / 状态，不重建场景、不重播入场动画。
+     */
+    public void refresh() {
+        int gold = session.getRogueRunData().getGold();
+        if (goldLabel != null) {
+            goldLabel.setText("金币: " + gold);
+        }
+        for (StockRow row : stockRows) {
+            boolean affordable = gold >= row.entry().price();
+            row.state().setText(affordable ? "可购买" : "金币不足");
+            row.state().setStyle(stateStyle(affordable));
+            applyBuyState(row.buy(), affordable);
+        }
+        if (currentEntry != null) {
+            populateDetail(currentEntry); // 更新「背包已有 ×N」与可购状态
+        }
+    }
+
+    /** 购买按钮可购状态：可购 = 黄胶囊（保留当前悬停态样式），不足 = 灰化禁用。 */
+    private static void applyBuyState(Button buy, boolean affordable) {
+        buy.setDisable(!affordable);
+        buy.setStyle(affordable ? pillStyle(buy.isHover()) : pillDisabledStyle());
+    }
+
+    /** 可否购买状态文案样式（绿 = 可购买 / 红 = 金币不足）。 */
+    private static String stateStyle(boolean affordable) {
+        return FONT + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: "
+                + (affordable ? "#2e7d32" : "#C62828") + ";";
     }
 
     // ------------------------------------------------------------------
@@ -400,29 +496,6 @@ public class ShopView {
         return hover
                 ? "linear-gradient(to bottom, rgba(255, 255, 255, 0.95) 0%, #ffd83d 18%, #f0b000 78%, #ffd83d 100%)"
                 : "linear-gradient(to bottom, rgba(255, 255, 255, 0.92) 0%, #ffcb05 18%, #eea800 78%, #ffcb05 100%)";
-    }
-
-    /** 商品图片：有素材用图片（随图片区大小自适应缩放），缺图回退「首字色块」占位。 */
-    private static Node productImage(String itemName, StackPane pane) {
-        Image image = loadItemIcon(itemName);
-        if (image != null) {
-            ImageView view = new ImageView(image);
-            view.setPreserveRatio(true);
-            view.setSmooth(true);
-            view.fitWidthProperty().bind(Bindings.createDoubleBinding(
-                    () -> Math.max(0, pane.getWidth() - IMAGE_INSET), pane.widthProperty()));
-            view.fitHeightProperty().bind(Bindings.createDoubleBinding(
-                    () -> Math.max(0, pane.getHeight() - IMAGE_INSET), pane.heightProperty()));
-            return view;
-        }
-        Label fallback = new Label(itemName.isEmpty() ? "?" : itemName.substring(0, 1));
-        fallback.setAlignment(Pos.CENTER);
-        fallback.setMinSize(96, 96);
-        fallback.setPrefSize(96, 96);
-        fallback.setMaxSize(96, 96);
-        fallback.setStyle(FONT + "-fx-font-size: 52px; -fx-font-weight: bold;"
-                + " -fx-text-fill: white; -fx-background-color: #8a97a5; -fx-background-radius: 10;");
-        return fallback;
     }
 
     private static Image loadItemIcon(String itemName) {

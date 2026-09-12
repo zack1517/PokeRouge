@@ -568,6 +568,9 @@ public class MainController {
     /** 本次商店的商品库存；为 null 表示当前不在商店。 */
     private ShopStock currentShopStock;
 
+    /** 当前商店视图（购买成功后就地刷新，不重建场景）。 */
+    private ShopView currentShopView;
+
     /** 打开商店：按当前段生成库存。 */
     private void openShop() {
         currentShopStock = ShopStock.forSegment(session.getSegment());
@@ -579,10 +582,11 @@ public class MainController {
             showRogueFloorScene();
             return;
         }
-        stage.setScene(new ShopView(session, currentShopStock, this::buyFromShop, this::leaveShop).createScene());
+        currentShopView = new ShopView(session, currentShopStock, this::buyFromShop, this::leaveShop);
+        stage.setScene(currentShopView.createScene());
     }
 
-    /** 购买：校验金币 → 扣款 → 入背包 → 刷新货架。 */
+    /** 购买：校验金币 → 扣款 → 入背包 → 原地刷新商店页（不重建场景）。 */
     private void buyFromShop(ShopStock.Entry entry) {
         if (entry == null || player == null) {
             return;
@@ -598,12 +602,15 @@ public class MainController {
         }
         player.getBag().add(item, 1);
         LogUtil.info("商店购买: " + entry.itemName() + " x1，花费 " + entry.price() + " 金币");
-        showShopScene();
+        if (currentShopView != null) {
+            currentShopView.refresh(); // 原地刷新：金币 / 各行可购状态 / 信息框拥有数量（保留滚动与悬停状态）
+        }
     }
 
     /** 离开商店：视为完成该商店节点，走节点收尾。 */
     private void leaveShop() {
         currentShopStock = null;
+        currentShopView = null;
         finishNodeStep(true);
     }
 
