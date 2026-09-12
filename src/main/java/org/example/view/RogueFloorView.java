@@ -60,7 +60,7 @@ import java.util.function.Consumer;
  *   <li>节点卡 —— 最多 3 列 × 2 行网格：上排固定三位常驻节点（野生宝可梦 → 路人训练师 → 医院，
  *       从左到右位置恒定），随机事件保持生成顺序排在下排；只渲染已刷新出来的事件、不做占位补格
  *       （真实节点至多 {@link RouteConfig#MAX_ROUTE_NODES} 个）：顶部图片区（按类型铺预裁事件图 396×158；暂无素材的类型保留默认占位：渐变 + 类型 emoji + 精灵球装饰），
- *       底部「类型 · 名称」与金色行动点徽章；悬停上浮并在卡片上方弹出深蓝金框描述弹窗，
+ *       底部「类型 · 名称」与金色行动点徽章；整卡 1px 深蓝外框（最上层独立描边层，常态与悬停恒定）；悬停上浮并在卡片上方弹出深蓝金框描述弹窗，
  *       点击进入节点（点击行为与旧版按钮一致）；</li>
  *   <li>已走过的一次性节点 —— 灰底虚线只读卡（由 {@link Option#isConsumed()} 标记，取代旧版
  *       「名字等于『隐藏事件』」的哨兵写法）；</li>
@@ -447,7 +447,7 @@ public class RogueFloorView {
         fixedSize(content, CARD_W, CARD_H);
         content.setMouseTransparent(true); // 内容只是装饰与文字，点击统一交给下面的按钮
 
-        // 卡片底色：单节点多层背景（白底 / 顶区分隔线 / 顶区渐变，无外边框）+ 投影。
+        // 卡片底色：单节点多层背景（白底 / 顶区分隔线 / 顶区渐变）+ 投影；整卡 1px 深蓝外框由最上层独立描边层绘制。
         // 底色元素全部绘制在同一个无子节点的 Region 上——单节点绘制保证各层圆角与
         // 分隔线位置精确可控，不受子节点布局影响。
         // 背景层列表第一个在最底层：白底 → 分隔线（top 高 79 的下沿 2px）→ 顶区渐变。
@@ -463,7 +463,15 @@ public class RogueFloorView {
                 + CARD_SHADOW_HOVER;
         bg.setStyle(baseStyle);
 
-        StackPane face = new StackPane(bg, content);
+        // 整卡外框层：放在最上层，1px 深蓝描边压住图片与内容边缘，保证四面描边完整可见
+        //（顶区图片铺满卡面，若把边框画在底层底色上会被图片盖住上、左、右三边）。
+        Region frame = new Region();
+        fixedSize(frame, CARD_W, CARD_H);
+        frame.setStyle("-fx-background-color: transparent; -fx-border-color: #1565C0;"
+                + " -fx-border-width: 1; -fx-border-radius: 12;");
+        frame.setMouseTransparent(true); // 描边仅为装饰，拾取与点击仍归底层 Button
+
+        StackPane face = new StackPane(bg, content, frame);
         fixedSize(face, CARD_W, CARD_H);
 
         Button card = new Button();
