@@ -72,7 +72,7 @@ import java.util.function.IntPredicate;
  * 战斗背景由流程按战斗类型传入（2026-09-11 素材按类型分类：野怪 / 路人 / 道馆 / Boss，
  * 见 {@link org.example.GameSession#battleBackgroundFor(org.example.model.OptionType)}）；未指定时默认野外图。</p>
  *
- * <p>2026-09-11 样式改版（整合「临时/react」Web 版战斗页设计）：信息卡为奶油米色渐变 + 深海军蓝描边硬阴影、
+ * <p>2026-09-11 样式改版（整合「临时/react」Web 版战斗页设计）：信息卡为奶油米色芯 + 外蓝内黄双层描边硬阴影（2026-09-12 起双层描边与日志框统一）、
  * 行动按钮与技能 / 道具 / 精灵格为马卡龙四色（黄 / 蓝 / 绿 / 红）硬底按钮、日志与详情卡为金框米色芯（芯色与信息卡同底色）、
  * HP 条为棕底 + 绿 / 黄 / 红渐变填充、属性徽章按属性分色。仅调整配色 / 描边 / 圆角 / 阴影等视觉样式：
  * 全部描边改由背景层内缩模拟（不占 padding），各按钮、文本、贴图（宝可梦立绘区域）的大小与位置均不变；
@@ -156,6 +156,10 @@ public class BattleView {
     private static final int MAX_LOG_ROWS = 4;
     /** 信息卡奶油米色芯渐变：敌我宝可梦信息卡（{@link #battleCard(boolean)}）与底栏日志框 / 详情卡共用同一底色。 */
     private static final String CARD_CREAM = "linear-gradient(to bottom right, #f5f0e8, #e8dfc8)";
+    /** 双层描边外圈（深海军蓝、半透明）：日志框与敌我宝可梦信息卡共用的「外蓝框」。 */
+    private static final String FRAME_NAVY = "rgba(6, 22, 42, 0.55)";
+    /** 双层描边内圈（宝可梦金、微透）：日志框与敌我宝可梦信息卡共用的「内黄框」。 */
+    private static final String FRAME_GOLD = "rgba(255, 203, 5, 0.92)";
     /**
      * 日志态左块外框（与右侧行动区视觉分隔）：金框米色芯（react 战斗日志样式）——
      * 外层深海军蓝细描边 + 宝可梦金边框 + 米色芯（与敌我宝可梦信息卡同底色），全部画在背景层（不改 padding，文本位置不变）。
@@ -163,7 +167,7 @@ public class BattleView {
      * 技能面板态由 showMoveMenu 清除本样式（左块那时放技能格，不套日志框）。
      */
     private static final String LEFT_LOG_FRAME_CSS =
-            "-fx-background-color: rgba(6, 22, 42, 0.55), rgba(255, 203, 5, 0.92), " + CARD_CREAM + ";"
+            "-fx-background-color: " + FRAME_NAVY + ", " + FRAME_GOLD + ", " + CARD_CREAM + ";"
                     + " -fx-background-insets: -2, 0, 3; -fx-background-radius: 18, 16, 13;"
                     + " -fx-padding: 2 10;"
                     + "-fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.4, 0, 4);";
@@ -467,16 +471,16 @@ public class BattleView {
     }
 
     /**
-     * 信息卡通用底：奶油米色渐变 + 深海军蓝描边 + 对角圆角 + 硬阴影（react 信息卡）。
-     * 敌卡圆角朝左上（18 4 18 4）、阴影左下；己方卡镜像（4 18 4 18 / 阴影右下）。
-     * 描边由背景层内缩模拟（不占 padding → 卡内文本位置与改版前完全一致）。
+     * 信息卡通用底：奶油米色芯 + 外蓝内黄双层描边（与日志框同款，用 {@link #FRAME_NAVY} / {@link #FRAME_GOLD}）
+     * + 对角圆角 + 硬阴影（react 信息卡）。敌卡圆角朝左上（18 4 18 4）、阴影左下；己方卡镜像（4 18 4 18 / 阴影右下）。
+     * 描边由背景层内缩模拟（不占 padding → 卡内文本位置不变）：外圈蓝 2px + 内圈黄 3px，均画在卡内，卡尺寸不变。
      */
     private VBox battleCard(boolean enemy) {
         VBox card = new VBox(3);
-        String radius = enemy ? "18 4 18 4, 15 1 15 1" : "4 18 4 18, 1 15 1 15";
+        String radius = enemy ? "18 4 18 4, 16 2 16 2, 13 0 13 0" : "4 18 4 18, 2 16 2 16, 0 13 0 13";
         String shadow = enemy ? "-4, 4" : "4, 4";
-        card.setStyle("-fx-background-color: " + POKE_INK + ", " + CARD_CREAM + ";"
-                + "-fx-background-radius: " + radius + "; -fx-background-insets: 0, 3;"
+        card.setStyle("-fx-background-color: " + FRAME_NAVY + ", " + FRAME_GOLD + ", " + CARD_CREAM + ";"
+                + "-fx-background-radius: " + radius + "; -fx-background-insets: 0, 2, 5;"
                 + "-fx-padding: 6 12;"
                 + "-fx-effect: dropshadow(gaussian, rgba(42, 58, 92, 0.85), 0, 1, " + shadow + ");");
         return card;
@@ -484,7 +488,7 @@ public class BattleView {
 
     /** 底栏信息卡紧凑底样式（金框米色芯，芯色 {@link #CARD_CREAM} 与宝可梦信息卡同底色；与 {@link #battleCard(boolean)} 同为 react 体系，纵向 padding 6→3，适配 1/4 底栏 ≈99 内容区）。 */
     private static final String BOTTOM_CARD_CSS =
-            "-fx-background-color: rgba(6, 22, 42, 0.55), rgba(255, 203, 5, 0.92), " + CARD_CREAM + ";"
+            "-fx-background-color: " + FRAME_NAVY + ", " + FRAME_GOLD + ", " + CARD_CREAM + ";"
                     + " -fx-background-insets: -2, 0, 3; -fx-background-radius: 18, 16, 13;"
                     + " -fx-padding: 3 10;"
                     + "-fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.4, 0, 4);";
@@ -499,7 +503,7 @@ public class BattleView {
     private static final String YH = "-fx-font-family: 'Microsoft YaHei'; ";
 
     // ---- react 战斗页设计色板（2026-09-11 样式改版；描边一律由背景层内缩模拟，不占 padding）----
-    /** 深海军蓝：信息卡 / 按钮描边与卡内主文字色。 */
+    /** 深海军蓝：宽按钮描边与浅色属性徽章的深色文字。 */
     private static final String POKE_INK = "#2a3a5c";
 
     /** 马卡龙按钮配色（背景 / 描边 / 文字 / 硬阴影色；对应 react 黄=战斗、蓝=背包、绿=精灵、红=逃跑）。 */
