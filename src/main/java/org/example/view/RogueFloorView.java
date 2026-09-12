@@ -16,6 +16,8 @@ import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
@@ -23,6 +25,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Rectangle;
+import javafx.scene.shape.Shape;
 import javafx.util.Duration;
 import org.example.GameSession;
 import org.example.config.AppConfig;
@@ -36,7 +40,9 @@ import org.example.util.UiScale;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -53,7 +59,7 @@ import java.util.function.Consumer;
  *       无黑框、深蓝字，+ 副提示胶囊）贴页面最上方、水平居中于画布；</li>
  *   <li>节点卡 —— 最多 3 列 × 2 行网格：上排固定三位常驻节点（野生宝可梦 → 路人训练师 → 医院，
  *       从左到右位置恒定），随机事件保持生成顺序排在下排；只渲染已刷新出来的事件、不做占位补格
- *       （真实节点至多 {@link RouteConfig#MAX_ROUTE_NODES} 个）：顶部图片预留区（渐变 + 类型 emoji + 精灵球装饰），
+ *       （真实节点至多 {@link RouteConfig#MAX_ROUTE_NODES} 个）：顶部图片区（按类型铺预裁事件图 396×158；暂无素材的类型保留默认占位：渐变 + 类型 emoji + 精灵球装饰），
  *       底部「类型 · 名称」与金色行动点徽章；悬停上浮并在卡片上方弹出深蓝金框描述弹窗，
  *       点击进入节点（点击行为与旧版按钮一致）；</li>
  *   <li>已走过的一次性节点 —— 灰底虚线只读卡（由 {@link Option#isConsumed()} 标记，取代旧版
@@ -83,6 +89,12 @@ public class RogueFloorView {
     private static final double GRID_GAP = 10;
     /** 探索态网格垂直居中校正：修正底部预告条与头部行高的差额，使网格中心对准画布垂直中心。 */
     private static final double GRID_BOTTOM_RESERVE = 37;
+
+    /** 事件卡「图片区」的事件图目录（classpath；文件名按节点类型映射，见 {@link #eventImageFor}）。 */
+    private static final String EVENT_IMAGE_DIR = "/images/event/";
+
+    /** 事件图缓存：类型 → 图片；value 为 null 表示该类型暂无素材（保持默认占位图案）。 */
+    private static final Map<OptionType, Image> EVENT_IMAGE_CACHE = new HashMap<>();
 
     /** 卡片入场动效（与启动页胶囊按钮入场动画同参数：错峰上浮淡入；错峰顺序 = 从左到右、从上到下）。 */
     private static final double ENTRANCE_RISE = 11;
@@ -365,25 +377,36 @@ public class RogueFloorView {
         int cost = option.apCostForNextEntry();
         boolean affordable = cost <= data.getAp();
 
-        // ── 卡面内容：上部图片预留区（类型 emoji + 精灵球装饰；渐变底由卡片背景层绘制）──
+        // ── 卡面内容：上部图片区（有事件图则铺满预裁图片，暂无素材的类型保持默认占位；渐变底由卡片背景层绘制）──
         StackPane top = new StackPane();
         fixedSize(top, CARD_W, CARD_TOP_H);
 
-        Label icon = new Label(emojiFor(option));
-        icon.setStyle("-fx-font-size: 24px;");
-        Label areaTag = new Label("事件图片预留区");
-        areaTag.setStyle(FONT + " -fx-font-size: 7.5px; -fx-font-weight: bold; -fx-text-fill: #1565C0;"
-                + " -fx-background-color: rgba(255,255,255,0.7); -fx-background-radius: 20;"
-                + " -fx-border-color: #90CAF9; -fx-border-width: 1; -fx-border-radius: 20;"
-                + " -fx-padding: 1 7;");
-        VBox centerCol = new VBox(3, icon, areaTag);
-        centerCol.setAlignment(Pos.CENTER);
-        top.getChildren().add(centerCol);
+        Image eventImage = eventImageFor(option.getType());
+        if (eventImage != null) {
+            ImageView view = new ImageView(eventImage);
+            view.getStyleClass().add("event-image"); // 供截图 / 冒烟测试探针定位
+            view.setFitWidth(CARD_W);
+            view.setFitHeight(CARD_TOP_H);
+            view.setPreserveRatio(false); // 素材已按图片区比例预裁（2x 396×158），直接铺满
+            top.setClip(roundedTopClip()); // 上两角随卡面 12px 圆角裁切，下缘平直贴合中部白带
+            top.getChildren().add(view);
+        } else {
+            Label icon = new Label(emojiFor(option));
+            icon.setStyle("-fx-font-size: 24px;");
+            Label areaTag = new Label("事件图片预留区");
+            areaTag.setStyle(FONT + " -fx-font-size: 7.5px; -fx-font-weight: bold; -fx-text-fill: #1565C0;"
+                    + " -fx-background-color: rgba(255,255,255,0.7); -fx-background-radius: 20;"
+                    + " -fx-border-color: #90CAF9; -fx-border-width: 1; -fx-border-radius: 20;"
+                    + " -fx-padding: 1 7;");
+            VBox centerCol = new VBox(3, icon, areaTag);
+            centerCol.setAlignment(Pos.CENTER);
+            top.getChildren().add(centerCol);
 
-        Region ball = buildPokeballDecoration(13, 0.6);
-        StackPane.setAlignment(ball, Pos.TOP_RIGHT);
-        StackPane.setMargin(ball, new Insets(4, 5, 0, 0));
-        top.getChildren().add(ball);
+            Region ball = buildPokeballDecoration(13, 0.6);
+            StackPane.setAlignment(ball, Pos.TOP_RIGHT);
+            StackPane.setMargin(ball, new Insets(4, 5, 0, 0));
+            top.getChildren().add(ball);
+        }
 
         if (option.isConsumed()) { // 常驻节点走过后仍可再次进入：卡面标出次数（详情见弹窗）
             Label visits = new Label("已走过 " + option.getVisitCount() + " 次");
@@ -743,6 +766,55 @@ public class RogueFloorView {
             case CHAMPION -> "👑";
             case ROCKET_INVASION -> "👹";
         };
+    }
+
+    /**
+     * 卡面图片区的事件图：按节点类型从 classpath {@value #EVENT_IMAGE_DIR} 加载
+     * （素材名与类型对应：passer=路人 / wildpokemon=野外精灵 / hospital=医院 / shop=商店 /
+     * device=装备补给 / teamrocket=火箭队 / teamrocket_boss=火箭队抓捕神兽 /
+     * legendarypokemon=神兽偶遇；均为 2x 396×158 中心预裁图，见临时/event_crop.py）。
+     * 未配图的类型返回 {@code null}（如神秘事件），调用方保持默认占位图案；
+     * 结果带缓存（含空结果，避免重复回查 classpath）。
+     */
+    private static Image eventImageFor(OptionType type) {
+        if (type == null) {
+            return null;
+        }
+        if (EVENT_IMAGE_CACHE.containsKey(type)) {
+            return EVENT_IMAGE_CACHE.get(type);
+        }
+        String name = switch (type) {
+            case TRAINER -> "passer";
+            case WILD -> "wildpokemon";
+            case HOSPITAL -> "hospital";
+            case SHOP -> "shop";
+            case REWARD -> "device";
+            case ROCKET -> "teamrocket";
+            case ROCKET_CAPTURE -> "teamrocket_boss";
+            case LEGENDARY -> "legendarypokemon";
+            default -> null; // 神秘事件暂无素材；必然节点（道馆等）不出现于卡面
+        };
+        Image image = null;
+        if (name != null) {
+            var url = RogueFloorView.class.getResource(EVENT_IMAGE_DIR + name + ".png");
+            if (url != null) {
+                image = new Image(url.toString(), false); // 同步解码：立即获知加载错误
+                if (image.isError()) {
+                    image = null;
+                }
+            }
+        }
+        EVENT_IMAGE_CACHE.put(type, image);
+        return image;
+    }
+
+    /** 图片区圆角裁剪：只圆上两角（12px，与卡面圆角一致），下缘平直贴合中部白带。 */
+    private static Shape roundedTopClip() {
+        Rectangle cap = new Rectangle(CARD_W, CARD_TOP_H);
+        cap.setArcWidth(24);
+        cap.setArcHeight(24);
+        Rectangle body = new Rectangle(0, 12, CARD_W, CARD_TOP_H - 12);
+        return Shape.union(cap, body);
     }
 
     /** 返回入口：复用 {@link FloatingMenu} 共享胶囊菜单组（外观 / 悬停上浮 / 选中放大与变色 /
