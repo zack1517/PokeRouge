@@ -169,7 +169,7 @@ public class MainView {
 
         Label title = new Label("宝可梦对战 · 训练家 " + player.getName());
         title.getStyleClass().add("menu-title");
-        // 样式迁移：原「深色字 + 白色外发光」改为事件页「事件遭遇」横幅同款胶囊条（黄→金渐变芯 + 深蓝字）
+        // 去掉横幅背景与边框：只余白色描边 + 深蓝字（与内层事件页横幅同款处理）
         title.setStyle(titleBannerStyle());
 
         // 右侧信息框：原上部分小字信息（段号 / 金币 / 存档位）分多行排列
@@ -383,14 +383,11 @@ public class MainView {
                 + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, " + (hover ? "0.55" : "0.45") + "), 10, 0.08, 0, 3);";
     }
 
-    /** 训练家标题：事件页「事件遭遇」横幅同款胶囊条（白圈 → 深蓝环 → 黄→金渐变芯 + 深蓝字，无黑框）。 */
+    /** 训练家标题：去掉横幅背景与边框，只余白色描边 + 深蓝字（内联全向白描边；保留内边距维持占位尺寸）。 */
     private static String titleBannerStyle() {
         return YH + "-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #123c63;"
                 + " -fx-padding: 2 18;"
-                + " -fx-background-color: rgba(255, 255, 255, 0.96), #123c63,"
-                + " linear-gradient(to bottom, rgba(255, 255, 255, 0.92) 0%, #ffcb05 18%, #eea800 78%, #ffcb05 100%);"
-                + " -fx-background-insets: 0, 2.5, 5; -fx-background-radius: 999, 996.5, 994;"
-                + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.50), 12, 0.08, 0, 4);";
+                + " -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 2.0, 1.0, 0, 0);";
     }
 
     /** 底部操作按钮：启动页 .menu-pill 同款大胶囊；字号/内边距按原按钮传入以保持尺寸不变。 */

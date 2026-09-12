@@ -339,19 +339,10 @@
     -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.06, 0, 3);
 }
 
-/* 事件遭遇横幅：启动页胶囊同款（白圈 → 深蓝描边环 → 黄→金渐变芯）；
-   「字色与背景色互换」——原深蓝底金字 → 金字底深蓝字，黑框去除 */
+/* 事件遭遇横幅（2026-09-12 调整）：去除胶囊边框与背景——
+   白圈 / 深蓝描边环 / 黄→金渐变芯 / 投影全部移除，只余白色描边 + 深蓝字
+   （文本白描边在 RogueFloorView 内联实现，规避中文 stroke 性能红线）；
+   保留原内边距，横幅占位尺寸与位置保持不变 */
 .rogue-banner {
-    -fx-background-color:
-        rgba(255, 255, 255, 0.96),
-        #123c63,
-        linear-gradient(to bottom,
-            rgba(255, 255, 255, 0.92) 0%,
-            #ffcb05 18%,
-            #eea800 78%,
-            #ffcb05 100%);
-    -fx-background-insets: 0, 2.5, 5;
-    -fx-background-radius: 999, 996.5, 994;
     -fx-padding: 4 26 5 26;
-    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.50), 12, 0.08, 0, 4);
 }

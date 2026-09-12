@@ -55,8 +55,8 @@ import java.util.function.Consumer;
  *       选中放大动画 / 悬停变色（移开恢复黄色）/ 错峰入场动画与子页一致）、
  *       右段位信息卡（段号 / 阶段 / 行动点 / 金币，沿用「初始主界面」（启动页）
  *       胶囊族样式的小号版本，见 start-menu.css 的 .rogue-info）分贴行内两侧；
- *       「事件遭遇 ENCOUNTER EVENT」横幅（启动页胶囊族同款：黄→金渐变芯 + 深蓝描边环，
- *       无黑框、深蓝字，+ 副提示胶囊）贴页面最上方、水平居中于画布；</li>
+ *       「事件遭遇 ENCOUNTER EVENT」横幅（去除胶囊边框与背景，只余白色描边 + 深蓝字，
+ *       + 副提示胶囊）贴页面最上方、水平居中于画布；</li>
  *   <li>节点卡 —— 最多 3 列 × 2 行网格：上排固定三位常驻节点（野生宝可梦 → 路人训练师 → 医院，
  *       从左到右位置恒定），随机事件保持生成顺序排在下排；只渲染已刷新出来的事件、不做占位补格
  *       （真实节点至多 {@link RouteConfig#MAX_ROUTE_NODES} 个）：顶部图片区（按类型铺预裁事件图 396×158；暂无素材的类型保留默认占位：渐变 + 类型 emoji + 精灵球装饰），
@@ -121,6 +121,13 @@ public class RogueFloorView {
             "-fx-background-color: rgba(180,200,225,0.3); -fx-background-radius: 10 10 0 0;"
                     + " -fx-border-color: #90aac8; -fx-border-width: 0 0 1.5 0;"
                     + " -fx-border-style: none none dashed none;";
+
+    /** 顶栏标题白色描边：单 dropshadow 全向膨胀模拟描边（规避中文 stroke 光栅化性能红线；静态文本仅首次渲染付一次成本）。 */
+    private static final String TITLE_OUTLINE =
+            " -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 1.8, 1.0, 0, 0);";
+    /** 英文副标白色描边：小半径（6.5px 小字号防糊）。 */
+    private static final String TITLE_OUTLINE_THIN =
+            " -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 1.0, 1.0, 0, 0);";
 
     private final GameSession session;
     private final Consumer<Option> onOptionSelected;
@@ -217,18 +224,19 @@ public class RogueFloorView {
         return panel;
     }
 
-    /** 标题横幅：启动页胶囊族同款（黄金渐变芯 + 深蓝描边环，深蓝字）+ 副提示胶囊。 */
+    /** 标题横幅：去除胶囊边框与背景，只余白色描边 + 深蓝字 + 副提示胶囊。 */
     private VBox buildBanner() {
         Label left = new Label("⚔");
-        left.setStyle("-fx-font-size: 14px; -fx-text-fill: #123c63;");
+        left.setStyle("-fx-font-size: 14px; -fx-text-fill: #123c63;" + TITLE_OUTLINE);
         Label right = new Label("⚔");
-        right.setStyle("-fx-font-size: 14px; -fx-text-fill: #123c63;");
+        right.setStyle("-fx-font-size: 14px; -fx-text-fill: #123c63;" + TITLE_OUTLINE);
 
         Label title = new Label("事件遭遇");
-        title.setStyle(FONT + " -fx-font-size: 15px; -fx-font-weight: 900; -fx-text-fill: #123c63;");
+        title.setStyle(FONT + " -fx-font-size: 15px; -fx-font-weight: 900; -fx-text-fill: #123c63;"
+                + TITLE_OUTLINE);
         Label english = new Label("ENCOUNTER EVENT");
         english.setStyle("-fx-font-size: 6.5px; -fx-font-weight: bold;"
-                + " -fx-text-fill: rgba(42,117,187,0.85);");
+                + " -fx-text-fill: #123c63;" + TITLE_OUTLINE_THIN);
         VBox titleCol = new VBox(0, title, english);
         titleCol.setAlignment(Pos.CENTER);
 
