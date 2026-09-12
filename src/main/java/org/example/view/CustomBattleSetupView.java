@@ -47,8 +47,9 @@ import org.example.util.UiScale;
  * <p>「开始战斗」后由 {@code MainController} 转入真实战斗模块：与随机生成的同数量满级
  * 对手整队轮战，战斗中可通过「精灵」菜单换人。</p>
  *
- * <p>视觉：与启动页 / 模式选择页同一套「宝可梦蓝黄 + 白卡悬浮」体系（卡片圆角、
- * 柔和投影、悬停反馈），样式集中在 {@code /css/custom-battle-setup.css}，
+ * <p>视觉：与商店页 / 内层子页 / 启动页统一——顶栏「返回胶囊 + 白描边深蓝字标题 +
+ * 信息卡」、内容白底蓝环卡、黄→金胶囊按钮族，背景与模式选择页同款；
+ * 样式集中在 {@code /css/custom-battle-setup.css}（大标题 / 胶囊 / 暗角复用 start-menu.css），
  * 本类只负责结构与接线。</p>
  */
 public final class CustomBattleSetupView {
@@ -59,11 +60,17 @@ public final class CustomBattleSetupView {
     /** 队伍上限（与战斗契约一致：最多 6 只）。 */
     private static final int MAX_SQUAD = 6;
 
-    /** 页面背景（与启动页同款主画面）。 */
-    private static final String MAIN_BACKGROUND = "/images/background/bg_main.jpeg";
+    /** 页面背景（与模式选择页 / 启动页同款主画面，进出本页保持连续感）。 */
+    private static final String MAIN_BACKGROUND = "/images/background/bg_startpage.jpg";
 
-    /** 本页样式表（宝可梦蓝黄 + 白卡悬浮，与启动页同族）。 */
+    /** 共享样式表（胶囊按钮 / 标题 / 暗角 / .rogue-info 信息卡，与启动页同一份）。 */
+    private static final String SHARED_STYLE_SHEET = "/css/start-menu.css";
+
+    /** 本页样式表（面板 / 卡槽 / 按钮）。 */
     private static final String STYLE_SHEET = "/css/custom-battle-setup.css";
+
+    /** 字体基串（行内样式统一前缀）。 */
+    private static final String FONT = "-fx-font-family: 'Microsoft YaHei'; ";
 
     /** 候选列表小头像尺寸。 */
     private static final double CANDIDATE_ICON_SIZE = 24;
@@ -94,6 +101,10 @@ public final class CustomBattleSetupView {
     private Button leadButton;
     private Button startButton;
     private Label teamCaption;
+    /** 顶栏信息卡队伍进度（金色行，队伍变化时原地刷新）。 */
+    private Label teamInfoLabel;
+    /** 顶栏「返回」胶囊（入场动画用）。 */
+    private FloatingMenu backMenu;
 
     /** 当前选中的队伍卡槽下标（-1 = 未选中）；「移除选中 / 设为首发」对其操作。 */
     private int selectedTeamIndex = -1;
@@ -107,14 +118,20 @@ public final class CustomBattleSetupView {
     }
 
     public Scene createScene() {
-        BorderPane root = new BorderPane();
+        StackPane root = new StackPane();
         ImageBackgrounds.apply(root, MAIN_BACKGROUND);
-        root.setPadding(new Insets(11));
 
-        // 顶部：标题卡（主标题 + 副标题分层）
-        Region header = buildHeader();
-        BorderPane.setMargin(header, new Insets(0, 0, 8, 0));
-        root.setTop(header);
+        // 暗角遮罩：与启动页 / 模式选择页同款（弱化背景，保证悬浮元素可读）
+        Region vignette = new Region();
+        vignette.getStyleClass().add("start-vignette");
+        vignette.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        vignette.setMouseTransparent(true);
+
+        BorderPane layout = new BorderPane();
+        layout.setPadding(new Insets(10, 12, 10, 12));
+
+        // 上部分：返回胶囊 + 白描边标题 + 信息卡（与商店页 / 内层子页同款顶栏）
+        layout.setTop(buildHeader());
 
         // 中部：左栏候选（固定宽）+ 右栏队伍（自适应占满剩余宽度）
         Region candidatePanel = buildCandidatePanel();
@@ -125,19 +142,24 @@ public final class CustomBattleSetupView {
         HBox columns = new HBox(10, candidatePanel, teamPanel);
         HBox.setHgrow(teamPanel, Priority.ALWAYS);
         BorderPane.setMargin(columns, new Insets(0, 0, 8, 0));
-        root.setCenter(columns);
+        layout.setCenter(columns);
 
-        // 底部：返回（次要）+ 开始战斗（主行动）
-        root.setBottom(buildBottomBar());
+        // 底部：开始战斗（主行动；「返回」已移至顶栏左侧胶囊）
+        layout.setBottom(buildBottomBar());
+
+        root.getChildren().addAll(vignette, layout);
 
         refreshTeamUi();
 
         Scene scene = UiScale.scene(root);
-        var css = CustomBattleSetupView.class.getResource(STYLE_SHEET);
-        if (css != null) {
-            scene.getStylesheets().add(css.toExternalForm());
+        for (String sheet : new String[] {SHARED_STYLE_SHEET, STYLE_SHEET}) {
+            var css = CustomBattleSetupView.class.getResource(sheet);
+            if (css != null) {
+                scene.getStylesheets().add(css.toExternalForm());
+            }
         }
-        playEntrance(root);
+        backMenu.playEntrance();
+        playEntrance(layout);
         return scene;
     }
 
@@ -151,15 +173,15 @@ public final class CustomBattleSetupView {
         return requiredCount > 0 ? team.size() == maxCount() : !team.isEmpty();
     }
 
-    /** 页面提示文案（按出战数量语义区分；单行短句，与标题形成层级）。 */
+    /** 标题下副提示（按出战数量语义区分；单行短句，与标题形成层级）。 */
     private String hintText() {
         if (requiredCount == 1) {
-            return "选择 1 只宝可梦出战（Lv.100 满状态），对手由系统随机生成。";
+            return "挑选 1 只 Lv.100 满状态宝可梦，对手随机生成同级队伍。";
         }
         if (requiredCount > 1) {
-            return "从全部宝可梦中挑选 " + maxCount() + " 只（Lv.100 满状态），对手随机生成同数量满级队伍，第一位为首发。";
+            return "挑选 " + maxCount() + " 只 Lv.100 满状态宝可梦，首位首发，对手随机生成同级队伍。";
         }
-        return "从全部宝可梦中挑选 1~" + MAX_SQUAD + " 只（Lv.100 满状态），对手随机生成同数量满级队伍，第一位为首发。";
+        return "挑选 1~" + MAX_SQUAD + " 只 Lv.100 满状态宝可梦，首位首发，对手随机生成同级队伍。";
     }
 
     /** 把候选列表当前选中项加入队伍：新建 Lv.100 满状态个体；未选中或已达上限时忽略。 */
@@ -185,6 +207,7 @@ public final class CustomBattleSetupView {
         }
         rebuildPartyGrid();
         teamCaption.setText("我的队伍（" + team.size() + "/" + maxCount() + "）");
+        teamInfoLabel.setText("队伍: " + team.size() + "/" + maxCount());
         addButton.setDisable(team.size() >= maxCount());
         removeButton.setDisable(team.isEmpty() || selectedTeamIndex < 0);
         leadButton.setDisable(team.size() < 2 || selectedTeamIndex <= 0);
@@ -195,15 +218,45 @@ public final class CustomBattleSetupView {
     // UI 构建（宝可梦蓝黄 + 白卡悬浮，样式见 /css/custom-battle-setup.css）
     // ------------------------------------------------------------------
 
-    /** 顶部标题卡：主标题醒目 + 副标题小字（信息层级分明）。 */
-    private Region buildHeader() {
-        Label titleLabel = new Label(title + " · 队伍配置");
+    /** 顶栏一行：左「返回」胶囊（启动页同款）/ 中标题（白描边深蓝字 + 副提示）/ 右信息卡。 */
+    private StackPane buildHeader() {
+        Label titleLabel = new Label("队伍配置");
         titleLabel.getStyleClass().add("cbs-title");
         Label hint = new Label(hintText());
         hint.getStyleClass().add("cbs-hint");
-        VBox header = new VBox(2, titleLabel, hint);
-        header.getStyleClass().add("cbs-header");
+        VBox center = new VBox(2, titleLabel, hint);
+        center.setAlignment(Pos.CENTER);
+
+        backMenu = new FloatingMenu();
+        backMenu.setCompact(true);
+        backMenu.setDeselectOnExit(true);
+        backMenu.addPill("slate", "返回", "", "", onBack);
+        VBox back = backMenu.node();
+        back.setMaxWidth(Region.USE_PREF_SIZE);
+        back.setMaxHeight(Region.USE_PREF_SIZE);
+
+        VBox info = buildInfoPanel();
+
+        StackPane header = new StackPane(center);
+        header.getChildren().addAll(back, info);
+        StackPane.setAlignment(back, Pos.CENTER_LEFT);
+        StackPane.setAlignment(info, Pos.CENTER_RIGHT);
+        header.setPadding(new Insets(0, 0, 8, 0));
         return header;
+    }
+
+    /** 右侧信息卡（.rogue-info 同款）：当前模式 + 队伍进度（金色小字，选人后原地刷新）。 */
+    private VBox buildInfoPanel() {
+        Label mode = new Label(title);
+        mode.setStyle(FONT + "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
+        teamInfoLabel = new Label("队伍: 0/" + maxCount());
+        teamInfoLabel.setStyle(FONT + "-fx-font-size: 8.5px; -fx-font-weight: bold; -fx-text-fill: #E6A800;");
+        VBox panel = new VBox(2, mode, teamInfoLabel);
+        panel.setMinWidth(108);
+        panel.setMaxWidth(Region.USE_PREF_SIZE);
+        panel.setMaxHeight(Region.USE_PREF_SIZE);
+        panel.getStyleClass().add("rogue-info");
+        return panel;
     }
 
     /** 左栏：全部宝可梦候选（小头像 + 中文名 + 英文名 + BST；双击条目可直接入队）。 */
@@ -247,7 +300,7 @@ public final class CustomBattleSetupView {
         });
         VBox.setVgrow(candidateList, Priority.ALWAYS);
 
-        addButton = actionButton("加入队伍", "cbs-btn-blue");
+        addButton = actionButton("加入队伍", null);
         addButton.setMaxWidth(Double.MAX_VALUE);
         addButton.setOnAction(e -> addSelected(candidateList.getSelectionModel().getSelectedItem()));
 
@@ -299,11 +352,8 @@ public final class CustomBattleSetupView {
         return panel;
     }
 
-    /** 底部操作栏：返回（次要白胶囊）+ 开始战斗（黄色大胶囊，全页视觉重心）。 */
+    /** 底部操作栏：开始战斗（黄色大胶囊，全页视觉重心；「返回」在顶栏左侧）。 */
     private Region buildBottomBar() {
-        Button back = actionButton("返回", null);
-        back.setOnAction(e -> onBack.run());
-
         startButton = actionButton("开始战斗", "cbs-btn-start");
         startButton.setOnAction(e -> {
             if (canStart()) {
@@ -312,7 +362,7 @@ public final class CustomBattleSetupView {
         });
         installHoverLift(startButton, 1.04);
 
-        HBox bar = new HBox(12, back, startButton);
+        HBox bar = new HBox(startButton);
         bar.setAlignment(Pos.CENTER);
         return bar;
     }
@@ -433,7 +483,7 @@ public final class CustomBattleSetupView {
                 column.setPrefWidth(200); // 单槽模式：居中的固定宽度展示卡
                 column.setHgrow(Priority.NEVER);
             } else {
-                column.setHgrow(Priority.ALWAYS); // 双列平分
+                column.setPercentWidth(50); // 双列严格平分（仅 Hgrow 时列宽会被内容首选宽拉偏）
             }
             partyGrid.getColumnConstraints().add(column);
         }
