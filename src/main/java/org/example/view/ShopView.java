@@ -78,6 +78,10 @@ public class ShopView {
     private static final double INFO_PADDING = 10;
     private static final double IMAGE_INSET = 24;
 
+    /** 商品行高（设计像素）：6 行 + 间距后总高 ≈ 信息框高的 2/3（六行时末行底边贴近信息框 2/3 高度线）。
+     *  min=max 钉住：否则行会被按钮等内容自然拍高；取值 34.6 兼顾 1.5 倍 UiScale 的物理像素取整（实际渲染 34.667）。 */
+    private static final double ROW_HEIGHT = 34.6;
+
     private final GameSession session;
     private final ShopStock stock;
     private final Consumer<ShopStock.Entry> onBuy;
@@ -404,6 +408,8 @@ public class ShopView {
         row.getStyleClass().add("shop-row");
         row.setStyle(rowCardStyle(false));
         row.setMaxWidth(Double.MAX_VALUE);
+        row.setMinHeight(ROW_HEIGHT); // 加高行卡（内容垂直居中）：6 行总高 ≈ 信息框 2/3
+        row.setMaxHeight(ROW_HEIGHT);
         row.setOnMouseEntered(e -> {
             row.setStyle(rowCardStyle(true));
             if (entry != currentEntry) {
@@ -473,7 +479,7 @@ public class ShopView {
 
     /** 购买按钮胶囊（启动页 .slot-action 同族）：白圈 → 深蓝描边环 → 黄→金渐变芯 + 深蓝字；悬停亮一档。 */
     private static String pillStyle(boolean hover) {
-        return FONT + "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #123c63; -fx-padding: 2 8;"
+        return FONT + "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #123c63; -fx-padding: 4 8;"
                 + " -fx-cursor: hand; -fx-focus-color: transparent; -fx-faint-focus-color: transparent;"
                 + " -fx-background-color: rgba(255, 255, 255, " + (hover ? "1.0" : "0.96") + "), "
                 + (hover ? "#2a75bb" : "#123c63") + ", " + goldGradient(hover) + ";"
@@ -483,7 +489,7 @@ public class ShopView {
 
     /** 灰化胶囊（金币不足的购买按钮）：仅灰芯与灰字，尺寸不变。 */
     private static String pillDisabledStyle() {
-        return FONT + "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #7d8794; -fx-padding: 2 8;"
+        return FONT + "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: #7d8794; -fx-padding: 4 8;"
                 + " -fx-cursor: default; -fx-opacity: 1;"
                 + " -fx-background-color: rgba(255, 255, 255, 0.96), #7d8794,"
                 + " linear-gradient(to bottom, #e9e9e9 0%, #c7c7c7 78%, #dfdfdf 100%);"
