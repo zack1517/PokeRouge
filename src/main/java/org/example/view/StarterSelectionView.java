@@ -120,10 +120,10 @@ public final class StarterSelectionView {
             onStart.accept(trainerName, service.createPokemon(selected.getId(), STARTER_LEVEL));
         });
 
-        // 表单区整体上移：顶栏下留固定间距，按钮排表单之后（不再固定窗口底部）
+        // 表单区整体下移一档：顶栏下留固定间距，按钮排表单之后（不再固定窗口底部）
         VBox center = new VBox(14, form, start);
         center.setAlignment(Pos.TOP_CENTER);
-        BorderPane.setMargin(center, new Insets(16, 0, 0, 0));
+        BorderPane.setMargin(center, new Insets(40, 0, 0, 0));
         layout.setCenter(center);
 
         root.getChildren().addAll(vignette, layout);
