@@ -39,7 +39,8 @@ import java.util.function.Consumer;
  * <ul>
  *   <li>顶栏 —— 左侧「◀ 返回主菜单」胶囊与右侧段位信息卡（段号 / 阶段 / 行动点 / 金币），
  *       均沿用「初始主界面」（启动页）胶囊族样式的小号版本（见 start-menu.css 的 .rogue-back / .rogue-info）；</li>
- *   <li>标题横幅 —— 深蓝渐变「事件遭遇 ENCOUNTER EVENT」+ 副提示胶囊；</li>
+ *   <li>标题横幅 —— 启动页胶囊族同款的「事件遭遇 ENCOUNTER EVENT」胶囊（黄→金渐变芯 + 深蓝描边环，
+ *       无黑框、深蓝字）+ 副提示胶囊；</li>
  *   <li>节点卡 —— 最多 3 列 × 2 行网格：上排固定三位常驻节点（野生宝可梦 → 路人训练师 → 医院，
  *       从左到右位置恒定），随机事件保持生成顺序排在下排；只渲染已刷新出来的事件、不做占位补格
  *       （真实节点至多 {@link RouteConfig#MAX_ROUTE_NODES} 个）：顶部图片预留区（渐变 + 类型 emoji + 精灵球装饰），
@@ -168,29 +169,25 @@ public class RogueFloorView {
         return panel;
     }
 
-    /** 标题横幅：深蓝渐变条 + 金色标题 + 副提示胶囊（设计稿 PAGE TITLE）。 */
+    /** 标题横幅：启动页胶囊族同款（黄金渐变芯 + 深蓝描边环，深蓝字）+ 副提示胶囊。 */
     private VBox buildBanner() {
         Label left = new Label("⚔");
-        left.setStyle("-fx-font-size: 14px; -fx-text-fill: #FFD800;");
+        left.setStyle("-fx-font-size: 14px; -fx-text-fill: #123c63;");
         Label right = new Label("⚔");
-        right.setStyle("-fx-font-size: 14px; -fx-text-fill: #FFD800;");
+        right.setStyle("-fx-font-size: 14px; -fx-text-fill: #123c63;");
 
         Label title = new Label("事件遭遇");
-        title.setStyle(FONT + " -fx-font-size: 15px; -fx-font-weight: 900; -fx-text-fill: #FFD800;"
-                + " -fx-effect: dropshadow(gaussian, rgba(255,216,0,0.5), 10, 0.0, 0, 2);");
+        title.setStyle(FONT + " -fx-font-size: 15px; -fx-font-weight: 900; -fx-text-fill: #123c63;");
         Label english = new Label("ENCOUNTER EVENT");
         english.setStyle("-fx-font-size: 6.5px; -fx-font-weight: bold;"
-                + " -fx-text-fill: rgba(255,255,255,0.7);");
+                + " -fx-text-fill: rgba(42,117,187,0.85);");
         VBox titleCol = new VBox(0, title, english);
         titleCol.setAlignment(Pos.CENTER);
 
         HBox band = new HBox(8, left, titleCol, right);
         band.setAlignment(Pos.CENTER);
         band.setMaxWidth(Region.USE_PREF_SIZE); // 紧凑胶囊条（设计稿宽度随内容）
-        band.setStyle("-fx-background-color: linear-gradient(to right, #0D47A1 0%, #1565C0 40%, #1976D2 100%);"
-                + " -fx-background-radius: 14; -fx-border-color: #1A1A1A; -fx-border-width: 2.5;"
-                + " -fx-border-radius: 14; -fx-padding: 5 22 6 22;"
-                + " -fx-effect: dropshadow(gaussian, rgba(5,36,74,0.45), 8, 0.0, 0, 3);");
+        band.getStyleClass().add("rogue-banner");
 
         Label tip = new Label("选择你的下一步行动吧，训练家！");
         tip.setStyle(FONT + " -fx-font-size: 8.5px; -fx-font-weight: bold;"
