@@ -1,6 +1,7 @@
 package org.example.model;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -44,6 +45,11 @@ public class Pokemon {
     private int confusionTurns;
     /** 畏缩（挥发性状态）：为 true 时本回合无法行动，回合末自动清除。 */
     private boolean flinched;
+    /**
+     * 能力等级（挥发性状态）：六项各 -6~+6，索引对应 {@link StatModifier#ordinal()}；
+     * HP 项不使用。换宠、倒下或战斗结束时清零，不写入存档。
+     */
+    private final int[] statStages = new int[StatModifier.values().length];
     /** 当前等级内累积的经验（跨级归零后进入下一级）。 */
     private long exp;
     /**
@@ -303,10 +309,13 @@ public class Pokemon {
     }
 
     /**
-     * 计入异常状态与携带装备后的实际速度（麻痹减半；黑色铁球按倍率减速、讲究围巾按倍率加速；最低 1）。
+     * 计入异常状态、能力等级与携带装备后的实际速度（麻痹减半；能力等级按 {@link #stageMultiplier}；
+     * 黑色铁球按倍率减速、讲究围巾按倍率加速；最低 1）。
      */
     public int effectiveSpeed() {
-        return Math.max(1, (int) Math.round(stats.getSpeed() * status.speedMultiplier()
+        return Math.max(1, (int) Math.round(stats.getSpeed()
+                * stageMultiplier(getStatStage(StatModifier.SPEED))
+                * status.speedMultiplier()
                 * heldItemSpeedMultiplier()));
     }
 
@@ -327,9 +336,72 @@ public class Pokemon {
         };
     }
 
-    /** 计入异常状态后的实际物理攻击（灼伤减半，最低 1）。 */
+    /** 计入异常状态与能力等级后的实际物理攻击（灼伤减半，最低 1）。 */
     public int effectiveAttack() {
-        return Math.max(1, (int) Math.round(stats.getAttack() * status.attackMultiplier()));
+        return Math.max(1, (int) Math.round(stats.getAttack()
+                * stageMultiplier(getStatStage(StatModifier.ATTACK))
+                * status.attackMultiplier()));
+    }
+
+    /** 计入能力等级后的实际物理防御（最低 1）。 */
+    public int effectiveDefense() {
+        return Math.max(1, (int) Math.round(stats.getDefense()
+                * stageMultiplier(getStatStage(StatModifier.DEFENSE))));
+    }
+
+    /** 计入能力等级后的实际特殊攻击（最低 1）。 */
+    public int effectiveSpAttack() {
+        return Math.max(1, (int) Math.round(stats.getSpAttack()
+                * stageMultiplier(getStatStage(StatModifier.SP_ATTACK))));
+    }
+
+    /** 计入能力等级后的实际特殊防御（最低 1）。 */
+    public int effectiveSpDefense() {
+        return Math.max(1, (int) Math.round(stats.getSpDefense()
+                * stageMultiplier(getStatStage(StatModifier.SP_DEFENSE))));
+    }
+
+    /** 能力等级上下限（±6 级）。 */
+    public static final int MAX_STAT_STAGE = 6;
+
+    /**
+     * 能力等级对属性的倍率（原版规则）：等级 ≥ 0 时为 {@code (2 + 等级) / 2}，
+     * 等级 &lt; 0 时为 {@code 2 / (2 - 等级)}。0 级返回 {@code 1.0}，结果已按 ±{@value #MAX_STAT_STAGE} 截断。
+     *
+     * @param stage 能力等级
+     */
+    public static double stageMultiplier(int stage) {
+        int clamped = Math.max(-MAX_STAT_STAGE, Math.min(MAX_STAT_STAGE, stage));
+        return clamped >= 0 ? (2.0 + clamped) / 2.0 : 2.0 / (2.0 - clamped);
+    }
+
+    /** 读取指定能力项的当前等级（-6~+6）；{@link StatModifier#HP} 恒为 0。 */
+    public int getStatStage(StatModifier stat) {
+        return stat == null || stat == StatModifier.HP ? 0 : statStages[stat.ordinal()];
+    }
+
+    /**
+     * 提升/降低指定能力项的等级，返回**实际**变化量（受 ±{@value #MAX_STAT_STAGE} 截断，
+     * 因此已到上限时返回 0）。
+     *
+     * @param stat  能力项；{@link StatModifier#HP} 无等级，恒返回 0
+     * @param delta 期望变化量（正为提升、负为降低）
+     * @return 实际生效的变化量
+     */
+    public int changeStatStage(StatModifier stat, int delta) {
+        if (stat == null || stat == StatModifier.HP || delta == 0) {
+            return 0;
+        }
+        int index = stat.ordinal();
+        int before = statStages[index];
+        int after = Math.max(-MAX_STAT_STAGE, Math.min(MAX_STAT_STAGE, before + delta));
+        statStages[index] = after;
+        return after - before;
+    }
+
+    /** 清零全部能力等级（换宠、倒下或战斗结束时调用）。 */
+    public void clearStatStages() {
+        Arrays.fill(statStages, 0);
     }
 
     public String getName() {

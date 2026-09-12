@@ -223,6 +223,43 @@ public class HeldItem {
         return "ALWAYS".equalsIgnoreCase(textPart(2));
     }
 
+    /** TERRAIN_SEED 触发所需场地英文名（param 第 1 段）；缺失返回 {@code ""}。 */
+    public String seedTerrainParam() {
+        return textPart(0);
+    }
+
+    /** TYPE_REACTION 触发所需招式属性英文名（param 第 1 段）；缺失返回 {@code ""}。 */
+    public String reactionTypeParam() {
+        return textPart(0);
+    }
+
+    /**
+     * 能力等级联动类装备要提升的能力项英文名（param 第 2 段）。
+     * 适用于 {@link HeldItemEffect#TERRAIN_SEED} 与 {@link HeldItemEffect#TYPE_REACTION}。
+     *
+     * @return 能力项英文名（如 {@code DEFENSE}）；缺失返回 {@code ""}
+     */
+    public String statParam() {
+        return textPart(1);
+    }
+
+    /**
+     * 能力等级联动类装备的提升等级数（param 第 3 段）；解析失败返回 0。
+     * 适用于 {@link HeldItemEffect#TERRAIN_SEED} 与 {@link HeldItemEffect#TYPE_REACTION}。
+     */
+    public int statLevels() {
+        return (int) doublePart(2, 0);
+    }
+
+    /**
+     * 单段数值参数的提升等级数（param 整体）；解析失败返回 0。
+     * 适用于 {@link HeldItemEffect#WEAKNESS_POLICY} / {@link HeldItemEffect#BLUNDER_POLICY} /
+     * {@link HeldItemEffect#THROAT_SPRAY}。
+     */
+    public int statLevelsParam() {
+        return (int) doublePart(0, 0);
+    }
+
     @Override
     public String toString() {
         return name;

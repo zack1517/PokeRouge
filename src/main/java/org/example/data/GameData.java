@@ -9,6 +9,7 @@ import org.example.model.Move;
 import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
 import org.example.model.MoveFlag;
+import org.example.model.MoveStatChange;
 import org.example.model.Pokemon;
 import org.example.model.Species;
 import org.example.model.Stats;
@@ -462,6 +463,37 @@ public final class GameData {
                 "招式造成伤害后 10% 概率使目标畏缩");
         putEquipment("e_metronome", "节拍器", HeldItemEffect.CONSECUTIVE_BOOST, "0.2",
                 "连续使用同一招式时每次增伤 20%，上限 2 倍");
+        // 批次⑤装备：能力等级联动 / 天气免疫
+        putEquipment("e_choice_band", "讲究头带", HeldItemEffect.CHOICE, "ATTACK|1.5",
+                "物理招式伤害提升 50%，但只能使用第一个招式");
+        putEquipment("e_assault_vest", "突击背心", HeldItemEffect.ASSAULT_VEST, "1.5",
+                "特防提升 50%，但无法使用变化类招式");
+        putEquipment("e_clear_amulet", "清净坠饰", HeldItemEffect.CLEAR_AMULET, "",
+                "能力等级不会被对手降低");
+        putEquipment("e_weakness_policy", "弱点保险", HeldItemEffect.WEAKNESS_POLICY, "2",
+                "被效果拔群招式命中后，物攻与特攻各提升 2 级，触发后消耗");
+        putEquipment("e_blunder_policy", "打空保险", HeldItemEffect.BLUNDER_POLICY, "2",
+                "招式未命中时速度提升 2 级，触发后消耗");
+        putEquipment("e_throat_spray", "爽喉喷雾", HeldItemEffect.THROAT_SPRAY, "1",
+                "使用声音类招式后特攻提升 1 级，触发后消耗");
+        putEquipment("e_electric_seed", "电气种子", HeldItemEffect.TERRAIN_SEED, "ELECTRIC|DEFENSE|1",
+                "电气场地时防御提升 1 级，触发后消耗");
+        putEquipment("e_psychic_seed", "精神种子", HeldItemEffect.TERRAIN_SEED, "PSYCHIC|SP_DEFENSE|1",
+                "精神场地时特防提升 1 级，触发后消耗");
+        putEquipment("e_misty_seed", "薄雾种子", HeldItemEffect.TERRAIN_SEED, "MISTY|SP_DEFENSE|1",
+                "薄雾场地时特防提升 1 级，触发后消耗");
+        putEquipment("e_grassy_seed", "青草种子", HeldItemEffect.TERRAIN_SEED, "GRASSY|DEFENSE|1",
+                "青草场地时防御提升 1 级，触发后消耗");
+        putEquipment("e_absorb_bulb", "球根", HeldItemEffect.TYPE_REACTION, "WATER|SP_ATTACK|1",
+                "受到水属性招式时特攻提升 1 级，触发后消耗");
+        putEquipment("e_cell_battery", "充电电池", HeldItemEffect.TYPE_REACTION, "ELECTRIC|ATTACK|1",
+                "受到电属性招式时物攻提升 1 级，触发后消耗");
+        putEquipment("e_luminous_moss", "光苔", HeldItemEffect.TYPE_REACTION, "WATER|SP_DEFENSE|1",
+                "受到水属性招式时特防提升 1 级，触发后消耗");
+        putEquipment("e_snowball", "雪球", HeldItemEffect.TYPE_REACTION, "ICE|ATTACK|1",
+                "受到冰属性招式时物攻提升 1 级，触发后消耗");
+        putEquipment("e_utility_umbrella", "万能伞", HeldItemEffect.UTILITY_UMBRELLA, "",
+                "不受天气影响：晴天/雨天的威力修正无效，沙暴/冰雹的回合末伤害也不生效");
         // 批次②树果：异常治疗（陷入对应异常时立即治愈并消耗）
         putEquipment("b_cheri", "樱子果", HeldItemEffect.CURE_STATUS, "PARALYSIS", "陷入麻痹时立即治愈");
         putEquipment("b_pecha", "桃桃果", HeldItemEffect.CURE_STATUS, "POISON|BADLY_POISON", "陷入中毒时立即治愈");
@@ -563,9 +595,11 @@ public final class GameData {
         int chance = c.length > 9 ? parseInt(c[9]) : 0;
         MoveEffect effect = c.length > 10 ? MoveEffect.parse(c[10]) : MoveEffect.NONE;
         Set<MoveFlag> flags = c.length > 11 ? MoveFlag.parseFlags(c[11]) : Set.of();
+        List<MoveStatChange> statChanges = c.length > 12
+                ? MoveStatChange.parse(c[12]) : List.of();
         String id = c[0].trim();
         moveMap.put(id, new Move(id, c[1].trim(), type, category, power, accuracy, maxPp, priority,
-                effect, inflicts, chance, flags));
+                effect, inflicts, chance, flags, statChanges));
     }
 
     /**

@@ -2,6 +2,7 @@ package org.example.model;
 
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -33,6 +34,8 @@ public class Move {
     private final int inflictionChance;
     /** 招式标记（接触/拳/粉末等）；无标记为空集合。 */
     private final Set<MoveFlag> flags;
+    /** 招式附带的能力等级变化；无变化为空列表。 */
+    private final List<MoveStatChange> statChanges;
 
     public Move(String id, String name, ElementType type, MoveCategory category, int power, int accuracy, int maxPp) {
         this(id, name, type, category, power, accuracy, maxPp, 0, MoveEffect.NONE);
@@ -70,6 +73,20 @@ public class Move {
     public Move(String id, String name, ElementType type, MoveCategory category, int power, int accuracy,
                 int maxPp, int priority, MoveEffect effect,
                 StatusCondition inflicts, int inflictionChance, Set<MoveFlag> flags) {
+        this(id, name, type, category, power, accuracy, maxPp, priority, effect,
+                inflicts, inflictionChance, flags, List.of());
+    }
+
+    /**
+     * 完整构造（含异常状态、招式标记与能力等级变化）。
+     *
+     * @param flags       招式标记；{@code null} 视为无标记
+     * @param statChanges 招式附带的能力等级变化；{@code null} 视为无变化
+     */
+    public Move(String id, String name, ElementType type, MoveCategory category, int power, int accuracy,
+                int maxPp, int priority, MoveEffect effect,
+                StatusCondition inflicts, int inflictionChance, Set<MoveFlag> flags,
+                List<MoveStatChange> statChanges) {
         this.id = id;
         this.name = name;
         this.type = type;
@@ -83,6 +100,8 @@ public class Move {
         this.inflictionChance = Math.max(0, Math.min(100, inflictionChance));
         this.flags = flags == null || flags.isEmpty()
                 ? Set.of() : Collections.unmodifiableSet(EnumSet.copyOf(flags));
+        this.statChanges = statChanges == null || statChanges.isEmpty()
+                ? List.of() : List.copyOf(statChanges);
     }
 
     public String getId() {
@@ -176,5 +195,20 @@ public class Move {
     /** 是否为粉末类招式（{@link MoveFlag#POWDER}）。 */
     public boolean isPowder() {
         return flags.contains(MoveFlag.POWDER);
+    }
+
+    /** 是否为声音类招式（{@link MoveFlag#SOUND}）。 */
+    public boolean isSound() {
+        return flags.contains(MoveFlag.SOUND);
+    }
+
+    /** 招式附带的能力等级变化；无变化返回空列表。 */
+    public List<MoveStatChange> getStatChanges() {
+        return statChanges;
+    }
+
+    /** 是否附带能力等级变化。 */
+    public boolean hasStatChanges() {
+        return !statChanges.isEmpty();
     }
 }

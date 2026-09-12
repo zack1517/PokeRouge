@@ -8,14 +8,15 @@ import java.util.Set;
  * 招式标记（正作的 move flag）。
  *
  * <p>标记描述招式的「形式特征」，与属性、类别正交：属性决定克制关系，类别决定物理/特殊，
- * 标记决定哪些携带装备与特性可以挂钩。当前引擎只落地与携带装备相关的三种标记，
+ * 标记决定哪些携带装备与特性可以挂钩。当前引擎落地与携带装备相关的四种标记，
  * 对应 equipment.csv 中拳击手套（{@link #PUNCH}）、凸凸头盔（{@link #CONTACT}）、
- * 防尘护目镜（{@link #POWDER}）三件装备。</p>
+ * 防尘护目镜（{@link #POWDER}）、爽喉喷雾（{@link #SOUND}）四件装备。</p>
  *
  * <ul>
  *     <li>{@link #CONTACT}：接触类招式 —— 攻击方以身体接触目标（撞击、拳类、啃咬、踢击等）</li>
  *     <li>{@link #PUNCH}：拳类招式（火焰拳、冰冻拳、暗影拳等），拳类招式同时具备 {@link #CONTACT}</li>
  *     <li>{@link #POWDER}：粉末类招式（催眠粉、毒粉、蘑菇孢子等）</li>
+ *     <li>{@link #SOUND}：声音类招式（叫声、战吼、轮唱等）</li>
  * </ul>
  *
  * <p>招式数据来自 moves.csv 第 12 列 flags（{@code |} 分隔）：留空表示无标记。
@@ -30,7 +31,10 @@ public enum MoveFlag {
     PUNCH,
 
     /** 粉末类招式：对携带防尘护目镜的目标无效。 */
-    POWDER;
+    POWDER,
+
+    /** 声音类招式：触发爽喉喷雾。 */
+    SOUND;
 
     /**
      * 解析 {@code |} 分隔的标记串（如 {@code CONTACT|PUNCH}）。

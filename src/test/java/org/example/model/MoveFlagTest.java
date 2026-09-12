@@ -23,6 +23,14 @@ class MoveFlagTest {
         assertEquals(Set.of(MoveFlag.CONTACT, MoveFlag.PUNCH), flags);
     }
 
+    /** 声音标记（批次⑤新增）：SOUND 与其它标记可共存，大小写不敏感。 */
+    @Test
+    void 解析声音标记() {
+        assertEquals(Set.of(MoveFlag.SOUND), MoveFlag.parseFlags("SOUND"));
+        assertEquals(Set.of(MoveFlag.SOUND), MoveFlag.parseFlags(" sound "));
+        assertEquals(Set.of(MoveFlag.CONTACT, MoveFlag.SOUND), MoveFlag.parseFlags("CONTACT|SOUND"));
+    }
+
     /** 单标记与前后空白都应被容忍（CSV 手写容易多打空格）。 */
     @Test
     void 解析忽略空白与大小写() {

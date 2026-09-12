@@ -92,6 +92,28 @@ package org.example.model;
  *         org.example.battle.BattleEngine#CONSECUTIVE_MAX_MULTIPLIER} 倍
  *         （param 为每层增幅，节拍器 {@code 0.2}）</li>
  * </ul>
+ *
+ * <p><b>能力等级联动类</b>（v1.18 新增，依赖 {@link Pokemon#changeStatStage}）</p>
+ * <ul>
+ *     <li>{@link #ASSAULT_VEST}：携带者特防提升（param 为倍率），但**无法使用变化类招式**（突击背心 {@code 1.5}）</li>
+ *     <li>{@link #CLEAR_AMULET}：携带者的能力等级不会被对手降低（param 忽略，清净坠饰）</li>
+ *     <li>{@link #WEAKNESS_POLICY}：被效果拔群招式命中后物攻与特攻各 +2，触发后消耗
+ *         （param 为提升等级，弱点保险 {@code 2}）</li>
+ *     <li>{@link #BLUNDER_POLICY}：自身招式未命中后速度 +2，触发后消耗
+ *         （param 为提升等级，打空保险 {@code 2}）</li>
+ *     <li>{@link #THROAT_SPRAY}：使用声音类招式（{@link MoveFlag#SOUND}）后特攻 +1，触发后消耗
+ *         （param 为提升等级，爽喉喷雾 {@code 1}）</li>
+ *     <li>{@link #TERRAIN_SEED}：所在场地变为参数所指场地时提升对应能力，触发后消耗。
+ *         param 为 {@code 场地|能力项|等级}，如电气种子 {@code ELECTRIC|DEFENSE|1}</li>
+ *     <li>{@link #TYPE_REACTION}：受到参数所指属性的招式后提升对应能力，触发后消耗。
+ *         param 为 {@code 属性|能力项|等级}，如球根 {@code WATER|SP_ATTACK|1}</li>
+ * </ul>
+ *
+ * <p><b>天气免疫类</b></p>
+ * <ul>
+ *     <li>{@link #UTILITY_UMBRELLA}：携带者不受天气影响 —— 晴天/雨天的招式威力修正对其无效，
+ *         沙暴/冰雹的回合末伤害也不生效（param 忽略，万能伞）</li>
+ * </ul>
  */
 public enum HeldItemEffect {
     DAMAGE_TYPE,
@@ -125,5 +147,14 @@ public enum HeldItemEffect {
     POWDER_IMMUNE,
     CRIT_BOOST,
     FLINCH_CHANCE,
-    CONSECUTIVE_BOOST
+    CONSECUTIVE_BOOST,
+
+    ASSAULT_VEST,
+    CLEAR_AMULET,
+    WEAKNESS_POLICY,
+    BLUNDER_POLICY,
+    THROAT_SPRAY,
+    TERRAIN_SEED,
+    TYPE_REACTION,
+    UTILITY_UMBRELLA
 }

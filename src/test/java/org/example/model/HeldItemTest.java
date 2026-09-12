@@ -39,6 +39,14 @@ class HeldItemTest {
             "e_punch_glove", "e_rocky_helmet", "e_safety_goggles",
             "e_razor_claw", "e_kings_rock", "e_metronome");
 
+    /** 批次⑤新增的 15 件装备（能力等级联动 6 / 场地种子 4 / 属性反应 4 / 天气免疫 1）。 */
+    private static final List<String> BATCH5_IDS = List.of(
+            "e_choice_band", "e_assault_vest", "e_clear_amulet",
+            "e_weakness_policy", "e_blunder_policy", "e_throat_spray",
+            "e_electric_seed", "e_psychic_seed", "e_misty_seed", "e_grassy_seed",
+            "e_absorb_bulb", "e_cell_battery", "e_luminous_moss", "e_snowball",
+            "e_utility_umbrella");
+
     // ------------------------------------------------------------------
     // equipment.csv 加载
     // ------------------------------------------------------------------
@@ -46,12 +54,13 @@ class HeldItemTest {
     @Test
     void 装备Csv全部可查询() {
         GameData data = GameData.instance();
-        assertEquals(62, data.allEquipment().size(), "equipment.csv 应注册 32 件装备 + 30 种树果");
+        assertEquals(77, data.allEquipment().size(), "equipment.csv 应注册 47 件装备 + 30 种树果");
         List<String> all = new java.util.ArrayList<>(List.of("e_charcoal", "e_mystic_water", "e_magnet",
                 "e_expert_belt", "e_leftovers", "e_shell_bell", "e_quick_claw", "e_eviolite"));
         all.addAll(BATCH1_IDS);
         all.addAll(BATCH2_IDS);
         all.addAll(BATCH4_IDS);
+        all.addAll(BATCH5_IDS);
         for (String id : all) {
             HeldItem item = data.equipment(id);
             assertNotNull(item, "缺少装备 " + id);
@@ -243,6 +252,71 @@ class HeldItemTest {
         HeldItem metronome = data.equipment("e_metronome");
         assertEquals(HeldItemEffect.CONSECUTIVE_BOOST, metronome.getEffectType());
         assertEquals(0.2, metronome.doubleParam(), 1e-9, "每层增幅 20%");
+    }
+
+    // ------------------------------------------------------------------
+    // 批次⑤ 装备参数解析
+    // ------------------------------------------------------------------
+
+    @Test
+    void 批次五装备效果类型与参数正确() {
+        GameData data = GameData.instance();
+
+        HeldItem band = data.equipment("e_choice_band");
+        assertEquals(HeldItemEffect.CHOICE, band.getEffectType());
+        assertEquals("ATTACK", band.choiceKind(), "讲究头带修正物理招式");
+        assertEquals(1.5, band.choiceMultiplier(), 1e-9);
+
+        HeldItem vest = data.equipment("e_assault_vest");
+        assertEquals(HeldItemEffect.ASSAULT_VEST, vest.getEffectType());
+        assertEquals(1.5, vest.doubleParam(), 1e-9);
+
+        HeldItem amulet = data.equipment("e_clear_amulet");
+        assertEquals(HeldItemEffect.CLEAR_AMULET, amulet.getEffectType());
+        assertTrue(amulet.getParam().isEmpty(), "清净坠饰无参数");
+
+        assertEquals(HeldItemEffect.WEAKNESS_POLICY, data.equipment("e_weakness_policy").getEffectType());
+        assertEquals(2, data.equipment("e_weakness_policy").statLevelsParam(), "弱点保险提升 2 级");
+        assertEquals(HeldItemEffect.BLUNDER_POLICY, data.equipment("e_blunder_policy").getEffectType());
+        assertEquals(2, data.equipment("e_blunder_policy").statLevelsParam(), "打空保险提升 2 级");
+        assertEquals(HeldItemEffect.THROAT_SPRAY, data.equipment("e_throat_spray").getEffectType());
+        assertEquals(1, data.equipment("e_throat_spray").statLevelsParam(), "爽喉喷雾提升 1 级");
+
+        // 场地种子：场地|能力项|等级
+        HeldItem electricSeed = data.equipment("e_electric_seed");
+        assertEquals(HeldItemEffect.TERRAIN_SEED, electricSeed.getEffectType());
+        assertEquals("ELECTRIC", electricSeed.seedTerrainParam());
+        assertEquals("DEFENSE", electricSeed.statParam());
+        assertEquals(1, electricSeed.statLevels());
+        assertEquals("PSYCHIC", data.equipment("e_psychic_seed").seedTerrainParam());
+        assertEquals("MISTY", data.equipment("e_misty_seed").seedTerrainParam());
+        assertEquals("GRASSY", data.equipment("e_grassy_seed").seedTerrainParam());
+
+        // 属性反应：属性|能力项|等级
+        HeldItem bulb = data.equipment("e_absorb_bulb");
+        assertEquals(HeldItemEffect.TYPE_REACTION, bulb.getEffectType());
+        assertEquals("WATER", bulb.reactionTypeParam());
+        assertEquals("SP_ATTACK", bulb.statParam());
+        assertEquals(1, bulb.statLevels());
+        assertEquals("ELECTRIC", data.equipment("e_cell_battery").reactionTypeParam());
+        assertEquals("ATTACK", data.equipment("e_cell_battery").statParam());
+        assertEquals("WATER", data.equipment("e_luminous_moss").reactionTypeParam());
+        assertEquals("SP_DEFENSE", data.equipment("e_luminous_moss").statParam());
+        assertEquals("ICE", data.equipment("e_snowball").reactionTypeParam());
+        assertEquals("ATTACK", data.equipment("e_snowball").statParam());
+
+        HeldItem umbrella = data.equipment("e_utility_umbrella");
+        assertEquals(HeldItemEffect.UTILITY_UMBRELLA, umbrella.getEffectType());
+        assertTrue(umbrella.getParam().isEmpty(), "万能伞无参数");
+    }
+
+    @Test
+    void 能力项英文名可解析() {
+        assertEquals(StatModifier.ATTACK, StatModifier.parse("ATTACK"));
+        assertEquals(StatModifier.SP_DEFENSE, StatModifier.parse(" sp_defense "), "应容忍大小写与空格");
+        assertNull(StatModifier.parse("oops"), "无法解析的能力项返回 null");
+        assertNull(StatModifier.parse(null));
+        assertNull(StatModifier.parse("   "));
     }
 
     @Test
