@@ -124,10 +124,10 @@ public class RogueFloorView {
 
     /** 顶栏标题白色描边：单 dropshadow 全向膨胀模拟描边（规避中文 stroke 光栅化性能红线；静态文本仅首次渲染付一次成本）。 */
     private static final String TITLE_OUTLINE =
-            " -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 1.8, 1.0, 0, 0);";
-    /** 英文副标白色描边：小半径（6.5px 小字号防糊）。 */
+            " -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 2.2, 1.0, 0, 0);";
+    /** 英文副标白色描边：小半径（7.5px 小字号防糊）。 */
     private static final String TITLE_OUTLINE_THIN =
-            " -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 1.0, 1.0, 0, 0);";
+            " -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 1.2, 1.0, 0, 0);";
 
     private final GameSession session;
     private final Consumer<Option> onOptionSelected;
@@ -227,15 +227,15 @@ public class RogueFloorView {
     /** 标题横幅：去除胶囊边框与背景，只余白色描边 + 深蓝字 + 副提示胶囊。 */
     private VBox buildBanner() {
         Label left = new Label("⚔");
-        left.setStyle("-fx-font-size: 14px; -fx-text-fill: #123c63;" + TITLE_OUTLINE);
+        left.setStyle("-fx-font-size: 16px; -fx-text-fill: #123c63;" + TITLE_OUTLINE);
         Label right = new Label("⚔");
-        right.setStyle("-fx-font-size: 14px; -fx-text-fill: #123c63;" + TITLE_OUTLINE);
+        right.setStyle("-fx-font-size: 16px; -fx-text-fill: #123c63;" + TITLE_OUTLINE);
 
         Label title = new Label("事件遭遇");
-        title.setStyle(FONT + " -fx-font-size: 15px; -fx-font-weight: 900; -fx-text-fill: #123c63;"
+        title.setStyle(FONT + " -fx-font-size: 18px; -fx-font-weight: 900; -fx-text-fill: #123c63;"
                 + TITLE_OUTLINE);
         Label english = new Label("ENCOUNTER EVENT");
-        english.setStyle("-fx-font-size: 6.5px; -fx-font-weight: bold;"
+        english.setStyle("-fx-font-size: 7.5px; -fx-font-weight: bold;"
                 + " -fx-text-fill: #123c63;" + TITLE_OUTLINE_THIN);
         VBox titleCol = new VBox(0, title, english);
         titleCol.setAlignment(Pos.CENTER);

@@ -243,17 +243,22 @@ public class MainView {
         return grid;
     }
 
-    /** 左栏：六个队伍位纵排（空位画虚线占位），悬停任意精灵在中栏查看信息。 */
+    /** 左栏：六个队伍位纵排（空位画虚线占位），悬停任意精灵在中栏查看信息；整列随行高拉伸，与中栏信息框等高对齐。 */
     private VBox buildPartyColumn() {
         VBox column = new VBox(4);
+        // 放开最大高度：与中栏信息框同受 GridPane 行高拉伸，六格总纵向长度与中栏保持一致
+        column.setMaxHeight(Double.MAX_VALUE);
         List<Pokemon> party = player.getParty();
         Pokemon active = player.getActive();
         for (int i = 0; i < PARTY_SLOT_COUNT; i++) {
+            Region slot;
             if (i < party.size()) {
-                column.getChildren().add(buildPartySlot(party.get(i), active, i));
+                slot = buildPartySlot(party.get(i), active, i);
             } else {
-                column.getChildren().add(buildEmptySlot());
+                slot = buildEmptySlot();
             }
+            VBox.setVgrow(slot, Priority.ALWAYS); // 行高余量六格均分（每格在被拉伸的列内平分）
+            column.getChildren().add(slot);
         }
         return column;
     }
@@ -301,7 +306,7 @@ public class MainView {
         slot.setMaxWidth(Double.MAX_VALUE);
         slot.setPrefHeight(PARTY_SLOT_HEIGHT);
         slot.setMinHeight(Region.USE_PREF_SIZE);
-        slot.setMaxHeight(Region.USE_PREF_SIZE);
+        slot.setMaxHeight(Double.MAX_VALUE); // 允许随左栏列高拉伸（六格总高与中栏信息框一致）
         slot.setOnMouseEntered(e -> {
             slot.setStyle(slotStyle(isActive, true));
             showPokemonDetail(pokemon);
@@ -423,7 +428,7 @@ public class MainView {
         slot.setMaxWidth(Double.MAX_VALUE);
         slot.setPrefHeight(PARTY_SLOT_HEIGHT);
         slot.setMinHeight(Region.USE_PREF_SIZE);
-        slot.setMaxHeight(Region.USE_PREF_SIZE);
+        slot.setMaxHeight(Double.MAX_VALUE); // 同队伍位：随列高拉伸
         return slot;
     }
 
