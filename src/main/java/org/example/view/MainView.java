@@ -32,9 +32,12 @@ import org.example.model.HeldItem;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
 import org.example.model.ItemStack;
+import org.example.model.Move;
+import org.example.model.MoveCategory;
 import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.Stats;
 import org.example.model.StatusCondition;
 import org.example.util.ImageBackgrounds;
 import org.example.util.SpriteLoader;
@@ -50,7 +53,8 @@ import org.example.util.UiScale;
  *     <li><b>中</b>：左中右三栏，宽度约 3:3:2 —— 左栏为六格队伍位（首发格左侧标 ⭐，非首发格
  *     第二行右侧附「设为首发」小按钮；点格子其余区域进详情）；
  *     右栏为背包列表（精灵球恒置顶、按捕捉强度降序，其余保持原序）；中栏为简要信息框，随光标在
- *     左/右栏按钮上悬停切换内容（精灵：插画/名称/属性/等级/状态/HP/EXP/四个技能/装备；
+ *     左/右栏按钮上悬停切换内容（精灵：插画/名称/属性/等级与状态同行/图鉴描述/性格/HP/EXP/
+ *     六项能力值/出战技能与技能库/装备与装备库，顺序与详情页右侧信息框一致；
  *     道具：插图/数量/功能表述）。中栏保持最后一次悬停内容，方便移开光标阅读。</li>
  *     <li><b>下</b>：进入层内事件 / 保存游戏 / 读取存档三个按钮居中排列（「返回主界面」已上移至顶部）。</li>
  * </ul>
@@ -359,6 +363,7 @@ public class MainView {
     private ScrollPane buildDetailPane() {
         detailBox = new VBox(5);
         detailBox.setPadding(new Insets(8, 10, 8, 10));
+        detailBox.getStyleClass().add("detail-box");
         showDetailHint();
 
         ScrollPane scroll = new ScrollPane(detailBox);
@@ -385,7 +390,7 @@ public class MainView {
         detailBox.getChildren().add(hint);
     }
 
-    /** 中栏内容：精灵简要信息（插画 → 名称 → 属性 → 等级 → 状态 → HP → EXP → 技能 → 装备）。 */
+    /** 中栏内容：精灵完整信息（插画 → 名称/属性 → 等级与状态同行 → 详情页信息框全量信息，序一致）。 */
     private void showPokemonDetail(Pokemon pokemon) {
         detailBox.getChildren().clear();
         detailBox.setAlignment(Pos.TOP_LEFT);
@@ -418,10 +423,29 @@ public class MainView {
         }
         types.setAlignment(Pos.CENTER_LEFT);
 
+        // 等级与状态合并为一行（原各占一行，纵向更紧凑）
         Label level = new Label("等级　Lv." + pokemon.getLevel());
         level.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #222;");
         Label status = new Label("状态　" + statusText(pokemon));
         status.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: " + statusColor(pokemon) + ";");
+        HBox levelStatus = new HBox(14, level, status);
+        levelStatus.setAlignment(Pos.CENTER_LEFT);
+
+        // 图鉴描述（详情页信息卡同款；宝可梦库无数据时省略）
+        org.example.pokemon.domain.Species library =
+                org.example.pokemon.infrastructure.GameData.instance()
+                        .getSpecies(pokemon.getSpecies().getId()).orElse(null);
+        Label description = null;
+        if (library != null && library.getDescription() != null && !library.getDescription().isBlank()) {
+            description = new Label(library.getDescription());
+            description.setWrapText(true);
+            description.setMaxWidth(Double.MAX_VALUE);
+            description.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #306090;");
+        }
+
+        // 性格行（状态已与等级合并到上方行，此处不重复）
+        Label nature = new Label("性格：" + pokemon.getNature().getName());
+        nature.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #222;");
 
         double hpRatio = pokemon.getMaxHp() <= 0 ? 0 : (double) pokemon.getCurrentHp() / pokemon.getMaxHp();
         Label hp = new Label("HP　" + pokemon.getCurrentHp() + " / " + pokemon.getMaxHp());
@@ -441,38 +465,175 @@ public class MainView {
         exp.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #222;");
         StackPane expBar = bar(expRatio, "#4F8FD9", BAR_WIDTH, 8);
 
-        VBox moves = new VBox(3);
+        // 出战技能（详情页同款两行式：名称+PP ／ 属性徽章+分类·威力·命中）
+        VBox moves = new VBox(4);
         if (pokemon.getMoveSlots().isEmpty()) {
             Label none = new Label("尚未携带技能。");
             none.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #888;");
             moves.getChildren().add(none);
         } else {
             for (MoveSlot slot : pokemon.getMoveSlots()) {
-                moves.getChildren().add(moveRow(slot));
+                moves.getChildren().add(battleMoveRow(slot));
             }
         }
 
-        HeldItem held = pokemon.getHeldItem();
-        Label equipment = new Label(held == null ? "未穿戴" : held.getName() + " — " + held.getDescription());
-        equipment.setWrapText(true);
-        equipment.setMaxWidth(Double.MAX_VALUE);
-        equipment.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: "
-                + (held == null ? "#888" : "#2a6e2a") + ";");
+        // 技能库（灰底小标题 + 全部已知技能，右侧标出战状态；主菜单不提供换技能操作）
+        Label poolTitle = new Label("技能库（" + pokemon.getKnownMoves().size() + "）");
+        poolTitle.setStyle(YH + "-fx-font-weight: bold; -fx-font-size: 12px; -fx-text-fill: #333;"
+                + " -fx-background-color: rgba(0, 0, 0, 0.07); -fx-background-radius: 6; -fx-padding: 2 8;");
+        VBox movePool = new VBox(2);
+        if (pokemon.getKnownMoves().isEmpty()) {
+            Label none = new Label("技能库为空。");
+            none.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #888;");
+            movePool.getChildren().add(none);
+        } else {
+            for (Move known : pokemon.getKnownMoves()) {
+                movePool.getChildren().add(poolInfoRow(pokemon, known));
+            }
+        }
 
-        detailBox.getChildren().addAll(portraitBox, name, types, level, status, hp, hpBar, exp, expBar,
-                divider(), sectionLabel("技能"), moves, divider(), sectionLabel("装备"), equipment);
+        // 装备（已穿戴 + 装备库全部道具及穿戴状态；主菜单不提供穿脱操作）
+        HeldItem held = pokemon.getHeldItem();
+        VBox equipment = new VBox(3);
+        Label worn = new Label(held == null ? "当前未穿戴装备。"
+                : "已穿戴：" + held.getName() + " — " + held.getDescription());
+        worn.setWrapText(true);
+        worn.setMaxWidth(Double.MAX_VALUE);
+        worn.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: " + (held == null ? "#888" : "#2a6e2a") + ";");
+        equipment.getChildren().add(worn);
+        List<HeldItem> owned = player.getEquipment();
+        if (owned.isEmpty()) {
+            Label none = new Label("装备库为空：可在肉鸽楼层选择「装备补给」事件获得装备。");
+            none.setWrapText(true);
+            none.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #888;");
+            equipment.getChildren().add(none);
+        } else {
+            for (HeldItem item : owned) {
+                equipment.getChildren().add(equipmentInfoRow(pokemon, item));
+            }
+        }
+
+        detailBox.getChildren().addAll(portraitBox, name, types, levelStatus);
+        if (description != null) {
+            detailBox.getChildren().add(description);
+        }
+        detailBox.getChildren().addAll(nature, hp, hpBar, exp, expBar,
+                divider(), sectionLabel("能力值（左：当前　右：种族）"), statsRows(pokemon),
+                divider(), sectionLabel("出战技能（" + pokemon.getMoveSlots().size() + "/4）"), moves,
+                poolTitle, movePool,
+                divider(), sectionLabel("装备"), equipment);
     }
 
-    /** 技能单行：属性徽章 + 技能名（右端威力；变化类技能威力显示 --）。 */
-    private static HBox moveRow(MoveSlot slot) {
+    /** 能力值 6 行（详情页同款）：名称 + 当前值 + 比例条 + 种族值。 */
+    private static VBox statsRows(Pokemon pokemon) {
+        Stats actual = pokemon.getStats();
+        Stats base = pokemon.getSpecies().getBaseStats();
+        int max = Math.max(1, Math.max(actual.getHp(), Math.max(actual.getAttack(),
+                Math.max(Math.max(actual.getDefense(), actual.getSpAttack()),
+                        Math.max(actual.getSpDefense(), actual.getSpeed())))));
+        VBox box = new VBox(2);
+        box.getChildren().addAll(
+                statRow("HP", actual.getHp(), base.getHp(), max),
+                statRow("物攻", actual.getAttack(), base.getAttack(), max),
+                statRow("物防", actual.getDefense(), base.getDefense(), max),
+                statRow("特攻", actual.getSpAttack(), base.getSpAttack(), max),
+                statRow("特防", actual.getSpDefense(), base.getSpDefense(), max),
+                statRow("速度", actual.getSpeed(), base.getSpeed(), max));
+        return box;
+    }
+
+    /** 单项能力值行：名称 + 当前值 + 比例条（缩窄适配中栏）+ 种族值。 */
+    private static HBox statRow(String name, int value, int baseValue, int max) {
+        Label nameLabel = new Label(name);
+        nameLabel.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #444;");
+        nameLabel.setPrefWidth(30);
+        Label valueLabel = new Label(String.valueOf(value));
+        valueLabel.setStyle(YH + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #222;");
+        valueLabel.setPrefWidth(30);
+        valueLabel.setAlignment(Pos.CENTER_RIGHT);
+        Label baseLabel = new Label("(" + baseValue + ")");
+        baseLabel.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #999;");
+        baseLabel.setPrefWidth(30);
+        HBox row = new HBox(5, nameLabel, valueLabel, bar((double) value / max, "#5E9ED6", 76, 6), baseLabel);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    /** 出战技能单行（详情页同款）：名称 + PP ／ 属性徽章 + 分类·威力·命中。 */
+    private static VBox battleMoveRow(MoveSlot slot) {
         Label name = new Label(slot.getMove().getName());
-        name.setStyle(YH + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #333;");
+        name.setStyle(YH + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #222;");
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        Label power = new Label("威力 " + (slot.getMove().getPower() <= 0 ? "--" : slot.getMove().getPower()));
-        power.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #666;");
-        HBox row = new HBox(5, chip(slot.getMove().getType().getDisplayName(),
-                slot.getMove().getType().getColorCode()), name, spacer, power);
+        Label pp = new Label("PP " + slot.getCurrentPp() + "/" + slot.getMaxPp());
+        pp.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: "
+                + (slot.getCurrentPp() == 0 ? "#aa2222" : "#555") + ";");
+        HBox line1 = new HBox(6, name, spacer, pp);
+        line1.setAlignment(Pos.CENTER_LEFT);
+
+        MoveCategory category = slot.getMove().getCategory();
+        String categoryText = category == MoveCategory.PHYSICAL ? "物理"
+                : category == MoveCategory.SPECIAL ? "特殊" : "变化";
+        Label detail = new Label(categoryText
+                + " · 威力 " + (slot.getMove().getPower() <= 0 ? "--" : slot.getMove().getPower())
+                + " · 命中 " + (slot.getMove().getAccuracy() < 0 ? "--" : slot.getMove().getAccuracy()));
+        detail.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #666;");
+        HBox line2 = new HBox(5, chip(slot.getMove().getType().getDisplayName(),
+                slot.getMove().getType().getColorCode()), detail);
+        line2.setAlignment(Pos.CENTER_LEFT);
+        return new VBox(1, line1, line2);
+    }
+
+    /** 技能库信息行：名称 · 属性 · 威力 + 右侧出战状态（纯信息，无换技能操作）。 */
+    private static HBox poolInfoRow(Pokemon pokemon, Move move) {
+        Label info = new Label(move.getName() + " · " + move.getType().getDisplayName()
+                + " · 威力 " + (move.getPower() <= 0 ? "--" : move.getPower()));
+        info.setWrapText(true);
+        info.setMaxWidth(Double.MAX_VALUE);
+        info.setMinWidth(0); // 允许 HBox 收缩换行，避免挤掉右侧状态标签
+        HBox.setHgrow(info, Priority.ALWAYS);
+        info.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
+        boolean inBattle = pokemon.hasMove(move);
+        Label state = new Label(inBattle ? "出战中" : "未出战");
+        state.setMinWidth(Region.USE_PREF_SIZE); // 优先保宽：收缩全部由左侧信息文本承担
+        state.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: " + (inBattle ? "#2a6e2a" : "#999") + ";");
+        HBox row = new HBox(6, info, state);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    /** 装备库信息行：名称：说明 + 右侧穿戴状态（纯信息，无穿脱操作）。 */
+    private HBox equipmentInfoRow(Pokemon pokemon, HeldItem item) {
+        Label info = new Label(item.getName() + "：" + item.getDescription());
+        info.setWrapText(true);
+        info.setMaxWidth(Double.MAX_VALUE);
+        info.setMinWidth(0); // 允许 HBox 收缩换行，避免挤掉右侧状态标签
+        HBox.setHgrow(info, Priority.ALWAYS);
+        info.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
+
+        Pokemon holder = null;
+        for (Pokemon mate : player.getParty()) {
+            if (mate.getHeldItem() == item) {
+                holder = mate;
+                break;
+            }
+        }
+        String stateText;
+        String stateColor;
+        if (holder == pokemon) {
+            stateText = "已穿戴";
+            stateColor = "#2a6e2a";
+        } else if (holder != null) {
+            stateText = holder.getName() + " 装备中";
+            stateColor = "#8a6d00";
+        } else {
+            stateText = "未装备";
+            stateColor = "#999";
+        }
+        Label state = new Label(stateText);
+        state.setMinWidth(Region.USE_PREF_SIZE); // 优先保宽：收缩全部由左侧信息文本承担
+        state.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: " + stateColor + ";");
+        HBox row = new HBox(6, info, state);
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
     }
