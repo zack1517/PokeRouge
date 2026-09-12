@@ -516,8 +516,8 @@ public class BattleView {
     private static final PokeTone TONE_BLUE = new PokeTone("#6890f0", "#2850b0", "#ffffff", "#2850b0");
     private static final PokeTone TONE_GREEN = new PokeTone("#78c850", "#286820", "#ffffff", "#286820");
     private static final PokeTone TONE_RED = new PokeTone("#f85888", "#a01840", "#ffffff", "#a01840");
-    /** 技能格灰色按钮配色（问题3补充）：普通（NORMAL）属性技能不用灰褐本色（#A8A878），改用中性灰：底=灰蓝 #b9c2cc、描边/硬阴影=同色加深、深字。 */
-    private static final PokeTone TONE_GREY = new PokeTone("#b9c2cc", "#787e85", POKE_INK, "#787e85");
+    /** 技能格灰色按钮配色（问题3补充）：普通（NORMAL）属性技能不用灰褐本色（#A8A878），改用浅灰：底=亮浅灰蓝 #d9dfe7、描边/硬阴影=中灰 #98a4b3、深字。 */
+    private static final PokeTone TONE_GREY = new PokeTone("#d9dfe7", "#98a4b3", POKE_INK, "#98a4b3");
     /** 马卡龙四色轮换表（道具 / 精灵格按格索引取色；技能格自 2026-09-12 起改按技能属性本色，见 {@link #typeTone}）。 */
     private static final PokeTone[] TONE_CYCLE = {TONE_YELLOW, TONE_BLUE, TONE_GREEN, TONE_RED};
 
