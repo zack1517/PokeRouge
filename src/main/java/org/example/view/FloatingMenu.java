@@ -14,6 +14,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -33,9 +34,9 @@ import java.util.function.Consumer;
  * <p>供启动页与其它悬浮式页面（如自定义战斗模式选择页）复用，保证按钮样式、
  * 交互动效完全一致；纯视觉由 {@code /css/start-menu.css} 承担，使用方需在场景中挂载该样式表。</p>
  *
- * <p>可选项：{@link #setCompact} 切换紧凑尺寸（顶栏返回按钮等小号场景，仅缩尺寸与字号，
- * 配色 / 动效不变）；{@link #setDeselectOnExit} 让悬停变色不驻留（鼠标移开后恢复常态色，
- * 适合单按钮顶栏场景）。</p>
+ * <p>可选项：{@link #setCompact} 切换紧凑尺寸（顶栏返回按钮等小号场景：图标圆底 + 单行
+ * 中文相邻居中、无右指示符，仅缩尺寸与字号，配色 / 动效不变）；{@link #setDeselectOnExit}
+ * 让悬停变色不驻留（鼠标移开后恢复常态色，适合单按钮顶栏场景）。</p>
  */
 public final class FloatingMenu {
 
@@ -53,11 +54,13 @@ public final class FloatingMenu {
     private static final double MENU_PADDING_H = 24;
 
     /** 紧凑尺寸（顶栏返回胶囊等小号场景；与 CSS .menu-pill.menu-compact 配套）。 */
-    private static final double COMPACT_WIDTH = 132;
-    private static final double COMPACT_HEIGHT = 27;
+    private static final double COMPACT_WIDTH = 78;
+    private static final double COMPACT_HEIGHT = 24;
     private static final double COMPACT_ICON_WRAP_SIZE = 18;
+    /** 紧凑版图标圆底与文字的间距。 */
+    private static final double COMPACT_ICON_GAP = 7;
 
-    /** 紧凑版内容区左右内边距之和（与 CSS 中 .menu-compact 的 -fx-padding 2 11 对应）。 */
+    /** 紧凑版内容区左右内边距之和（与 CSS 中 .menu-compact 的 -fx-padding 3 11 对应）。 */
     private static final double COMPACT_PADDING_H = 22;
 
     /** 悬停上浮位移（负值向上）。 */
@@ -148,19 +151,30 @@ public final class FloatingMenu {
 
         Label title = new Label(label);
         title.getStyleClass().add("menu-title");
-        Label subLabel = new Label(sub);
-        subLabel.getStyleClass().add("menu-sub");
-        VBox texts = new VBox(1, title, subLabel);
-        texts.setAlignment(Pos.CENTER); // 主/副标签两行相互居中
+        VBox texts = new VBox(1, title);
+        if (sub != null && !sub.isBlank()) {
+            Label subLabel = new Label(sub);
+            subLabel.getStyleClass().add("menu-sub");
+            texts.getChildren().add(subLabel); // 主/副标签两行相互居中（副标签可省略）
+        }
+        texts.setAlignment(Pos.CENTER);
         texts.setFillWidth(false);      // 较短的副标签不被拉宽，保持居中堆叠
 
-        Label caret = new Label(">>>");
-        caret.getStyleClass().add("menu-caret");
-
-        // 三层叠放：图标靠左、文本块严格居中于按钮、指示符靠右
-        StackPane content = new StackPane(iconWrap, texts, caret);
-        StackPane.setAlignment(iconWrap, Pos.CENTER_LEFT);
-        StackPane.setAlignment(caret, Pos.CENTER_RIGHT);
+        // 标准模式：三层叠放（图标靠左、文本块严格居中于按钮、指示符靠右）；
+        // 紧凑模式：图标圆底与单行文字相邻居中——无右指示符，横向贴内容收紧
+        Region content;
+        if (compact) {
+            HBox row = new HBox(COMPACT_ICON_GAP, iconWrap, texts);
+            row.setAlignment(Pos.CENTER);
+            content = row;
+        } else {
+            Label caret = new Label(">>>");
+            caret.getStyleClass().add("menu-caret");
+            StackPane layers = new StackPane(iconWrap, texts, caret);
+            StackPane.setAlignment(iconWrap, Pos.CENTER_LEFT);
+            StackPane.setAlignment(caret, Pos.CENTER_RIGHT);
+            content = layers;
+        }
         content.setMaxWidth(Double.MAX_VALUE);
 
         Button button = new Button();
