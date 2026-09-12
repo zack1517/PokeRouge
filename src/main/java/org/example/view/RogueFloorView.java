@@ -17,10 +17,6 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.paint.Color;
-import javafx.scene.shape.SVGPath;
-import javafx.scene.shape.StrokeLineCap;
-import javafx.scene.shape.StrokeLineJoin;
 import org.example.GameSession;
 import org.example.config.AppConfig;
 import org.example.model.Option;
@@ -595,7 +591,9 @@ public class RogueFloorView {
 
     /** 行动点耗尽 / 无节点可走：提示道馆战即将展开并提供挑战按钮（文案与旧版一致）。 */
     private VBox buildNoOptionBox(RunData data) {
-        Region icon = buildWarningTriangle(30);
+        Label icon = new Label("⛔");
+        // 大字号 emoji 在 JavaFX 下回退为单色字形，用 text-fill 染红（小字号才是彩色字形）
+        icon.setStyle("-fx-font-size: 30px; -fx-text-fill: #C62828;");
 
         Label bossHint = new Label("行动点已用尽，无法再进入本段节点 —— 道馆战即将展开！");
         bossHint.setWrapText(true);
@@ -623,46 +621,18 @@ public class RogueFloorView {
 
     /** 必然节点预告条：让玩家在规划路线时知道行动点耗尽的后果（文案与旧版一致）。
      *  设计稿底部警示条为浅蓝半透底，但本页背景为实景地图图，需提高底不透明度保证可读；
-     *  警示字色为红色，⚠ 用自绘的彩色警告三角（JavaFX 无法彩显 U+26A0）。 */
-    private Region buildMandatoryPreview(RunData data) {
-        Label preview = new Label("行动点耗尽或本段无可走节点时，必然触发：" + mandatoryName(data));
+     *  警示字色为红色，前置 ⛔（U+26D4，渲染尺寸 ≤15px 时为彩色 emoji）。 */
+    private Label buildMandatoryPreview(RunData data) {
+        Label preview = new Label("⛔ 行动点耗尽或本段无可走节点时，必然触发：" + mandatoryName(data));
         preview.setWrapText(true);
         preview.setAlignment(Pos.CENTER);
         preview.setMaxWidth(Double.MAX_VALUE);
         preview.setStyle(FONT + " -fx-font-size: 8.5px; -fx-font-weight: bold;"
-                + " -fx-text-fill: #C62828;");
-
-        HBox bar = new HBox(5, buildWarningTriangle(11), preview);
-        bar.setAlignment(Pos.CENTER);
-        bar.setMaxWidth(Double.MAX_VALUE);
-        bar.setStyle("-fx-background-color: rgba(235,242,252,0.86); -fx-background-radius: 12;"
+                + " -fx-text-fill: #C62828;"
+                + " -fx-background-color: rgba(235,242,252,0.86); -fx-background-radius: 12;"
                 + " -fx-border-color: rgba(21,101,192,0.35); -fx-border-width: 1.5;"
                 + " -fx-border-radius: 12; -fx-padding: 4 16;");
-        return bar;
-    }
-
-    /** 彩色警告三角（⚠️ 同款造型）：黄底 + 深灰感叹号 —— JavaFX 17 无法彩显 U+26A0
-     *  （VS16 变体序列会渲染成缺字方框），用自绘图形替代；{@code width} = 三角底宽（设计画布 px）。 */
-    private static Region buildWarningTriangle(double width) {
-        double k = width / 10.0; // SVG 基准宽 10
-        SVGPath tri = new SVGPath();
-        tri.setContent("M5 0 L10 9 L0 9 Z");
-        tri.setFill(Color.web("#FFCB05"));
-        tri.setStroke(Color.web("#3A3A3A"));
-        tri.setStrokeWidth(1.3); // 不乘 k：setScale 已把描边随视觉尺寸等比放大
-        tri.setStrokeLineJoin(StrokeLineJoin.ROUND);
-
-        SVGPath mark = new SVGPath();
-        mark.setContent("M5 2.7 L5 5.4 M5 6.7 L5 6.71");
-        mark.setStroke(Color.web("#3A3A3A"));
-        mark.setStrokeWidth(1.4);
-        mark.setStrokeLineCap(StrokeLineCap.ROUND);
-
-        StackPane icon = new StackPane(tri, mark);
-        icon.setScaleX(k);
-        icon.setScaleY(k);
-        fixedSize(icon, 10 * k, 9 * k); // 缩放不改变布局占位，手工钉住缩放后尺寸
-        return icon;
+        return preview;
     }
 
     private String retryText(RunData data) {
