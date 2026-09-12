@@ -73,7 +73,7 @@ import java.util.function.IntPredicate;
  * 见 {@link org.example.GameSession#battleBackgroundFor(org.example.model.OptionType)}）；未指定时默认野外图。</p>
  *
  * <p>2026-09-11 样式改版（整合「临时/react」Web 版战斗页设计）：信息卡为奶油米色渐变 + 深海军蓝描边硬阴影、
- * 行动按钮与技能 / 道具 / 精灵格为马卡龙四色（黄 / 蓝 / 绿 / 红）硬底按钮、日志与详情卡为金框白芯、
+ * 行动按钮与技能 / 道具 / 精灵格为马卡龙四色（黄 / 蓝 / 绿 / 红）硬底按钮、日志与详情卡为金框米色芯（芯色与信息卡同底色）、
  * HP 条为棕底 + 绿 / 黄 / 红渐变填充、属性徽章按属性分色。仅调整配色 / 描边 / 圆角 / 阴影等视觉样式：
  * 全部描边改由背景层内缩模拟（不占 padding），各按钮、文本、贴图（宝可梦立绘区域）的大小与位置均不变；
  * HP 条内部轨道样式在 {@code /css/battle.css}。</p>
@@ -154,14 +154,16 @@ public class BattleView {
      * 日志每回合重建即卡顿数秒至十余秒（2026-09-09 量化验证），故战斗文本用普通深色 Label。</p>
      */
     private static final int MAX_LOG_ROWS = 4;
+    /** 信息卡奶油米色芯渐变：敌我宝可梦信息卡（{@link #battleCard(boolean)}）与底栏日志框 / 详情卡共用同一底色。 */
+    private static final String CARD_CREAM = "linear-gradient(to bottom right, #f5f0e8, #e8dfc8)";
     /**
-     * 日志态左块外框（与右侧行动区视觉分隔）：金框白芯（react 战斗日志样式）——
-     * 外层深海军蓝细描边 + 宝可梦金边框 + 白芯，全部画在背景层（不改 padding，文本位置不变）。
+     * 日志态左块外框（与右侧行动区视觉分隔）：金框米色芯（react 战斗日志样式）——
+     * 外层深海军蓝细描边 + 宝可梦金边框 + 米色芯（与敌我宝可梦信息卡同底色），全部画在背景层（不改 padding，文本位置不变）。
      * 纵向空间紧凑（内容区高约 99，场况 18 + 日志 4×18 + 间距 2 约 92），故上下 padding 仅 2。
      * 技能面板态由 showMoveMenu 清除本样式（左块那时放技能格，不套日志框）。
      */
     private static final String LEFT_LOG_FRAME_CSS =
-            "-fx-background-color: rgba(6, 22, 42, 0.55), rgba(255, 203, 5, 0.92), #ffffff;"
+            "-fx-background-color: rgba(6, 22, 42, 0.55), rgba(255, 203, 5, 0.92), " + CARD_CREAM + ";"
                     + " -fx-background-insets: -2, 0, 3; -fx-background-radius: 18, 16, 13;"
                     + " -fx-padding: 2 10;"
                     + "-fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.4, 0, 4);";
@@ -473,16 +475,16 @@ public class BattleView {
         VBox card = new VBox(3);
         String radius = enemy ? "18 4 18 4, 15 1 15 1" : "4 18 4 18, 1 15 1 15";
         String shadow = enemy ? "-4, 4" : "4, 4";
-        card.setStyle("-fx-background-color: " + POKE_INK + ", linear-gradient(to bottom right, #f5f0e8, #e8dfc8);"
+        card.setStyle("-fx-background-color: " + POKE_INK + ", " + CARD_CREAM + ";"
                 + "-fx-background-radius: " + radius + "; -fx-background-insets: 0, 3;"
                 + "-fx-padding: 6 12;"
                 + "-fx-effect: dropshadow(gaussian, rgba(42, 58, 92, 0.85), 0, 1, " + shadow + ");");
         return card;
     }
 
-    /** 底栏信息卡紧凑底样式（金框白芯，与 {@link #battleCard(boolean)} 同为 react 体系，纵向 padding 6→3，适配 1/4 底栏 ≈99 内容区）。 */
+    /** 底栏信息卡紧凑底样式（金框米色芯，芯色 {@link #CARD_CREAM} 与宝可梦信息卡同底色；与 {@link #battleCard(boolean)} 同为 react 体系，纵向 padding 6→3，适配 1/4 底栏 ≈99 内容区）。 */
     private static final String BOTTOM_CARD_CSS =
-            "-fx-background-color: rgba(6, 22, 42, 0.55), rgba(255, 203, 5, 0.92), #ffffff;"
+            "-fx-background-color: rgba(6, 22, 42, 0.55), rgba(255, 203, 5, 0.92), " + CARD_CREAM + ";"
                     + " -fx-background-insets: -2, 0, 3; -fx-background-radius: 18, 16, 13;"
                     + " -fx-padding: 3 10;"
                     + "-fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.4, 0, 4);";
