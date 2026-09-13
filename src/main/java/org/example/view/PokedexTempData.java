@@ -47,6 +47,18 @@ final class PokedexTempData {
         put("dratini", 1.8, 3.3);
         put("dragonair", 4.0, 16.5);
         put("dragonite", 2.2, 210.0);
+        put("milk-dragon", 0.5, 8.5);
+        put("milk-frog", 0.9, 25.0);
+        put("milk-toad", 1.6, 95.0);
+        put("milk-god", 1.8, 120.0);
+        put("articuno", 1.7, 55.4);
+        put("zapdos", 1.6, 52.6);
+        put("moltres", 2.0, 60.0);
+        put("raikou", 1.9, 178.0);
+        put("entei", 2.1, 198.0);
+        put("suicune", 2.0, 187.0);
+        put("magnemite", 0.3, 6.0);
+        put("magneton", 1.0, 60.0);
     }
 
     private PokedexTempData() {
