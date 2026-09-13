@@ -177,7 +177,7 @@ public class NodeGenerator {
     /** 装备补给：随机节点，低概率出现；随机获得一件可携带装备（结算由控制器执行）。 */
     public Option createReward() {
         return new Option("装备补给", OptionType.REWARD, OptionType.REWARD.getApCost(),
-                "拾获一件随机可携带装备；获得后在主菜单的精灵详情页中穿戴");
+                "拾获一件随机可携带装备");
     }
 
     /**
@@ -186,7 +186,7 @@ public class NodeGenerator {
      */
     public Option createCandy() {
         return new Option("糖果补给", OptionType.CANDY, OptionType.CANDY.getApCost(),
-                "拾获一批神奇糖果；吃下可让一只精灵直接提升 1 级，在主菜单的精灵详情页中喂食");
+                "拾获一批神奇糖果；吃下可让一只精灵直接提升 1 级，在主菜单右侧背包选中糖果后喂食");
     }
 
     /**
