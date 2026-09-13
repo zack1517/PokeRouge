@@ -18,11 +18,14 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 道具图鉴的数据层：把「商店商品目录」（{@link ShopStock#catalog()}，16 件消耗品 + 77 件装备）
+ * 道具图鉴的数据层：把「商店商品目录」（{@link ShopStock#catalog()}，17 件消耗品 + 77 件装备）
  * 与玩家的持有情况合并成图鉴条目列表，供 {@link ItemDexView} 纯展示。
  *
- * <p>图鉴<b>不做收集解锁</b>：93 件全部列出，只标注「已拥有 / 未拥有」（当前口径与
+ * <p>图鉴<b>不做收集解锁</b>：94 件全部列出，只标注「已拥有 / 未拥有」（当前口径与
  * {@code PokedexView} 一致）。装备额外标注穿戴者，便于在详情页外直接查「这件装备在谁身上」。</p>
+ *
+ * <p>在售商品还会带一列来源信息：装备从第 1 段起即可购买，消耗品标注「第几段起解锁」
+ * （解锁段取自 {@link ShopStock#catalog()}，与货架同一份口径）。</p>
  *
  * <p>消耗品在数据表里没有描述列，本类按类别现推一句效果说明（回复量 / 捕捉倍率 / 解除范围）；
  * 装备描述直接取 {@link HeldItem#getDescription()}。</p>
@@ -37,12 +40,18 @@ public final class ItemDexData {
      * @param description   效果说明（消耗品由本类按类别生成，装备取自数据表）
      * @param equipment     是否为可携带装备（false = 消耗品）
      * @param basePrice     第 1 段的基础售价（段数越靠后越贵，见 {@code RouteConfig#shopPrice}）
-     * @param sold          是否在商店售卖（{@code false} = 剧情专属道具，只能靠剧情获得）
+     * @param unlockSegment 从第几段起可在商店买到（装备恒为第 1 段，消耗品逐段放开；
+     *                      {@link ShopStock#NEVER_UNLOCKED} = 剧情专属道具，只能靠剧情获得）
      * @param ownedCount    持有数量：消耗品为背包件数，装备为 0 / 1（全库唯一）
      * @param holderName    当前穿戴该装备的精灵名；未穿戴或非装备时为 {@code null}
      */
     public record Entry(String id, String name, String description, boolean equipment,
-                        int basePrice, boolean sold, int ownedCount, String holderName) {
+                        int basePrice, int unlockSegment, int ownedCount, String holderName) {
+
+        /** 是否在商店售卖（{@link ShopStock#NEVER_UNLOCKED} 之外的条目都在售）。 */
+        public boolean sold() {
+            return unlockSegment != ShopStock.NEVER_UNLOCKED;
+        }
 
         /** 是否已拥有（消耗品看背包件数，装备看是否入库）。 */
         public boolean owned() {
@@ -83,14 +92,14 @@ public final class ItemDexData {
         for (ShopStock.CatalogEntry candidate : ShopStock.catalog()) {
             if (candidate.equipment()) {
                 entries.add(new Entry(candidate.id(), candidate.name(), candidate.description(), true,
-                        candidate.basePrice(), candidate.sold(),
+                        candidate.basePrice(), candidate.unlockSegment(),
                         ownedEquipment.contains(candidate.id()) ? 1 : 0,
                         holders.get(candidate.id())));
             } else {
                 Item item = GameData.instance().item(candidate.id());
                 int count = player == null || item == null ? 0 : player.getBag().countOf(item);
                 entries.add(new Entry(candidate.id(), candidate.name(), describe(item), false,
-                        candidate.basePrice(), candidate.sold(), count, null));
+                        candidate.basePrice(), candidate.unlockSegment(), count, null));
             }
         }
         entries.sort(Comparator.comparing(Entry::equipment)
@@ -114,6 +123,7 @@ public final class ItemDexData {
                     : "解除" + item.curedStatuses().stream()
                             .map(StatusCondition::getDisplayName)
                             .collect(Collectors.joining("、"));
+            case LEVEL_UP -> "提升精灵 " + number(item.getEffect()) + " 级（可在精灵详情页喂食）";
         };
     }
 

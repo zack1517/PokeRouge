@@ -12,14 +12,14 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@link NodeGenerator} 的单元测试：覆盖《需求文档》§4.2 的生成规则 ——
- * 常驻节点（路人 / 野外精灵 / 医院）每段必出、商店与特殊事件按概率出现、
+ * 常驻节点（路人 / 野外精灵 / 医院）每段必出、商店与共用的特殊事件槽位按概率出现、
  * 野外精灵有概率免单、必然节点由推进阶段决定且不占行动点。
  *
  * <p>用两个「恒命中 / 恒落空」的随机源把概率判定变成确定性断言，避免随机测试的偶发失败。</p>
  */
 class NodeGeneratorTest {
 
-    /** 随机数恒取下界：所有百分比判定都命中（商店与特殊事件必出、野外精灵必免单）。 */
+    /** 随机数恒取下界：所有百分比判定都命中（商店与特殊事件槽位必出、野外精灵必免单）。 */
     private static Random alwaysHit() {
         return new Random() {
             @Override
@@ -107,6 +107,37 @@ class NodeGeneratorTest {
         assertFalse(hasType(options, OptionType.REWARD), "宝可梦交换优先于装备补给判定");
         Option trade = options.stream().filter(o -> o.getType() == OptionType.TRADE).findFirst().orElseThrow();
         assertEquals(2, trade.getCost(), "宝可梦交换消耗 2 点行动点");
+    }
+
+    /** 特殊事件槽位只有一个：火箭队、宝可梦交换、装备补给与糖果补给都落空时，本段不再追加任何节点。 */
+    @Test
+    void 火箭队与装备补给都落空时本段没有特殊事件节点() {
+        // 段 1 的判定顺序：野外精灵免单 → 商店 → 火箭队 → 宝可梦交换 → 装备补给 → 糖果补给
+        List<Option> options = new NodeGenerator(scripted(99, 0, 99, 99, 99, 99))
+                .generateSegment(1).getRouteOptions();
+
+        assertTrue(hasType(options, OptionType.SHOP), "商店独立判定命中");
+        assertFalse(hasType(options, OptionType.ROCKET), "火箭队判定落空");
+        assertFalse(hasType(options, OptionType.TRADE), "宝可梦交换判定落空");
+        assertFalse(hasType(options, OptionType.REWARD), "装备补给判定落空");
+        assertFalse(hasType(options, OptionType.CANDY), "糖果补给判定落空");
+        assertEquals(4, options.size(), "槽位落空时该段只剩 3 个常驻节点 + 商店");
+    }
+
+    /** 糖果补给排在装备补给之后：装备补给命中时轮不到糖果，装备落空时糖果才有机会。 */
+    @Test
+    void 糖果补给在装备补给之后判定() {
+        // 段 1：野外免单落空 → 商店命中 → 火箭队落空 → 宝可梦交换落空 → 装备补给命中 → 糖果判定不再发生
+        List<Option> equipFirst = new NodeGenerator(scripted(99, 0, 99, 99, 0))
+                .generateSegment(1).getRouteOptions();
+        assertTrue(hasType(equipFirst, OptionType.REWARD), "装备补给命中时占用槽位");
+        assertFalse(hasType(equipFirst, OptionType.CANDY), "槽位已被占用，不应再有糖果补给");
+
+        // 段 1：野外免单落空 → 商店命中 → 火箭队落空 → 宝可梦交换落空 → 装备补给落空 → 糖果补给命中
+        List<Option> candy = new NodeGenerator(scripted(99, 0, 99, 99, 99, 0))
+                .generateSegment(1).getRouteOptions();
+        assertFalse(hasType(candy, OptionType.REWARD), "装备补给落空");
+        assertTrue(hasType(candy, OptionType.CANDY), "装备补给落空后糖果补给应能命中");
     }
 
     @Test

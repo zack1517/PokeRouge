@@ -1,12 +1,16 @@
 package org.example.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Random;
+
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link RouteConfig} 的单元测试：把《需求文档》§4 里「行动点上限随进度提升」「商店随进展变多、
- * 变贵」「敌人随进度变强」「自回血 1/5」这些可调数值的<b>趋势</b>钉住。
+ * {@link RouteConfig} 的单元测试：把《需求文档》§4 里「行动点上限随进度提升」「商店随进展变贵」
+ * 「敌人随进度变强」「自回血 1/5」这些可调数值的<b>趋势</b>钉住。
  *
  * <p>具体数值仍是「待配置」项，因此这里只断言相对关系（递增 / 有上限 / 非法输入兜底），
  * 不锁死绝对值 —— 调平衡时改 {@link RouteConfig} 不会大面积翻测试。</p>
@@ -29,14 +33,6 @@ class RouteConfigTest {
         assertEquals(0, RouteConfig.nodeHealAmount(0));
         assertEquals(0, RouteConfig.nodeHealAmount(-50), "非法 HP 不应算出负回复量");
         assertEquals(0, RouteConfig.nodeHealAmount(4), "整数除法向下取整");
-    }
-
-    @Test
-    void 商店商品数量随段增长但有上限() {
-        assertEquals(RouteConfig.BASE_SHOP_STOCK, RouteConfig.shopStockSize(1));
-        assertTrue(RouteConfig.shopStockSize(3) > RouteConfig.shopStockSize(1));
-        assertEquals(RouteConfig.MAX_SHOP_STOCK, RouteConfig.shopStockSize(99));
-        assertEquals(RouteConfig.BASE_SHOP_STOCK, RouteConfig.shopStockSize(0), "非法段号按第 1 段处理");
     }
 
     @Test
@@ -153,12 +149,46 @@ class RouteConfigTest {
     }
 
     @Test
+    void 糖果补给按段递增且节点描述提示用法() {
+        assertEquals(8, RouteConfig.candyCountForSegment(1));
+        assertEquals(10, RouteConfig.candyCountForSegment(2));
+        assertEquals(12, RouteConfig.candyCountForSegment(3));
+        assertEquals(14, RouteConfig.candyCountForSegment(4));
+        assertEquals(16, RouteConfig.candyCountForSegment(5));
+        assertEquals(RouteConfig.candyCountForSegment(1), RouteConfig.candyCountForSegment(0),
+                "非法段号按第 1 段处理");
+        assertEquals(RouteConfig.candyCountForSegment(1), RouteConfig.candyCountForSegment(-3));
+
+        Option candy = new NodeGenerator(new Random(1)).createCandy();
+        assertEquals(OptionType.CANDY, candy.getType());
+        assertEquals(1, candy.getCost(), "§4.1 糖果补给消耗 1 点");
+        assertTrue(candy.getDescription().contains("神奇糖果"),
+                "节点描述应说明发放的道具：" + candy.getDescription());
+    }
+
+    @Test
     void 总段数与节点上限已被配置钉住() {
         assertEquals(5, RouteConfig.TOTAL_SEGMENTS);
-        assertTrue(RouteConfig.MAX_ROUTE_NODES >= 5, "3 个常驻节点外还要容得下商店与特殊事件");
+        assertTrue(RouteConfig.MAX_ROUTE_NODES >= 6,
+                "3 个常驻节点外还要容得下商店、特殊事件槽位与末段固定的火箭队首领节点");
         assertTrue(RouteConfig.STARTING_GOLD > 0, "新远征必须带得动起始金币");
         assertEquals(2, RouteConfig.DEFEAT_RESCUE_AP_COST, "战败全灭救援固定消耗 2 点行动点");
         assertEquals(30, RouteConfig.TRADE_PERCENT, "宝可梦交换事件出现概率 30%");
         assertEquals(30, RouteConfig.EQUIPMENT_PERCENT, "装备补给事件出现概率 30%");
+    }
+
+    @Test
+    void 火箭队首领在末段起固定出现() {
+        assertEquals(RouteConfig.TOTAL_SEGMENTS, RouteConfig.ROCKET_BOSS_RESIDENT_SEGMENT,
+                "固定出现段号即末段");
+        assertFalse(RouteConfig.isRocketBossResidentSegment(1));
+        assertFalse(RouteConfig.isRocketBossResidentSegment(RouteConfig.TOTAL_SEGMENTS - 1));
+        assertTrue(RouteConfig.isRocketBossResidentSegment(RouteConfig.TOTAL_SEGMENTS));
+        assertTrue(RouteConfig.isRocketBossResidentSegment(RouteConfig.TOTAL_SEGMENTS + 1),
+                "越界段号按最靠后的段处理，仍属固定出现区间");
+
+        Option capture = new NodeGenerator(new Random(1)).createRocketCapture();
+        assertEquals(OptionType.ROCKET_CAPTURE, capture.getType());
+        assertEquals(RouteConfig.ROCKET_CAPTURE_AP_COST, capture.getCost(), "抓捕神兽消耗 2 点");
     }
 }

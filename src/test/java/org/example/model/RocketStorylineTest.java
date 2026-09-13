@@ -201,6 +201,31 @@ class RocketStorylineTest {
     // 节点生成：剧情线状态决定特殊事件槽位
     // ------------------------------------------------------------------
 
+    /** 随机数恒取下界：所有百分比判定都命中。 */
+    private static java.util.Random alwaysHit() {
+        return new java.util.Random() {
+            @Override
+            public int nextInt(int bound) {
+                return 0;
+            }
+        };
+    }
+
+    /** 随机数恒取上界：所有百分比判定都落空。 */
+    private static java.util.Random alwaysMiss() {
+        return new java.util.Random() {
+            @Override
+            public int nextInt(int bound) {
+                return bound - 1;
+            }
+        };
+    }
+
+    /** 节点列表里指定类型的节点个数。 */
+    private static long countOf(List<Option> options, OptionType type) {
+        return options.stream().filter(option -> option.getType() == type).count();
+    }
+
     @Test
     void testGenerateSegmentPendingLegendaryAlwaysAddsFreeLegendary() {
         NodeGenerator generator = new NodeGenerator();
@@ -312,6 +337,93 @@ class RocketStorylineTest {
             assertTrue(plan.getRouteOptions().size() <= RouteConfig.MAX_ROUTE_NODES,
                     "路线节点数量不应超过上限");
         }
+    }
+
+    // ------------------------------------------------------------------
+    // §5.3 末段固定的「火箭队抓捕神兽」节点
+    // ------------------------------------------------------------------
+
+    @Test
+    void testFinalSegmentAlwaysAddsRocketCaptureWhenLineUnlocked() {
+        NodeGenerator generator = new NodeGenerator();
+
+        for (int i = 0; i < 60; i++) {
+            SegmentPlan plan = generator.generateSegment(RouteConfig.TOTAL_SEGMENTS, true, false, false, false);
+
+            assertEquals(1, countOf(plan.getRouteOptions(), OptionType.ROCKET_CAPTURE),
+                    "已开启剧情线且首领未败时，末段必然出现且只出现一个抓捕神兽节点");
+            for (OptionType resident : List.of(OptionType.TRAINER, OptionType.WILD, OptionType.HOSPITAL)) {
+                assertTrue(plan.getRouteOptions().stream().anyMatch(option -> option.getType() == resident),
+                        "固定入列的抓捕节点不应挤掉常驻节点：" + resident.getDisplayName());
+            }
+            assertTrue(plan.getRouteOptions().size() <= RouteConfig.MAX_ROUTE_NODES,
+                    "节点数不应超过上限，实际 " + plan.getRouteOptions().size());
+        }
+    }
+
+    @Test
+    void testFinalSegmentKeepsShopAndSpecialEventAlongsideFixedRocketCapture() {
+        SegmentPlan hit = new NodeGenerator(alwaysHit())
+                .generateSegment(RouteConfig.TOTAL_SEGMENTS, true, false, true, false);
+
+        assertEquals(1, countOf(hit.getRouteOptions(), OptionType.ROCKET_CAPTURE),
+                "固定的抓捕节点不能被特殊事件槽位重复放入");
+        assertEquals(1, countOf(hit.getRouteOptions(), OptionType.SHOP), "商店照旧按概率出现");
+        assertEquals(1, countOf(hit.getRouteOptions(), OptionType.ROCKET),
+                "末段抓捕节点不再占用特殊事件槽位，槽位可放入火箭队队员节点");
+    }
+
+    @Test
+    void testRocketCaptureIsNotFixedBeforeFinalSegment() {
+        for (int segment = 1; segment <= RouteConfig.TOTAL_SEGMENTS - 1; segment++) {
+            SegmentPlan miss = new NodeGenerator(alwaysMiss())
+                    .generateSegment(segment, true, false, false, false);
+            assertEquals(0, countOf(miss.getRouteOptions(), OptionType.ROCKET_CAPTURE),
+                    "第 " + segment + " 段的抓捕事件仍按概率出现，未命中时不应存在");
+        }
+
+        // 末段之前不是「固定入列」：第 4 段行动点未消耗过半（10/10）时窗口未开启，概率全命中也不出现
+        SegmentPlan notYet = new NodeGenerator(alwaysHit())
+                .generateSegment(RouteConfig.TOTAL_SEGMENTS - 1, true, false, false, false, 10, 10);
+        assertEquals(0, countOf(notYet.getRouteOptions(), OptionType.ROCKET_CAPTURE),
+                "第 4 段行动点未过半时窗口未开启，抓捕节点不固定出现");
+
+        // 行动点消耗过半（5/10）后命中概率，才由特殊事件槽位放入抓捕节点
+        SegmentPlan late = new NodeGenerator(alwaysHit())
+                .generateSegment(RouteConfig.TOTAL_SEGMENTS - 1, true, false, false, false, 5, 10);
+        assertEquals(1, countOf(late.getRouteOptions(), OptionType.ROCKET_CAPTURE),
+                "末段之前进入出现窗口且命中概率时仍由特殊事件槽位放入抓捕节点");
+    }
+
+    @Test
+    void testFinalSegmentWithoutUnlockedLineOrWithBossDefeatedHasNoRocketCapture() {
+        NodeGenerator generator = new NodeGenerator(alwaysHit());
+
+        assertEquals(0, countOf(generator.generateSegment(RouteConfig.TOTAL_SEGMENTS, false, false, false, false)
+                .getRouteOptions(), OptionType.ROCKET_CAPTURE), "未触发过火箭队事件时末段没有抓捕节点");
+        assertEquals(0, countOf(generator.generateSegment(RouteConfig.TOTAL_SEGMENTS, true, true, false, false)
+                .getRouteOptions(), OptionType.ROCKET_CAPTURE), "已击败首领后剧情线收束，末段不再出现抓捕节点");
+        assertEquals(0, countOf(generator.generateSegment(RouteConfig.TOTAL_SEGMENTS, false, false, false, true)
+                .getRouteOptions(), OptionType.ROCKET_CAPTURE), "待触发神兽偶遇时槽位放神兽，末段也没有抓捕节点");
+    }
+
+    @Test
+    void testFinalSegmentFixedRocketCaptureSurvivesRefreshUntilBossDefeated() {
+        RogueTurnManager manager = newManager();
+        manager.getRunData().setRocketLineUnlocked(true);
+        manager.enterSegment(RouteConfig.TOTAL_SEGMENTS);
+
+        assertTrue(countOf(manager.getRunData().getAvailableOptions(), OptionType.ROCKET_CAPTURE) == 1,
+                "末段进入时即固定出现抓捕神兽节点");
+
+        manager.refreshRoute();
+        assertTrue(countOf(manager.getRunData().getAvailableOptions(), OptionType.ROCKET_CAPTURE) == 1,
+                "每走完一个节点重抽后，固定的抓捕节点依旧出现");
+
+        manager.resolveRocketBossVictory();
+        manager.refreshRoute();
+        assertTrue(countOf(manager.getRunData().getAvailableOptions(), OptionType.ROCKET_CAPTURE) == 0,
+                "击败首领后剧情线收束，抓捕节点不再出现");
     }
 
     // ------------------------------------------------------------------

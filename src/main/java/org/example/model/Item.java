@@ -11,7 +11,8 @@ import java.util.Objects;
  * {@link #alwaysCatch} 为 true 时必定捕捉成功（如大师球）；CURE：{@link #curesSpec} 描述可治愈的
  * 异常状态（状态英文名或中文名，如 {@code POISON}、{@code 麻痹}；多项用 {@code |}/{@code ,}/空白
  * 分隔，如解毒药 {@code POISON|BADLY_POISON}；{@value #CURE_ALL} 表示全部主要异常，
- * 见 {@link #canCure(StatusCondition)}）。</p>
+ * 见 {@link #canCure(StatusCondition)}）；LEVEL_UP：{@link #effect} 为一次提升的等级数
+ * （神奇糖果为 1，见 {@link #levelUpItem}）。</p>
  */
 public class Item {
 
@@ -59,6 +60,20 @@ public class Item {
     /** 解除道具工厂：治愈全部主要异常（万灵药）。 */
     public static Item cureAllItem(String id, String name) {
         return new Item(id, name, ItemCategory.CURE, 0, false, CURE_ALL);
+    }
+
+    /**
+     * 升级道具工厂：直接提升目标精灵的等级（神奇糖果）。
+     *
+     * @param levels 一次提升的等级数，写入 {@link #effect}；不足 1 时按 1 处理
+     */
+    public static Item levelUpItem(String id, String name, double levels) {
+        return new Item(id, name, ItemCategory.LEVEL_UP, Math.max(1, levels));
+    }
+
+    /** 是否可在局外（非战斗）对我方精灵使用：升级道具与回复 / 解除类道具，精灵球除外。 */
+    public boolean usableOutsideBattle() {
+        return category != ItemCategory.POKE_BALL;
     }
 
     public String getId() {

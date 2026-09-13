@@ -18,7 +18,7 @@ import java.util.List;
  *   loop:
  *     consumeNode(option)              // 校验并扣 AP、把节点标记为已走
  *     （战斗节点：控制器战斗 → awardWinGold / applyDefeatPenalty）
- *     resolveImmediateEffect(option)   // 医院治疗 / 特殊事件结算
+ *     resolveImmediateEffect(option)   // 医院治疗等当场效果结算
  *     applyNodeHeal()                  // 节点自回血：未濒死宝可梦回复最大 HP 的 1/5
  *     advanceAfterNode()               // AP 耗尽或无节点可走 → 触发必然节点（末段直接进入四天王连打）
  *   mandatory:
@@ -67,7 +67,7 @@ public class RogueTurnManager {
     }
 
     /**
-     * 进入某一段：重新生成路线节点（按剧情线状态决定特殊事件），行动点重置为该段上限，
+     * 进入某一段：重新生成路线节点（按剧情线状态决定特殊事件槽位），行动点重置为该段上限，
      * 阶段回到路线探索，「失败一次」的机会也一并重置（§4.1：每段路线开始时重置行动点至该段上限）。
      */
     public void enterSegment(int segment) {
@@ -89,7 +89,8 @@ public class RogueTurnManager {
      * <b>行动点、阶段、金币与剧情线标记都不变</b>——刷新只换节点，不重置本段进度。
      *
      * <p>由于常驻节点（路人 / 野外精灵 / 医院）每次都必然入列，刷新后玩家仍能再次进入
-     * 这三类节点，行动点依旧是唯一的限制资源。</p>
+     * 这三类节点，行动点依旧是唯一的限制资源；末段若剧情线未收束，固定的「火箭队抓捕神兽」
+     * 同样会在刷新后继续出现。</p>
      */
     public void refreshRoute() {
         SegmentPlan plan = generatePlan(runData.getSegment());
@@ -186,7 +187,7 @@ public class RogueTurnManager {
 
     /**
      * 结算节点的当场效果（不需战斗的部分）：
-     * 医院治疗全队、特殊事件发放金币；商店由控制器打开购买界面，战斗节点由控制器拉起战斗。
+     * 医院治疗全队；商店由控制器打开购买界面，战斗节点由控制器拉起战斗。
      */
     public void resolveImmediateEffect(Option option) {
         if (option == null || option.getType() == null) {
@@ -411,7 +412,7 @@ public class RogueTurnManager {
             case ELITE_FOUR -> RouteConfig.eliteFourWinGold(segment);
             case CHAMPION -> RouteConfig.championWinGold(segment);
             case ROCKET_INVASION -> RouteConfig.bossAggressionWinGold(segment);
-            case HOSPITAL, SHOP, REWARD, TRADE -> 0;
+            case HOSPITAL, SHOP, REWARD, TRADE, CANDY -> 0;
         };
     }
 

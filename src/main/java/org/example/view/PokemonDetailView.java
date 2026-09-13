@@ -1,11 +1,13 @@
 package org.example.view;
 
+import java.util.ArrayList;
 import java.util.List;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
@@ -23,12 +25,15 @@ import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import org.example.model.ElementType;
 import org.example.model.HeldItem;
+import org.example.model.Item;
+import org.example.model.ItemStack;
 import org.example.model.MoveCategory;
 import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.Stats;
 import org.example.model.StatusCondition;
+import org.example.service.ItemUsageService;
 import org.example.util.ImageBackgrounds;
 import org.example.util.SpriteLoader;
 import org.example.util.UiScale;
@@ -37,10 +42,11 @@ import org.example.util.UiScale;
  * 精灵详情页：由主菜单点击精灵名进入（替代原弹窗，改为场景切换）。
  *
  * <p>三栏布局：左侧为玩家队伍列表（点击切换查看）；中间为精灵立绘（名称、属性徽章与先发标记）；
- * 右侧为详细信息卡（图鉴描述 / 性格状态 / HP / EXP、六项能力值对照、技能栏与装备槽）。</p>
+ * 右侧为详细信息卡（图鉴描述 / 性格状态 / HP / EXP、六项能力值对照、技能栏、装备槽与道具使用）。</p>
  *
  * <p>保留装备穿脱能力：穿戴 / 脱下直接作用于玩家数据（后续战斗生效），
- * 「返回」重建主菜单即可看到最新状态。</p>
+ * 「返回」重建主菜单即可看到最新状态。道具卡列出背包中可在局外使用的道具（回复 / 解除 / 升级），
+ * 点「使用」作用于当前选中的精灵，消耗与结算由 {@link ItemUsageService} 负责。</p>
  *
  * <p>ⓘ 页面仅保证基础功能可用，美术风格由后续美工统一调整。</p>
  */
@@ -69,6 +75,8 @@ public final class PokemonDetailView {
     private final int initialIndex;
     private final String mapBackground;
     private final Runnable onBack;
+    /** 局外道具使用服务（伤药 / 状态药 / 神奇糖果）；为 {@code null} 时道具卡展示为不可用。 */
+    private final ItemUsageService itemUsage;
 
     private ListView<Pokemon> partyList;
     private ImageView sprite;
@@ -81,10 +89,19 @@ public final class PokemonDetailView {
     private org.example.model.Move pendingSwapMove;
 
     public PokemonDetailView(Player player, int initialIndex, String mapBackground, Runnable onBack) {
+        this(player, initialIndex, mapBackground, onBack, null);
+    }
+
+    /**
+     * @param itemUsage 局外道具使用服务（伤药 / 状态药 / 神奇糖果）；{@code null} 表示本页不提供喂食功能
+     */
+    public PokemonDetailView(Player player, int initialIndex, String mapBackground, Runnable onBack,
+                             ItemUsageService itemUsage) {
         this.player = player;
         this.initialIndex = initialIndex;
         this.mapBackground = mapBackground;
         this.onBack = onBack;
+        this.itemUsage = itemUsage;
     }
 
     public Scene createScene() {
@@ -112,7 +129,7 @@ public final class PokemonDetailView {
     private Parent buildHeader() {
         Label title = new Label("宝可梦详情 · 训练家 " + player.getName());
         title.setStyle(YH + "-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #222;");
-        Label hint = new Label("点击左侧列表切换精灵；装备穿脱立即生效，「返回」后主菜单同步刷新。");
+        Label hint = new Label("点击左侧列表切换精灵；装备穿脱与道具使用立即生效，「返回」后主菜单同步刷新。");
         hint.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #555;");
         VBox box = new VBox(2, title, hint);
         box.setStyle("-fx-background-color: rgba(255, 255, 255, 0.6); -fx-background-radius: 10;"
@@ -251,7 +268,7 @@ public final class PokemonDetailView {
         }
 
         detailBox.getChildren().setAll(buildInfoCard(pokemon), buildStatsCard(pokemon),
-                buildMovesCard(pokemon), buildEquipmentCard(pokemon));
+                buildMovesCard(pokemon), buildEquipmentCard(pokemon), buildItemCard(pokemon));
     }
 
     /** 信息卡：图鉴描述、性格/状态、HP、EXP。 */
@@ -460,6 +477,83 @@ public final class PokemonDetailView {
     // ------------------------------------------------------------------
     // 组件构建
     // ------------------------------------------------------------------
+
+    /**
+     * 道具卡：列出背包中可在局外使用的道具（回复 / 解除 / 升级），点「使用」作用于当前精灵。
+     * 精灵球不在列；数量为 0 的道具不显示。
+     */
+    private VBox buildItemCard(Pokemon pokemon) {
+        VBox card = new VBox(5);
+        card.setStyle(CARD_STYLE);
+        card.getChildren().add(cardTitle("道具"));
+
+        if (itemUsage == null) {
+            Label unavailable = new Label("本页不提供道具使用。");
+            unavailable.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #888;");
+            card.getChildren().add(unavailable);
+            return card;
+        }
+
+        List<ItemStack> usable = new ArrayList<>();
+        for (ItemStack stack : player.getBag().availableStacks()) {
+            if (stack.getItem().usableOutsideBattle()) {
+                usable.add(stack);
+            }
+        }
+        if (usable.isEmpty()) {
+            Label empty = new Label("背包里没有可用的道具：伤药 / 状态药 / 神奇糖果可在商店购买或事件中获得。");
+            empty.setWrapText(true);
+            empty.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #888;");
+            card.getChildren().add(empty);
+            return card;
+        }
+        for (ItemStack stack : usable) {
+            card.getChildren().add(itemRow(pokemon, stack));
+        }
+        Label hint = new Label("回复 / 解除道具对满 HP 或无异常的精灵不消耗；除精灵球外均可在此使用。");
+        hint.setWrapText(true);
+        hint.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #777;");
+        card.getChildren().add(hint);
+        return card;
+    }
+
+    /** 背包单行：名称 + 数量 + 效果说明 + 「使用」按钮（结果用弹窗提示并重建右栏）。 */
+    private HBox itemRow(Pokemon pokemon, ItemStack stack) {
+        Item item = stack.getItem();
+        Label info = new Label(item.getName() + " x" + stack.getCount() + "：" + itemSummary(item));
+        info.setWrapText(true);
+        info.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(info, Priority.ALWAYS);
+        info.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
+
+        Button useButton = new Button("使用");
+        useButton.setStyle(SMALL_BUTTON_STYLE);
+        useButton.setOnAction(e -> {
+            ItemUsageService.Result result = itemUsage.use(item, player.getBag(), pokemon);
+            Alert alert = new Alert(result.used() ? Alert.AlertType.INFORMATION : Alert.AlertType.WARNING);
+            alert.setTitle("使用道具");
+            alert.setHeaderText(item.getName() + " → " + pokemon.getName());
+            alert.setContentText(result.message());
+            alert.showAndWait();
+            renderDetail(pokemon);
+        });
+        HBox row = new HBox(8, info, useButton);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    /** 道具效果简述（道具模型只存数值，说明文案在此拼接）。 */
+    private static String itemSummary(Item item) {
+        return switch (item.getCategory()) {
+            case HEAL -> "回复 " + (int) item.getEffect() + " HP";
+            case CURE -> item.curesAll() ? "解除全部异常状态"
+                    : "解除" + item.curedStatuses().stream()
+                            .map(StatusCondition::getDisplayName)
+                            .collect(java.util.stream.Collectors.joining(" / "));
+            case LEVEL_UP -> "等级 +" + (int) item.getEffect();
+            case POKE_BALL -> "对战中投出捕捉野生精灵";
+        };
+    }
 
     /** 装备库单行：名称 + 效果说明 + 穿戴状态按钮。 */
     private HBox equipmentRow(Pokemon pokemon, HeldItem item) {
