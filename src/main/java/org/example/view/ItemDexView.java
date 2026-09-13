@@ -167,7 +167,8 @@ public final class ItemDexView {
                 + " 件道具 + " + countEquipment(entries) + " 件装备）"
                 + (player == null ? "" : "　已拥有 " + owned + " 件"
                         + (equipped == 0 ? "" : "，其中 " + equipped + " 件已穿戴"))
-                + "　未拥有的道具与装备可随时在商店买到（第 1 段起即可能上架，货架格位随段数变多）");
+                + "　未拥有的道具与装备可随时在商店买到（装备全量列出、想买哪件买哪件；"
+                + "消耗品随段逐步解锁、解锁后一直有货）");
 
         listBox.getChildren().clear();
         List<ItemDexData.Entry> shown = entries.stream().filter(this::matches).toList();
@@ -217,9 +218,7 @@ public final class ItemDexView {
             card.getChildren().add(description);
         }
 
-        Label source = new Label(entry.sold()
-                ? "商店出售 · 基础价 " + entry.basePrice() + " 金币（段数越靠后售价越高）"
-                : "不售卖 · 剧情专属道具（击败火箭队首领必得）");
+        Label source = new Label(sourceText(entry));
         source.setWrapText(true);
         source.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #777;");
         card.getChildren().add(source);
@@ -229,6 +228,22 @@ public final class ItemDexView {
             card.getChildren().add(actions);
         }
         return card;
+    }
+
+    /**
+     * 来源行：在售的标注解锁段与基础价，不售卖（剧情专属）的标注获得途径。
+     *
+     * <p>装备与第 1 段就解锁的消耗品不必赘述解锁段，从第 2 段起才放开的消耗品才写明「第几段起解锁」。</p>
+     */
+    private static String sourceText(ItemDexData.Entry entry) {
+        if (!entry.sold()) {
+            return "不售卖 · 剧情专属道具（击败火箭队首领必得）";
+        }
+        if (entry.unlockSegment() <= 1) {
+            return "商店出售 · 基础价 " + entry.basePrice() + " 金币（段数越靠后售价越高）";
+        }
+        return "商店出售 · 第 " + entry.unlockSegment() + " 段起解锁后一直有货 · 基础价 "
+                + entry.basePrice() + " 金币（段数越靠后售价越高）";
     }
 
     private static String ownedText(ItemDexData.Entry entry) {
@@ -250,7 +265,7 @@ public final class ItemDexView {
             return hintRow("进入游戏后可在此直接穿戴 / 脱下装备。");
         }
         if (!entry.owned()) {
-            return hintRow("可在商店购买（第 1 段起即可能上架），或在肉鸽「装备补给」事件中获得。");
+            return hintRow("可直接在商店买到（装备全量上架），或在肉鸽「装备补给」事件中获得。");
         }
 
         Pokemon holder = holderOf(entry.id());

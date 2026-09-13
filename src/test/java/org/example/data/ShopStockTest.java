@@ -5,8 +5,10 @@ import org.example.model.RouteConfig;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
@@ -17,70 +19,82 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link ShopStock} 的单元测试：覆盖《需求文档》§4.2 商店节点 ——
- * 消耗品每段随机上架、装备全量上架，以及金币计价。
+ * 消耗品按段解锁后常驻货架、装备全量上架，以及金币计价。
  *
- * <p>货架分消耗品与装备两个分区：<b>消耗品</b>从池里随机抽
- * {@link RouteConfig#shopConsumableStockSize(int)} 件（第 1 段 3 件 → 上限 6 件），池为 15 件
- * （另有 1 件剧情专属道具只进目录、不进商店）；<b>装备</b>把未拥有的<b>全量</b>列出（47 件装备
- * + 30 种树果，按 {@code HeldItemEffect} 定基础价），玩家进店即可任选购买。「越往后越多」只由
- * 消耗品格位数量与售价通胀体现。</p>
+ * <p>货架分消耗品与装备两个分区：<b>消耗品</b>逐段放开（第 1 段 7 件 → 末段 15 件），
+ * 解锁后一直有货、可重复购买，池为 15 件（另有 1 件剧情专属道具只进目录、不进商店）；
+ * <b>装备</b>把未拥有的<b>全量</b>列出（47 件装备 + 30 种树果），玩家进店即可任选购买。
+ * 「越往后越多」只由消耗品解锁数量与售价通胀体现。</p>
+ *
+ * <p>装备定价分两组：47 件<b>对战道具</b>（{@code e_*}）统一 200，30 种<b>树果</b>（{@code b_*}）
+ * 按效果强弱分四档 80 / 100 / 120 / 150。</p>
  *
  * <p>用固定随机源保证结果可复现；只断言趋势与上架约束，不锁死具体商品组合。</p>
  */
 class ShopStockTest {
 
     @Test
-    void 消耗品数量随段增长且不超过上限() {
+    void 消耗品解锁件数逐段增加且只增不减() {
+        int previous = 0;
         for (int segment = 1; segment <= RouteConfig.TOTAL_SEGMENTS; segment++) {
             ShopStock stock = ShopStock.forSegment(segment, new Random(segment));
+            int unlocked = ShopStock.sellableConsumableIds(segment).size();
+            int onShelf = entriesOf(stock, false).size();
 
             assertFalse(stock.isEmpty(), "第 " + segment + " 段商店不应为空");
-            int consumables = entriesOf(stock, false).size();
-            assertTrue(consumables <= RouteConfig.shopConsumableStockSize(segment),
-                    "第 " + segment + " 段消耗品不应超过格位上限");
-            assertTrue(consumables <= RouteConfig.MAX_SHOP_CONSUMABLE_STOCK);
+            assertEquals(unlocked, onShelf, "第 " + segment + " 段货架应列出全部已解锁消耗品");
+            assertTrue(onShelf > previous, "越靠后的段解锁越多：" + previous + " -> " + onShelf);
+            previous = onShelf;
         }
+        assertEquals(15, previous, "末段应解锁全部 15 件可售消耗品");
     }
 
     @Test
-    void 越靠后的段消耗品上架越多而装备数量恒定() {
-        int first = entriesOf(ShopStock.forSegment(1, new Random(1)), false).size();
-        int last = entriesOf(ShopStock.forSegment(RouteConfig.TOTAL_SEGMENTS, new Random(1)), false).size();
-
-        assertTrue(last > first, "越靠后的段消耗品格位越多：" + first + " -> " + last);
+    void 装备数量不随段号变化() {
         assertEquals(entriesOf(ShopStock.forSegment(1, new Random(1)), true).size(),
                 entriesOf(ShopStock.forSegment(RouteConfig.TOTAL_SEGMENTS, new Random(1)), true).size(),
                 "装备全量上架，数量不随段号变化");
     }
 
     @Test
-    void 首段即可上架全部消耗品() {
-        Set<String> pool = new TreeSet<>(ShopStock.sellableConsumableIds());
-        Set<String> seen = sampledConsumableIds(1, 120);
+    void 首段只上架最基础的消耗品() {
+        Set<String> onShelf = new TreeSet<>(ShopStock.sellableConsumableIds(1));
 
-        assertEquals(pool, seen, "第 1 段就应能抽到全部可售消耗品，实际：" + seen);
+        assertEquals(Set.of("i_poke_ball", "i_potion", "i_antidote",
+                        "i_burn_heal", "i_ice_heal", "i_awakening", "i_paralyze_heal"), onShelf,
+                "第 1 段只有普通精灵球 + 伤药 + 5 种状态药，实际：" + onShelf);
     }
 
     @Test
-    void 球种与高级药品不再按段位解锁() {
-        Set<String> first = sampledConsumableIds(1, 120);
+    void 球种与高级药品按段解锁后一直有货() {
+        Map<Integer, List<String>> unlocked = new TreeMap<>();
+        for (int segment = 1; segment <= RouteConfig.TOTAL_SEGMENTS; segment++) {
+            unlocked.put(segment, ShopStock.sellableConsumableIds(segment));
+        }
 
-        assertTrue(first.containsAll(Set.of("i_premier_ball", "i_safari_ball",
-                        "i_sport_ball", "i_cherish_ball")),
-                "全部球种都应在第 1 段即可上架，实际：" + first);
-        assertTrue(first.containsAll(Set.of("i_full_heal", "i_ultra_ball")),
-                "高级药品也应在第 1 段即可上架，实际：" + first);
+        assertEquals(List.of("i_premier_ball", "i_super_potion"), addedAt(unlocked, 2), "第 2 段");
+        assertEquals(List.of("i_great_ball", "i_safari_ball"), addedAt(unlocked, 3), "第 3 段");
+        assertEquals(List.of("i_sport_ball", "i_ultra_ball"), addedAt(unlocked, 4), "第 4 段");
+        assertEquals(List.of("i_full_heal", "i_cherish_ball"), addedAt(unlocked, 5), "第 5 段");
+
+        for (int segment = 2; segment <= RouteConfig.TOTAL_SEGMENTS; segment++) {
+            assertTrue(ShopStock.sellableConsumableIds(segment)
+                            .containsAll(ShopStock.sellableConsumableIds(segment - 1)),
+                    "第 " + segment + " 段应保留上一段解锁的全部消耗品");
+        }
     }
 
     @Test
     void 大师球不在货架上() {
-        assertFalse(ShopStock.sellableConsumableIds().contains("i_master_ball"),
-                "大师球为火箭队首领战战利品，不应进入商店抽签池");
-
         for (int segment = 1; segment <= RouteConfig.TOTAL_SEGMENTS; segment++) {
-            assertFalse(sampledIds(segment, 120).contains("i_master_ball"),
-                    "第 " + segment + " 段货架不应出现大师球");
+            assertFalse(ShopStock.sellableConsumableIds(segment).contains("i_master_ball"),
+                    "大师球为火箭队首领战战利品，不应出现在第 " + segment + " 段的货架上");
         }
+
+        assertFalse(ShopStock.catalog().stream()
+                        .filter(entry -> entry.id().equals("i_master_ball"))
+                        .anyMatch(ShopStock.CatalogEntry::sold),
+                "大师球只进目录、不进商店");
     }
 
     @Test
@@ -195,7 +209,7 @@ class ShopStockTest {
 
     @Test
     void 消耗品商品池排除不售卖的道具() {
-        List<String> pool = ShopStock.sellableConsumableIds();
+        List<String> pool = ShopStock.sellableConsumableIds(RouteConfig.TOTAL_SEGMENTS);
 
         assertEquals(15, pool.size(), "可售消耗品应为 15 件（大师球除外）");
         assertFalse(pool.contains("i_master_ball"), "大师球不进商店");
@@ -207,36 +221,55 @@ class ShopStockTest {
     }
 
     @Test
-    void 首段消耗品填满格位且按原价出售() {
+    void 首段消耗品按基础价出售() {
         ShopStock stock = ShopStock.forSegment(1, new Random(1));
-
         List<ShopStock.Entry> consumables = entriesOf(stock, false);
-        assertEquals(RouteConfig.BASE_SHOP_CONSUMABLE_STOCK, consumables.size(),
-                "第 1 段应上架 " + RouteConfig.BASE_SHOP_CONSUMABLE_STOCK + " 件消耗品");
-        assertTrue(consumables.stream()
-                        .allMatch(entry -> ShopStock.sellableConsumableIds().contains(entry.itemId())),
-                "第 1 段消耗品应全部来自可售商品池：" + consumables);
 
-        ShopStock.Entry potion = stock.entries().stream()
-                .filter(entry -> entry.itemId().equals("i_potion"))
-                .findFirst()
-                .orElse(null);
-        if (potion != null) {
-            assertEquals(40, potion.price(), "第 1 段没有通胀，按基础价出售");
+        assertEquals(ShopStock.sellableConsumableIds(1).size(), consumables.size(),
+                "第 1 段应上架全部已解锁消耗品");
+
+        for (ShopStock.Entry entry : consumables) {
+            assertEquals(catalogEntry(entry.itemId()).basePrice(), entry.price(),
+                    "第 1 段没有通胀，应按基础价出售：" + entry.itemId());
+        }
+        assertEquals(40, catalogEntry("i_potion").basePrice(), "伤药基础价 40");
+    }
+
+    @Test
+    void 末段解锁全部消耗品且售价被通胀抬高() {
+        ShopStock stock = ShopStock.forSegment(RouteConfig.TOTAL_SEGMENTS, new Random(5));
+
+        assertEquals(15, entriesOf(stock, false).size(), "末段应解锁全部 15 件可售消耗品");
+        assertEquals(ShopStock.sellableEquipment(Set.of()).size(), entriesOf(stock, true).size(),
+                "装备始终全量上架");
+
+        for (ShopStock.Entry entry : stock.entries()) {
+            int base = catalogEntry(entry.itemId()).basePrice();
+            assertEquals(RouteConfig.shopPrice(base, RouteConfig.TOTAL_SEGMENTS), entry.price(),
+                    "末段售价应按段通胀抬高：" + entry.itemId());
+            assertTrue(entry.price() > base, "末段售价应高于基础价：" + entry.itemId());
         }
     }
 
     @Test
-    void 末段消耗品取上限且售价被通胀抬高() {
-        ShopStock stock = ShopStock.forSegment(RouteConfig.TOTAL_SEGMENTS, new Random(5));
+    void 对战道具统一定价200而树果分四档() {
+        Map<Integer, List<String>> tiers = ShopStock.catalog().stream()
+                .filter(ShopStock.CatalogEntry::equipment)
+                .collect(Collectors.groupingBy(ShopStock.CatalogEntry::basePrice, TreeMap::new,
+                        Collectors.mapping(ShopStock.CatalogEntry::id, Collectors.toList())));
 
-        assertEquals(RouteConfig.MAX_SHOP_CONSUMABLE_STOCK, entriesOf(stock, false).size(),
-                "消耗品池足够大时取格位上限");
-        assertEquals(ShopStock.sellableEquipment(Set.of()).size(), entriesOf(stock, true).size(),
-                "装备始终全量上架");
-        assertTrue(stock.entries().stream().filter(ShopStock.Entry::isEquipment)
-                        .allMatch(entry -> entry.price() >= 60),
-                "末段装备售价应已被通胀抬高");
+        assertEquals(Set.of(80, 100, 120, 150, 200), tiers.keySet(),
+                "装备基础价只应有这几档，实际：" + tiers.keySet());
+
+        for (Map.Entry<Integer, List<String>> tier : tiers.entrySet()) {
+            boolean berryTier = tier.getKey() < 200;
+            assertTrue(tier.getValue().stream().allMatch(id -> id.startsWith("b_") == berryTier),
+                    "第 " + tier.getKey() + " 档应" + (berryTier ? "只有树果" : "全是对战道具")
+                            + "，实际：" + tier.getValue());
+        }
+        assertEquals(47, tiers.get(200).size(), "全部 47 件对战道具都应是 200");
+        assertEquals(30, tiers.values().stream().mapToInt(List::size).sum() - tiers.get(200).size(),
+                "其余 30 件树果分布在四档里");
     }
 
     @Test
@@ -293,10 +326,13 @@ class ShopStockTest {
     }
 
     @Test
-    void 空随机源回退到默认随机() {
+    void 空随机源不影响货架内容() {
         assertFalse(ShopStock.forSegment(2, null).isEmpty(), "随机源为 null 时不应崩，也不应给出空商店");
         assertFalse(ShopStock.forSegment(2, new Random(1), null).isEmpty(),
                 "已拥有装备集合为 null 时不应崩");
+        assertEquals(ShopStock.forSegment(2, new Random(1)).entries(),
+                ShopStock.forSegment(2, new Random(2)).entries(),
+                "货架不再抽签，随机源不影响上架内容");
     }
 
     @Test
@@ -321,6 +357,11 @@ class ShopStockTest {
             if (entry.equipment()) {
                 assertFalse(entry.description().isBlank(), entry.id() + " 装备应有效果说明");
                 assertTrue(entry.sold(), entry.id() + " 装备都应可购买");
+                assertEquals(1, entry.unlockSegment(), entry.id() + " 装备第 1 段即可购买");
+            } else {
+                assertEquals(entry.sold(), entry.unlockSegment() != ShopStock.NEVER_UNLOCKED,
+                        entry.id() + " 在售状态应由解锁段派生");
+                assertTrue(entry.unlockSegment() >= 1, entry.id() + " 解锁段应从第 1 段起算");
             }
         }
     }
@@ -338,16 +379,33 @@ class ShopStockTest {
     @Test
     void 目录与货架的口径一致() {
         List<ShopStock.CatalogEntry> catalog = ShopStock.catalog();
-        ShopStock.CatalogEntry potion = catalog.stream()
-                .filter(e -> !e.equipment() && e.id().equals("i_potion")).findFirst().orElseThrow();
 
-        // 第 1 段的货架必须只抽出目录里「在售」的商品
-        for (ShopStock.Entry entry : ShopStock.forSegment(1, new Random(7)).entries()) {
-            ShopStock.CatalogEntry definition = catalog.stream()
-                    .filter(e -> e.id().equals(entry.itemId())).findFirst().orElseThrow();
-            assertTrue(definition.sold(), entry.itemId() + " 不在售却出现在第 1 段货架");
+        // 每一段的货架都必须与目录里「在售且已解锁」的商品严格一致
+        for (int segment = 1; segment <= RouteConfig.TOTAL_SEGMENTS; segment++) {
+            for (ShopStock.Entry entry : ShopStock.forSegment(segment, new Random(7)).entries()) {
+                ShopStock.CatalogEntry definition = catalogEntry(entry.itemId());
+                assertTrue(definition.sold(), entry.itemId() + " 不在售却出现在第 " + segment + " 段货架");
+                assertTrue(definition.unlockSegment() <= segment,
+                        entry.itemId() + " 第 " + definition.unlockSegment() + " 段才解锁，"
+                                + "却出现在第 " + segment + " 段货架");
+            }
         }
-        assertEquals(40, potion.basePrice(), "伤药基础价应与消耗品池一致");
+        assertEquals(40, catalogEntry("i_potion").basePrice(), "伤药基础价应与消耗品池一致");
+    }
+
+    /** 第 {@code segment} 段新解锁的消耗品 id（相对上一段的差集，保持商品池顺序）。 */
+    private static List<String> addedAt(Map<Integer, List<String>> unlockedBySegment, int segment) {
+        List<String> previous = unlockedBySegment.get(segment - 1);
+        return unlockedBySegment.get(segment).stream()
+                .filter(id -> !previous.contains(id))
+                .toList();
+    }
+
+    /** 从商品目录取某件商品的定义（目录含不售卖道具，故 id 必然存在）。 */
+    private static ShopStock.CatalogEntry catalogEntry(String id) {
+        return ShopStock.catalog().stream()
+                .filter(entry -> entry.id().equals(id))
+                .findFirst().orElseThrow();
     }
 
     /** 取货架上的某类商品（{@code equipment = true} 取装备，否则取消耗品），保持货架顺序。 */
@@ -355,27 +413,5 @@ class ShopStockTest {
         return stock.entries().stream()
                 .filter(entry -> entry.isEquipment() == equipment)
                 .toList();
-    }
-
-    /** 用多组固定随机源反复采样指定段位，返回出现过的全部商品 id（避免单次洗牌的偶然性）。 */
-    private static Set<String> sampledIds(int segment, int seeds) {
-        Set<String> ids = new TreeSet<>();
-        for (int seed = 1; seed <= seeds; seed++) {
-            for (ShopStock.Entry entry : ShopStock.forSegment(segment, new Random(seed)).entries()) {
-                ids.add(entry.itemId());
-            }
-        }
-        return ids;
-    }
-
-    /** 只采集消耗品 id（装备与树果的 id 前缀为 {@code e_} / {@code b_}）。 */
-    private static Set<String> sampledConsumableIds(int segment, int seeds) {
-        Set<String> ids = new TreeSet<>();
-        for (String id : sampledIds(segment, seeds)) {
-            if (id.startsWith("i_")) {
-                ids.add(id);
-            }
-        }
-        return ids;
     }
 }

@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link RouteConfig} 的单元测试：把《需求文档》§4 里「行动点上限随进度提升」「商店随进展变多、
- * 变贵」「敌人随进度变强」「自回血 1/5」这些可调数值的<b>趋势</b>钉住。
+ * {@link RouteConfig} 的单元测试：把《需求文档》§4 里「行动点上限随进度提升」「商店随进展变贵」
+ * 「敌人随进度变强」「自回血 1/5」这些可调数值的<b>趋势</b>钉住。
  *
  * <p>具体数值仍是「待配置」项，因此这里只断言相对关系（递增 / 有上限 / 非法输入兜底），
  * 不锁死绝对值 —— 调平衡时改 {@link RouteConfig} 不会大面积翻测试。</p>
@@ -29,15 +29,6 @@ class RouteConfigTest {
         assertEquals(0, RouteConfig.nodeHealAmount(0));
         assertEquals(0, RouteConfig.nodeHealAmount(-50), "非法 HP 不应算出负回复量");
         assertEquals(0, RouteConfig.nodeHealAmount(4), "整数除法向下取整");
-    }
-
-    @Test
-    void 商店消耗品格位随段增长但有上限() {
-        assertEquals(RouteConfig.BASE_SHOP_CONSUMABLE_STOCK, RouteConfig.shopConsumableStockSize(1));
-        assertTrue(RouteConfig.shopConsumableStockSize(3) > RouteConfig.shopConsumableStockSize(1));
-        assertEquals(RouteConfig.MAX_SHOP_CONSUMABLE_STOCK, RouteConfig.shopConsumableStockSize(99));
-        assertEquals(RouteConfig.BASE_SHOP_CONSUMABLE_STOCK, RouteConfig.shopConsumableStockSize(0),
-                "非法段号按第 1 段处理");
     }
 
     @Test

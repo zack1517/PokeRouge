@@ -124,29 +124,12 @@ public final class RouteConfig {
     }
 
     // ------------------------------------------------------------------
-    // 商店（§4.2 商店：随机出现；消耗品每段随机上架，装备全量上架）
+    // 商店（§4.2 商店：随机出现；消耗品按段解锁后全量上架，装备全量上架）
     // ------------------------------------------------------------------
-
-    /** 第 1 段随机上架的消耗品数量。 */
-    public static final int BASE_SHOP_CONSUMABLE_STOCK = 3;
-
-    /** 每推进一段额外增加的上架消耗品数量。 */
-    public static final int SHOP_CONSUMABLE_STOCK_PER_SEGMENT = 1;
-
-    /** 单次商店上架的消耗品数量上限。 */
-    public static final int MAX_SHOP_CONSUMABLE_STOCK = 6;
-
-    /**
-     * 某一段随机上架的消耗品数量（数量随进展增加）。
-     *
-     * <p>只约束<b>消耗品</b>那一段随机货架 —— <b>装备不走抽签、不受本值限制</b>：商店会把
-     * 玩家尚未拥有的装备全量列出，玩家想买哪件就买哪件（见 {@code ShopStock#forSegment}）。</p>
-     */
-    public static int shopConsumableStockSize(int segment) {
-        int size = BASE_SHOP_CONSUMABLE_STOCK
-                + (Math.max(1, segment) - 1) * SHOP_CONSUMABLE_STOCK_PER_SEGMENT;
-        return Math.min(MAX_SHOP_CONSUMABLE_STOCK, size);
-    }
+    //
+    // 两个分区都不再有格位上限：装备全量上架（想买哪件就买哪件），消耗品解锁多少件就上架多少件
+    // （第 1 段 7 件 → 第 5 段 15 件）。旧的「第 1 段 3 件、每段 +1、上限 6 件」那套格位常量
+    // 已随随机抽签一起删除；消耗品的解锁节奏是逐件数据，写在 ShopStock.CONSUMABLES 的解锁段号上。
 
     /** 每推进一段的物价涨幅（百分比）。 */
     public static final int SHOP_PRICE_INFLATION_PERCENT = 15;
