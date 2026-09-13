@@ -71,8 +71,8 @@ class RouteConfigTest {
     @Test
     void 敌人强度随段推进且强度阶梯为道馆四天王冠军() {
         assertTrue(RouteConfig.gymLevelBonus(3) > RouteConfig.gymLevelBonus(1));
-        assertTrue(RouteConfig.eliteFourLevelBonus(3) > RouteConfig.gymLevelBonus(3),
-                "四天王强于同段道馆");
+        assertEquals(0, RouteConfig.eliteFourLevelBonus(3),
+                "四天王按队伍最高等级 ±2 浮动，无额外等级加成");
         assertTrue(RouteConfig.championLevelBonus(3) > RouteConfig.eliteFourLevelBonus(3),
                 "冠军最强");
         assertTrue(RouteConfig.trainerLevelBonus(3) > RouteConfig.wildLevelBonus(3),
@@ -101,8 +101,8 @@ class RouteConfigTest {
     @Test
     void 对手队伍规模有上限() {
         assertTrue(RouteConfig.gymPartySize(99) <= 3);
-        assertTrue(RouteConfig.eliteFourPartySize(99) <= 4);
-        assertTrue(RouteConfig.championPartySize(99) <= 6);
+        assertEquals(4, RouteConfig.eliteFourPartySize(3), "四天王固定 4 只");
+        assertEquals(5, RouteConfig.championPartySize(3), "冠军固定 5 只");
         assertTrue(RouteConfig.championPartySize(1) >= RouteConfig.gymPartySize(1));
     }
 
@@ -131,9 +131,25 @@ class RouteConfigTest {
         assertEquals(2, RouteConfig.trainerPartyMax(3));
         assertEquals(3, RouteConfig.trainerPartyMin(4));
         assertEquals(3, RouteConfig.trainerPartyMax(4));
-        // 第 5 段保持现状：随机 1~2 只
-        assertEquals(1, RouteConfig.trainerPartyMin(5));
-        assertEquals(2, RouteConfig.trainerPartyMax(5));
+        // 第 5 段保持现状：随机 3~4 只
+        assertEquals(3, RouteConfig.trainerPartyMin(5));
+        assertEquals(4, RouteConfig.trainerPartyMax(5));
+    }
+
+    @Test
+    void 火箭队队员数量按段固定配置() {
+        assertEquals(2, RouteConfig.rocketPartySize(1), "第 1 段火箭队队员 2 只");
+        assertEquals(3, RouteConfig.rocketPartySize(2), "第 2 段火箭队队员 3 只");
+        assertEquals(3, RouteConfig.rocketPartySize(3), "第 3 段火箭队队员 3 只");
+        assertEquals(4, RouteConfig.rocketPartySize(4), "第 4 段火箭队队员 4 只");
+        assertEquals(4, RouteConfig.rocketPartySize(5), "第 5 段火箭队队员 4 只");
+    }
+
+    @Test
+    void 首领侵略战固定六只且等级加成一() {
+        assertEquals(6, RouteConfig.bossAggressionPartySize(5), "首领侵略战固定 6 只");
+        assertEquals(1, RouteConfig.bossAggressionLevelBonus(5), "首领侵略战等级加成固定 +1");
+        assertEquals(1, RouteConfig.bossAggressionLevelBonus(1), "等级加成不随段数变化");
     }
 
     @Test
