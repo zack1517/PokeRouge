@@ -295,7 +295,7 @@ public class GameSession {
         return rogueTurnManager.consumeNode(option);
     }
 
-    /** 结算节点中不需战斗的当场效果（医院治疗全队、特殊事件发放金币）。 */
+    /** 结算节点中不需战斗的当场效果（医院治疗全队）。 */
     public void resolveRogueOptionEffect(Option option) {
         syncRogueTeam();
         rogueTurnManager.resolveImmediateEffect(option);

@@ -2,6 +2,7 @@ package org.example.controller;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -32,6 +33,7 @@ import org.example.util.LogUtil;
 import org.example.util.MusicPlayer;
 import org.example.view.CustomBattleSetupView;
 import org.example.view.CustomBattleView;
+import org.example.view.ItemDexView;
 import org.example.view.MainView;
 import org.example.view.PokedexView;
 import org.example.view.RogueFloorView;
@@ -110,11 +112,21 @@ public class MainController {
         return player.getParty().stream().mapToInt(Pokemon::getLevel).max().orElse(1);
     }
 
-    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「宝可梦图鉴」进入图鉴页；「自定义战斗」进入模式选择页）。 */
+    /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「宝可梦图鉴」「道具图鉴」进入图鉴页；「自定义战斗」进入模式选择页）。 */
     public void showStartScreen() {
         MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环；文件缺失静默降级）
         stage.setScene(new StartView(this::showStarterSelection, this::showContinueSelection,
-                saveManager.store().hasAnySave(), this::showCustomBattle, this::showPokedex).createScene());
+                saveManager.store().hasAnySave(), this::showCustomBattle, this::showPokedex,
+                this::showItemDexFromStart).createScene());
+    }
+
+    /**
+     * 道具图鉴页·启动页入口：此时尚未读档，没有 {@link Player}，因此传 {@code null} 让图鉴
+     * 按「全部未拥有」只读展示（无穿戴 / 脱下操作，仅看效果与售价）。「返回」回到启动页；
+     * 主菜单内的道具图鉴入口（{@link #showItemDex()}）仍带玩家数据，可直接穿脱。
+     */
+    public void showItemDexFromStart() {
+        stage.setScene(new ItemDexView(null, null, this::showStartScreen, "返回主界面").createScene());
     }
 
     /**
@@ -217,9 +229,18 @@ public class MainController {
             chooseSlotForNewGame(trainerName, starter);
             return;
         }
+        GameSession created;
+        try {
+            created = saveManager.newGame(slot, trainerName, starter);
+        } catch (RuntimeException ex) {
+            LogUtil.info("[MainController] 开新游戏失败：" + slot + "（" + ex.getMessage() + "）");
+            infoAlert("无法开始", "清空并初始化 " + slot.displayName() + " 时出错：\n" + ex.getMessage());
+            chooseSlotForNewGame(trainerName, starter);
+            return; // 失败时不动 activeSlot / session，避免把旧会话写进新档位
+        }
         this.activeSlot = slot;
-        this.session = saveManager.newGame(slot, trainerName, starter);
-        this.player = session.getPlayer();
+        this.session = created;
+        this.player = created.getPlayer();
         autoSave(); // 立刻落一次盘，玩家此后即使直接关窗口也有档可继续
         showMainMenu();
     }
@@ -303,6 +324,11 @@ public class MainController {
             }
 
             @Override
+            public void onShowItemDex() {
+                showItemDex();
+            }
+
+            @Override
             public void onBackToStart() {
                 showStartScreen();
             }
@@ -310,6 +336,17 @@ public class MainController {
                 session.getRogueRunData().isNotStarted() ? -1 : session.getRogueRunData().getGold(),
                 activeSlot == null ? null : activeSlot.displayName());
         stage.setScene(view.createScene());
+    }
+
+    /**
+     * 道具图鉴页：由主菜单「道具图鉴」按钮进入。
+     *
+     * <p>全量列出商店商品目录（17 件消耗品 + 77 件装备），标注已拥有 / 未拥有与穿戴者；
+     * 已拥有的装备可在本页直接穿戴 / 脱下（写的就是玩家装备库，与主菜单中栏共用同一模型方法），
+     * 因此这里不做二次校验，也不与金币 / 存档交互。「返回」重建主菜单以同步队伍变化。</p>
+     */
+    public void showItemDex() {
+        stage.setScene(new ItemDexView(player, session.mapBackgroundPath(), this::showMainMenu).createScene());
     }
 
     /**
@@ -503,8 +540,8 @@ public class MainController {
 
     /**
      * 路线节点统一入口：必然节点（道馆 / 四天王 / 冠军）直接开战且不消耗行动点；
-     * 其余节点先扣行动点，再按类型分发——战斗节点接管为真实战斗，医院 / 特殊事件当场结算，
-     * 商店打开购买界面。
+     * 其余节点先扣行动点，再按类型分发——战斗节点接管为真实战斗，医院当场结算，
+     * 商店打开购买界面，装备补给当场入库。
      */
     private void handleRogueOption(Option option) {
         if (option == null || session == null) {
@@ -525,10 +562,14 @@ public class MainController {
             case ROCKET -> startRocketBattle();
             case ROCKET_CAPTURE -> startRocketCaptureBattle();
             case LEGENDARY -> startLegendaryBattle();
-            case HOSPITAL, SPECIAL -> resolveNonBattleNode(option);
+            case HOSPITAL -> resolveNonBattleNode(option);
             case SHOP -> openShop();
             case REWARD -> {
                 resolveRogueEquipmentReward();
+                finishNodeStep(true);
+            }
+            case CANDY -> {
+                resolveRogueCandySupply();
                 finishNodeStep(true);
             }
             default -> showRogueFloorScene();
@@ -550,7 +591,20 @@ public class MainController {
         infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription());
     }
 
-    /** 非战斗节点：当场效果（医院治疗 / 特殊事件金币）结算后走节点收尾。 */
+    /** CANDY 事件：按所在段发放一批神奇糖果（8 / 10 / 12 / 14 / 16，逐段递增）。 */
+    private void resolveRogueCandySupply() {
+        Item candy = GameData.instance().item(RouteConfig.CANDY_ITEM_ID);
+        int count = RouteConfig.candyCountForSegment(session.getSegment());
+        if (candy == null) {
+            infoAlert("糖果补给", "道具数据缺失，本次补给落空。");
+            return;
+        }
+        player.getBag().add(candy, count);
+        LogUtil.info("糖果补给：获得 " + candy.getName() + " x" + count);
+        infoAlert("糖果补给", "获得神奇糖果 x" + count + "：喂给精灵可直接提升 1 级。");
+    }
+
+    /** 非战斗节点：当场效果（医院治疗全队）结算后走节点收尾。 */
     private void resolveNonBattleNode(Option option) {
         session.resolveRogueOptionEffect(option);
         finishNodeStep(true);
@@ -620,15 +674,24 @@ public class MainController {
     /** 本次商店的商品库存；为 null 表示当前不在商店。 */
     private ShopStock currentShopStock;
 
-    /** 当前商店视图（购买成功后就地刷新，不重建场景）。 */
+    /** 本次商店的界面实例：购买后原地刷新它（不换 Scene），滚动位置才不会被重置。 */
     private ShopView currentShopView;
 
-    /** 打开商店：按当前段生成库存。 */
+    /** 打开商店：按当前段生成库存（装备池排除已拥有的装备）。 */
     private void openShop() {
-        currentShopStock = ShopStock.forSegment(session.getSegment());
+        currentShopStock = ShopStock.forSegment(session.getSegment(), new Random(), ownedEquipmentIds());
         showShopScene();
     }
 
+    /** 玩家已拥有的装备 id（装备全库唯一，已拥有者不再上架）。 */
+    private Set<String> ownedEquipmentIds() {
+        if (player == null) {
+            return Set.of();
+        }
+        return player.getEquipment().stream().map(HeldItem::getId).collect(Collectors.toSet());
+    }
+
+    /** 进入商店：为本次库存新建界面（一次进店只建一次 Scene）。 */
     private void showShopScene() {
         if (currentShopStock == null) {
             showRogueFloorScene();
@@ -638,9 +701,27 @@ public class MainController {
         stage.setScene(currentShopView.createScene());
     }
 
-    /** 购买：校验金币 → 扣款 → 入背包 → 原地刷新商店页（不重建场景）。 */
+    /**
+     * 购买后刷新货架：原地更新金币与各条目的可购状态，并保住滚动位置。
+     *
+     * <p>不能像以前那样重建整个 Scene —— 新建 Scene 会让 ScrollPane 回到顶部，玩家在长货架
+     * 中段买一件东西就被弹回最上面。视图缺失（尚未进店）时才退化为整页重建。</p>
+     */
+    private void refreshShopScene() {
+        if (currentShopView == null) {
+            showShopScene();
+            return;
+        }
+        currentShopView.refresh(currentShopStock);
+    }
+
+    /** 购买：校验金币 → 扣款 → 消耗品入背包 / 装备入库 → 刷新货架。 */
     private void buyFromShop(ShopStock.Entry entry) {
         if (entry == null || player == null) {
+            return;
+        }
+        if (entry.isEquipment()) {
+            buyEquipment(entry);
             return;
         }
         Item item = GameData.instance().item(entry.itemId());
@@ -654,9 +735,34 @@ public class MainController {
         }
         player.getBag().add(item, 1);
         LogUtil.info("商店购买: " + entry.itemName() + " x1，花费 " + entry.price() + " 金币");
-        if (currentShopView != null) {
-            currentShopView.refresh(); // 原地刷新：金币 / 各行可购状态 / 信息框拥有数量（保留滚动与悬停状态）
+        refreshShopScene();
+    }
+
+    /**
+     * 购买装备：装备全库唯一，已拥有则提示并直接下架；否则扣款入库。
+     * 入库后把该件移出货架，避免同一件重复购买。
+     */
+    private void buyEquipment(ShopStock.Entry entry) {
+        HeldItem equipment = GameData.instance().equipment(entry.itemId());
+        if (equipment == null) {
+            infoAlert("数据异常", "商店装备不存在：" + entry.itemId());
+            return;
         }
+        if (player.getEquipment().contains(equipment)) {
+            infoAlert("已拥有", "你已经拥有【" + equipment.getName() + "】了，本次不上架该装备。");
+            currentShopStock = currentShopStock.withoutEntry(entry.itemId());
+            refreshShopScene();
+            return;
+        }
+        if (!session.getRogueRunData().spendGold(entry.price())) {
+            infoAlert("金币不足", "还需 " + (entry.price() - session.getRogueRunData().getGold()) + " 金币。");
+            return;
+        }
+        player.addEquipment(equipment);
+        LogUtil.info("商店购买装备: " + equipment.getName() + "，花费 " + entry.price() + " 金币");
+        LogUtil.info("获得装备【" + equipment.getName() + "】：" + equipment.getDescription());
+        currentShopStock = currentShopStock.withoutEntry(entry.itemId());
+        refreshShopScene();
     }
 
     /** 离开商店：视为完成该商店节点，走节点收尾。 */

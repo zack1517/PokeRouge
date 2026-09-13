@@ -34,7 +34,7 @@ public class SegmentPlan {
         return apLimit;
     }
 
-    /** 可以自由选择进入的路线节点（常驻节点必出，商店 / 特殊事件按概率出现）。 */
+    /** 可以自由选择进入的路线节点（常驻节点必出，商店 / 装备补给等按概率出现）。 */
     public List<Option> getRouteOptions() {
         return Collections.unmodifiableList(routeOptions);
     }

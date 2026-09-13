@@ -64,7 +64,7 @@ import org.example.util.UiScale;
  *     六项能力值/出战技能与技能库/装备与装备库，一次展示完整信息；技能库可「换上」，满 4 槽时
  *     在出战技能行「换下」完成互换；装备可「穿戴/换过来/脱下」，操作即时生效并局部刷新中栏；
  *     道具：插图/数量/功能表述）。中栏保持最后一次悬停内容，方便移开光标阅读。</li>
- *     <li><b>下</b>：进入层内事件 / 保存游戏 / 读取存档三个按钮居中排列（「返回主界面」已上移至顶部）。</li>
+ *     <li><b>下</b>：进入层内事件 / 道具图鉴 / 保存游戏 / 读取存档四个按钮居中排列（「返回主界面」已上移至顶部）。</li>
  * </ul>
  *
  * <p>背景由控制器按“段”决定后传入（同段多张图固定，换段才变），本类不做任何背景状态；
@@ -93,6 +93,8 @@ public class MainView {
         /** 回到初始主界面（启动页）：不退出程序。 */
         void onExit();
 
+        /** 打开道具图鉴：全量道具与可携带装备一览，可直接穿戴 / 脱下装备。 */
+        void onShowItemDex();
         /** 返回游戏启动页（第一屏；重新「开始游戏」将重新创建训练家）。 */
         void onBackToStart();
     }
@@ -993,7 +995,7 @@ public class MainView {
     }
 
     // ------------------------------------------------------------------
-    // 下部分：三个入口按钮
+    // 下部分：四个入口按钮
     // ------------------------------------------------------------------
 
     private HBox buildActionBar() {
@@ -1003,6 +1005,12 @@ public class MainView {
         rogue.setOnMouseEntered(e -> rogue.setStyle(barPillStyle("15px", "10 18", true)));
         rogue.setOnMouseExited(e -> rogue.setStyle(barPillStyle("15px", "10 18", false)));
         rogue.setOnAction(e -> actions.onStartRogueFloor());
+
+        Button dex = new Button("道具图鉴");
+        dex.setStyle(barPillStyle("13px", "8 14", false));
+        dex.setOnMouseEntered(e -> dex.setStyle(barPillStyle("13px", "8 14", true)));
+        dex.setOnMouseExited(e -> dex.setStyle(barPillStyle("13px", "8 14", false)));
+        dex.setOnAction(e -> actions.onShowItemDex());
 
         Button save = new Button("保存游戏");
         save.setStyle(barPillStyle("13px", "8 14", false));
@@ -1016,7 +1024,7 @@ public class MainView {
         load.setOnMouseExited(e -> load.setStyle(barPillStyle("13px", "8 14", false)));
         load.setOnAction(e -> actions.onLoadGame());
 
-        HBox bar = new HBox(12, rogue, save, load);
+        HBox bar = new HBox(12, rogue, dex, save, load);
         bar.setAlignment(Pos.CENTER);
         bar.setPadding(new Insets(10, 0, 0, 0));
         return bar;

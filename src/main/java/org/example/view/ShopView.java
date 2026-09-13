@@ -1,5 +1,6 @@
 package org.example.view;
 
+import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.binding.DoubleBinding;
 import javafx.geometry.Insets;
@@ -42,10 +43,12 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
- * 商店界面（《需求文档》§4.2 商店 + §七 界面需求）：用金币购买道具、回复品。
+ * 商店界面（《需求文档》§4.2 商店 + §七 界面需求）：用金币购买消耗品与可携带装备。
  *
- * <p>只负责展示 {@link ShopStock} 与收集购买意图；金币校验与扣款、入包由控制器完成 ——
- * 购买成功后控制器调用 {@link #refresh()} 原地刷新（不重建场景，不重播入场动画）。</p>
+ * <p>货架按分区展示：<b>消耗品</b>列出本段已解锁的那些（逐段增加、解锁后一直有货），<b>装备</b>为
+ * 未拥有装备的全量列表（可任选购买）。只负责展示 {@link ShopStock} 与收集购买意图；金币校验与
+ * 扣款、入包 / 入库由控制器完成 —— 购买成功后控制器调用 {@link #refresh(ShopStock)} 原地刷新
+ * （不重建场景，不重播入场动画）。</p>
  *
  * <p>2026-09-12 按设计稿改版（仅样式与布局调整，回调机制不变），整体只分上下两部分：</p>
  * <ul>
@@ -83,7 +86,8 @@ public class ShopView {
     private static final double ROW_HEIGHT = 34.6;
 
     private final GameSession session;
-    private final ShopStock stock;
+    /** 当前货架：购买后由 {@link #refresh(ShopStock)} 换成控制器下架 / 更新后的那一份。 */
+    private ShopStock stock;
     private final Consumer<ShopStock.Entry> onBuy;
     private final Runnable onLeave;
 
@@ -114,6 +118,13 @@ public class ShopView {
 
     /** 左上角返回胶囊（复用 FloatingMenu 共享胶囊菜单组）；每次构建场景时重建。 */
     private FloatingMenu backMenu;
+
+    /** 右栏商品列表内容与滚动容器（条目集合变化时重建列表，并恢复滚动位置）。 */
+    private VBox stockList;
+    private ScrollPane stockScroll;
+
+    /** 当前列表已渲染的条目 id（refresh 时对比：仅在条目集合变化时才重建列表）。 */
+    private List<String> renderedIds = List.of();
 
     public ShopView(GameSession session, ShopStock stock,
                     Consumer<ShopStock.Entry> onBuy, Runnable onLeave) {
@@ -235,11 +246,11 @@ public class ShopView {
         row.setVgrow(Priority.ALWAYS);
         content.getRowConstraints().add(row);
 
-        ScrollPane stockList = buildStockList(gold);
+        ScrollPane stockPane = buildStockList(gold);
         GridPane.setVgrow(detailBox, Priority.ALWAYS);
-        GridPane.setVgrow(stockList, Priority.ALWAYS);
+        GridPane.setVgrow(stockPane, Priority.ALWAYS);
         content.add(detailBox, 0, 0);
-        content.add(stockList, 1, 0);
+        content.add(stockPane, 1, 0);
         return content;
     }
 
@@ -335,10 +346,17 @@ public class ShopView {
         boolean affordable = gold >= entry.price();
         detailState.setText(affordable ? "可购买" : "金币不足");
         detailState.setStyle(stateStyle(affordable));
-        detailOwned.setText("背包已有 ×" + bagCount(entry.itemName()));
+        detailOwned.setText(entry.isEquipment()
+                ? "装备库：未拥有"
+                : "背包已有 ×" + bagCount(entry.itemName()));
 
-        Item item = GameData.instance().item(entry.itemId());
-        detailDesc.setText(item == null ? "" : describeItem(item));
+        // 装备自带描述（entry.description）；消耗品的描述由 Item 数据补（回复量 / 解除范围 / 捕捉率）
+        String desc = entry.description();
+        if (desc.isBlank()) {
+            Item item = GameData.instance().item(entry.itemId());
+            desc = item == null ? "" : describeItem(item);
+        }
+        detailDesc.setText(desc);
     }
 
     /** 背包中该商品当前的拥有数量（按道具名匹配堆叠；不在背包则为 0）。 */
@@ -354,27 +372,62 @@ public class ShopView {
         return 0;
     }
 
-    /** 右栏：商品列表（纵向排列，单行 = 名称 / 状态 / 金币 / 购买按钮；悬停联动左栏信息框）。 */
+    /** 右栏：商品列表（分区纵向排列，单行 = 名称 / 状态 / 金币 / 购买按钮；悬停联动左栏信息框）。 */
     private ScrollPane buildStockList(int gold) {
-        VBox list = new VBox(6);
-        list.setPadding(new Insets(2));
+        stockList = new VBox(6);
+        stockList.setPadding(new Insets(2));
+        fillStockRows(gold);
+
+        stockScroll = new ScrollPane(stockList);
+        stockScroll.setFitToWidth(true);
+        stockScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        stockScroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+        stockScroll.skinProperty().addListener((o, oldSkin, skin) -> {
+            if (skin != null) makeViewportTransparent(stockScroll);
+        });
+        return stockScroll;
+    }
+
+    /** 重填商品行：分区展示（消耗品在上、装备在下），并重建行状态引用（stockRows）。 */
+    private void fillStockRows(int gold) {
+        stockRows.clear();
+        stockList.getChildren().clear();
+        renderedIds = stock.entries().stream().map(ShopStock.Entry::itemId).toList();
         if (stock.isEmpty()) {
             Label empty = new Label("本次货架是空的，下次再来看看。");
             empty.setStyle(FONT + "-fx-font-size: 12px; -fx-text-fill: #333;");
-            list.getChildren().add(empty);
-        } else {
-            for (ShopStock.Entry entry : stock.entries()) {
-                list.getChildren().add(buildStockRow(entry, gold));
+            stockList.getChildren().add(empty);
+            return;
+        }
+        List<ShopStock.Entry> consumables = stock.entries().stream()
+                .filter(entry -> !entry.isEquipment())
+                .toList();
+        List<ShopStock.Entry> equipment = stock.entries().stream()
+                .filter(ShopStock.Entry::isEquipment)
+                .toList();
+        if (!consumables.isEmpty()) {
+            stockList.getChildren().add(sectionLabel("消耗品 · 已解锁 " + consumables.size()
+                    + " 件（解锁后一直有货，可重复购买）"));
+            for (ShopStock.Entry entry : consumables) {
+                stockList.getChildren().add(buildStockRow(entry, gold));
             }
         }
-        ScrollPane scroll = new ScrollPane(list);
-        scroll.setFitToWidth(true);
-        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
-        scroll.skinProperty().addListener((o, oldSkin, skin) -> {
-            if (skin != null) makeViewportTransparent(scroll);
-        });
-        return scroll;
+        if (!equipment.isEmpty()) {
+            stockList.getChildren().add(sectionLabel("装备 · 全部 " + equipment.size()
+                    + " 件（已拥有的不再列出，购买后可在主菜单中栏穿戴）"));
+            for (ShopStock.Entry entry : equipment) {
+                stockList.getChildren().add(buildStockRow(entry, gold));
+            }
+        }
+    }
+
+    /** 分区标题：把按段解锁的消耗品与全量上架的装备分开，便于在长列表里定位。 */
+    private static Label sectionLabel(String text) {
+        Label section = new Label(text);
+        section.setStyle(FONT + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #123c63;"
+                + " -fx-background-color: rgba(255, 255, 255, 0.88); -fx-background-radius: 6;"
+                + " -fx-padding: 4 8;");
+        return section;
     }
 
     /** 商品行：商品名 / 可否购买状态 / 所需金币 / 购买按钮（一行）；悬停联动左栏信息框。 */
@@ -394,7 +447,7 @@ public class ShopView {
         price.setStyle(FONT + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #E6A800;");
 
         // 购买按钮：行为与悬停样式一次挂好，可购状态由 applyBuyState 切换（原地刷新不重建）
-        Button buy = new Button("购买");
+        Button buy = new Button(entry.isEquipment() ? "购买装备" : "购买");
         buy.setMinWidth(Region.USE_PREF_SIZE); // 钉宽：不随行收缩
         buy.getStyleClass().add("shop-buy");
         buy.setOnMouseEntered(e -> buy.setStyle(pillStyle(true)));
@@ -426,18 +479,35 @@ public class ShopView {
 
     /**
      * 购买成功后的原地刷新：金币信息卡、各行的可购状态与购买按钮、信息框（拥有数量与可购状态）。
-     * 只更新已有节点的文本 / 状态，不重建场景、不重播入场动画。
+     *
+     * <p>条目未变（买消耗品）只更新文本 / 状态，保住悬停与滚动；装备售出下架导致条目集合
+     * 变化时才重建商品行，并把滚动位置恢复到购买前（长货架买一件不会被弹回顶部）。</p>
      */
-    public void refresh() {
+    public void refresh(ShopStock updated) {
+        this.stock = updated;
         int gold = session.getRogueRunData().getGold();
+
+        List<String> updatedIds = updated.entries().stream().map(ShopStock.Entry::itemId).toList();
+        if (!updatedIds.equals(renderedIds)) {
+            double previousScroll = stockScroll.getVvalue();
+            fillStockRows(gold);
+            // 列表刚重建、布局还没跑完，此刻写 vvalue 会被旧的内容高度夹断；等布局结束再恢复
+            Platform.runLater(() -> stockScroll.setVvalue(previousScroll));
+        } else {
+            for (StockRow row : stockRows) {
+                boolean affordable = gold >= row.entry().price();
+                row.state().setText(affordable ? "可购买" : "金币不足");
+                row.state().setStyle(stateStyle(affordable));
+                applyBuyState(row.buy(), affordable);
+            }
+        }
+
         if (goldLabel != null) {
             goldLabel.setText("金币: " + gold);
         }
-        for (StockRow row : stockRows) {
-            boolean affordable = gold >= row.entry().price();
-            row.state().setText(affordable ? "可购买" : "金币不足");
-            row.state().setStyle(stateStyle(affordable));
-            applyBuyState(row.buy(), affordable);
+        if (currentEntry != null && !updatedIds.contains(currentEntry.itemId())) {
+            // 信息框正展示的装备被买走下架：切到货架第一件
+            currentEntry = updated.isEmpty() ? null : updated.entries().get(0);
         }
         if (currentEntry != null) {
             populateDetail(currentEntry); // 更新「背包已有 ×N」与可购状态

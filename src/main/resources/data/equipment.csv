@@ -5,6 +5,38 @@
 #   / LIFE_STEAL(造成伤害吸血,param 为比例 如 0.125)
 #   / FIRST_STRIKE(概率无视速度先手,param 为概率百分比 如 20)
 #   / EVOLITE(未最终进化时双防提升,param 为倍率)
+#   / PHYSICAL_DAMAGE(物理招式伤害提升,param 为倍率)
+#   / SPECIAL_DAMAGE(特殊招式伤害提升,param 为倍率)
+#   / LIFE_ORB(招式伤害提升且每次命中反伤,param 为 倍率|反伤比例)
+#   / SPEED_MULTIPLIER(实际速度按倍率修正,param 为 倍率[|GROUND],第2段为 GROUND 时携带者被地面化)
+#   / MOVE_LAST(同先制度时必定后出手,param 忽略)
+#   / IGNORE_IMMUNITY(携带者失去属性免疫,0倍招式变1倍,param 忽略)
+#   / GROUND_IMMUNE(免疫地面系招式,被地面系命中后消耗,param 忽略)
+#   / POISON_HEAL(毒属性回复/非毒属性扣血,param 为 回血比例|扣血比例)
+#   / END_TURN_STATUS(回合末陷入指定异常,param 为状态英文名 如 BURN / BADLY_POISON)
+#   / WEATHER_DURATION(开启对应天气时延长回合数,param 为 天气英文名|回合数 如 SUNNY|8)
+#   / FOCUS_SASH(满HP时受致死伤害保留1HP,触发后消耗,param 忽略)
+#   / FOCUS_BAND(概率保留1HP,param 为概率百分比)
+#   / CHOICE(讲究系:param 为 ATTACK|倍率、SPECIAL|倍率 或 SPEED|倍率,并把携带者锁在第一个用过的招式上)
+#   / CURE_STATUS(树果:异常治疗,param 为 状态英文名[|状态英文名...] 或 ALL,如 PARALYSIS / POISON|BADLY_POISON)
+#   / HEAL_HP(树果:HP 不高于阈值比例时回血,param 为 阈值比例|回复量,回复量<1 视为最大HP比例,>=1 视为固定点数)
+#   / HEAL_PP(树果:招式 PP 归零时回补,param 为回复点数)
+#   / RESIST_TYPE(树果:属性减伤,param 为 属性|承伤倍率[|ALWAYS],默认仅在效果拔群时触发,ALWAYS 时不看克制关系)
+#   / PUNCH_BOOST(拳类招式威力提升且不再视为接触,param 为倍率)
+#   / CONTACT_PUNISH(被接触类招式命中时攻击方按最大HP比例反伤,param 为比例)
+#   / POWDER_IMMUNE(免疫粉末类招式与沙暴/冰雹回合末伤害,param 忽略)
+#   / CRIT_BOOST(会心等级提升,param 为提升等级)
+#   / FLINCH_CHANCE(招式造成伤害后按概率使目标畏缩,param 为概率百分比)
+#   / CONSECUTIVE_BOOST(连续使用同一招式时逐次增伤,param 为每层增幅)
+# 批次⑤新增 effectType（能力等级联动 / 天气免疫）：
+#   / ASSAULT_VEST(特防提升且禁止使用变化类招式,param 为倍率)
+#   / CLEAR_AMULET(能力等级不会被对手降低,param 忽略)
+#   / WEAKNESS_POLICY(被效果拔群招式命中后物攻与特攻各提升,触发后消耗,param 为提升等级)
+#   / BLUNDER_POLICY(招式未命中后速度提升,触发后消耗,param 为提升等级)
+#   / THROAT_SPRAY(使用声音类招式后特攻提升,触发后消耗,param 为提升等级)
+#   / TERRAIN_SEED(处于指定场地时提升能力,触发后消耗,param 为 场地|能力项|等级 如 ELECTRIC|DEFENSE|1)
+#   / TYPE_REACTION(受到指定属性招式后提升能力,触发后消耗,param 为 属性|能力项|等级 如 WATER|SP_ATTACK|1)
+#   / UTILITY_UMBRELLA(不受天气影响:晴天/雨天威力修正无效,沙暴/冰雹回合末伤害无效,param 忽略)
 id,name,effectType,param,description
 e_charcoal,木炭,DAMAGE_TYPE,FIRE|1.2,火属性招式威力提升 20%
 e_mystic_water,神秘水滴,DAMAGE_TYPE,WATER|1.2,水属性招式威力提升 20%
@@ -14,3 +46,78 @@ e_leftovers,剩饭,END_TURN_HEAL,0.0625,每回合末回复最大 HP 的 1/16
 e_shell_bell,贝壳之铃,LIFE_STEAL,0.125,攻击造成伤害的 1/8 回复自身 HP
 e_quick_claw,先制之爪,FIRST_STRIKE,20,20% 概率无视速度先手出招
 e_eviolite,进化辉石,EVOLITE,1.5,未最终进化时防御与特防提升 50%
+e_muscle_band,力量头带,PHYSICAL_DAMAGE,1.1,物理招式伤害提升 10%
+e_wise_glasses,博识眼镜,SPECIAL_DAMAGE,1.1,特殊招式伤害提升 10%
+e_life_orb,生命宝珠,LIFE_ORB,1.3|0.1,招式伤害提升 30%，每次命中后失去最大 HP 的 1/10
+e_iron_ball,黑色铁球,SPEED_MULTIPLIER,0.5|GROUND,速度降低 50%，且被地面化（不再免疫地面系招式）
+e_lagging_tail,后攻之尾,MOVE_LAST,,同先制度时必定最后出招
+e_ring_target,标靶,IGNORE_IMMUNITY,,携带者失去属性免疫，原本无效的招式变为 1 倍
+e_air_balloon,气球,GROUND_IMMUNE,,免疫地面系招式，被地面系招式命中后消耗
+e_black_sludge,黑色污泥,POISON_HEAL,0.0625|0.125,毒属性每回合末回复 1/16 HP，非毒属性每回合末失去 1/8 HP
+e_flame_orb,火焰宝珠,END_TURN_STATUS,BURN,回合结束时变为灼伤状态
+e_toxic_orb,剧毒宝珠,END_TURN_STATUS,BADLY_POISON,回合结束时变为剧毒状态
+e_heat_rock,炽热岩石,WEATHER_DURATION,SUNNY|8,携带者开启大晴天时持续 8 回合
+e_damp_rock,潮湿岩石,WEATHER_DURATION,RAIN|8,携带者开启下雨时持续 8 回合
+e_smooth_rock,沙沙岩石,WEATHER_DURATION,SANDSTORM|8,携带者开启沙暴时持续 8 回合
+e_icy_rock,冰冷岩石,WEATHER_DURATION,HAIL|8,携带者开启冰雹时持续 8 回合
+e_focus_sash,气势披带,FOCUS_SASH,,满 HP 时受到致死伤害保留 1 HP，触发后消耗
+e_focus_band,气势头带,FOCUS_BAND,10,HP 归零时 10% 概率保留 1 HP
+e_choice_specs,讲究眼镜,CHOICE,SPECIAL|1.5,特殊招式伤害提升 50%，但只能使用第一个招式
+e_choice_scarf,讲究围巾,CHOICE,SPEED|1.5,速度提升 50%，但只能使用第一个招式
+# 批次②树果：异常治疗（触发即消耗）
+b_cheri,樱子果,CURE_STATUS,PARALYSIS,陷入麻痹时立即治愈
+b_pecha,桃桃果,CURE_STATUS,POISON|BADLY_POISON,陷入中毒时立即治愈
+b_rawst,莓莓果,CURE_STATUS,BURN,陷入灼伤时立即治愈
+b_chesto,零余果,CURE_STATUS,SLEEP,陷入睡眠时立即治愈
+b_aspear,利木果,CURE_STATUS,FREEZE,陷入冰冻时立即治愈
+b_persim,柿仔果,CURE_STATUS,CONFUSION,陷入混乱时立即治愈
+b_lum,木子果,CURE_STATUS,ALL,陷入任何异常状态时立即治愈
+# 批次②树果：HP 回复（触发即消耗）
+b_oran,橙橙果,HEAL_HP,0.5|10,HP 不高于 1/2 时回复 10 HP
+b_sitrus,文柚果,HEAL_HP,0.5|0.25,HP 不高于 1/2 时回复最大 HP 的 1/4
+b_figy,勿花果,HEAL_HP,0.25|0.125,HP 不高于 1/4 时回复最大 HP 的 1/8
+b_wiki,异奇果,HEAL_HP,0.25|0.125,HP 不高于 1/4 时回复最大 HP 的 1/8
+b_aguav,乐芭果,HEAL_HP,0.25|0.125,HP 不高于 1/4 时回复最大 HP 的 1/8
+b_iapapa,芭亚果,HEAL_HP,0.25|0.125,HP 不高于 1/4 时回复最大 HP 的 1/8
+# 批次②树果：PP 回复（触发即消耗）
+b_leppa,苹野果,HEAL_PP,10,招式 PP 耗尽时回复 10 PP
+# 批次②树果：属性减伤（受效果拔群攻击时消耗）
+b_occa,巧可果,RESIST_TYPE,FIRE|0.5,受到效果拔群的火属性招式时伤害减半
+b_passho,千香果,RESIST_TYPE,WATER|0.5,受到效果拔群的水属性招式时伤害减半
+b_wacan,烛木果,RESIST_TYPE,ELECTRIC|0.5,受到效果拔群的电属性招式时伤害减半
+b_rindo,罗子果,RESIST_TYPE,GRASS|0.5,受到效果拔群的草属性招式时伤害减半
+b_yache,番荔果,RESIST_TYPE,ICE|0.5,受到效果拔群的冰属性招式时伤害减半
+b_chople,莲蒲果,RESIST_TYPE,FIGHTING|0.5,受到效果拔群的格斗属性招式时伤害减半
+b_kebia,通通果,RESIST_TYPE,POISON|0.5,受到效果拔群的毒属性招式时伤害减半
+b_shuca,腰木果,RESIST_TYPE,GROUND|0.5,受到效果拔群的地面属性招式时伤害减半
+b_coba,扁樱果,RESIST_TYPE,FLYING|0.5,受到效果拔群的飞行属性招式时伤害减半
+b_payapa,霹霹果,RESIST_TYPE,PSYCHIC|0.5,受到效果拔群的超能力属性招式时伤害减半
+b_tanga,莓榴果,RESIST_TYPE,BUG|0.5,受到效果拔群的虫属性招式时伤害减半
+b_charti,草蚕果,RESIST_TYPE,ROCK|0.5,受到效果拔群的岩石属性招式时伤害减半
+b_kasib,佛柑果,RESIST_TYPE,GHOST|0.5,受到效果拔群的幽灵属性招式时伤害减半
+b_haban,刺耳果,RESIST_TYPE,DARK|0.5,受到效果拔群的恶属性招式时伤害减半
+b_roseli,洛玫果,RESIST_TYPE,FAIRY|0.5,受到效果拔群的妖精属性招式时伤害减半
+b_babiri,灯浆果,RESIST_TYPE,NORMAL|0.5|ALWAYS,受到一般属性招式时伤害减半（一般属性无克制关系，故不看效果拔群）
+# 批次④装备：招式标记 / 会心 / 畏缩
+e_punch_glove,拳击手套,PUNCH_BOOST,1.1,拳类招式威力提升 10%，且该招式不再视为接触类
+e_rocky_helmet,凸凸头盔,CONTACT_PUNISH,0.1667,被接触类招式命中时，攻击方失去最大 HP 的 1/6
+e_safety_goggles,防尘护目镜,POWDER_IMMUNE,,免疫粉末类招式与沙暴/冰雹的回合末伤害
+e_razor_claw,锐利之爪,CRIT_BOOST,1,会心等级 +1（会心率 1/24 → 1/8）
+e_kings_rock,王者之证,FLINCH_CHANCE,10,招式造成伤害后 10% 概率使目标畏缩
+e_metronome,节拍器,CONSECUTIVE_BOOST,0.2,连续使用同一招式时每次增伤 20%，上限 2 倍
+# 批次⑤装备：能力等级联动 / 天气免疫
+e_choice_band,讲究头带,CHOICE,ATTACK|1.5,物理招式伤害提升 50%，但只能使用第一个招式
+e_assault_vest,突击背心,ASSAULT_VEST,1.5,特防提升 50%，但无法使用变化类招式
+e_clear_amulet,清净坠饰,CLEAR_AMULET,,能力等级不会被对手降低
+e_weakness_policy,弱点保险,WEAKNESS_POLICY,2,被效果拔群招式命中后物攻与特攻各提升 2 级，触发后消耗
+e_blunder_policy,打空保险,BLUNDER_POLICY,2,招式未命中时速度提升 2 级，触发后消耗
+e_throat_spray,爽喉喷雾,THROAT_SPRAY,1,使用声音类招式后特攻提升 1 级，触发后消耗
+e_electric_seed,电气种子,TERRAIN_SEED,ELECTRIC|DEFENSE|1,电气场地时防御提升 1 级，触发后消耗
+e_psychic_seed,精神种子,TERRAIN_SEED,PSYCHIC|SP_DEFENSE|1,精神场地时特防提升 1 级，触发后消耗
+e_misty_seed,薄雾种子,TERRAIN_SEED,MISTY|SP_DEFENSE|1,薄雾场地时特防提升 1 级，触发后消耗
+e_grassy_seed,青草种子,TERRAIN_SEED,GRASSY|DEFENSE|1,青草场地时防御提升 1 级，触发后消耗
+e_absorb_bulb,球根,TYPE_REACTION,WATER|SP_ATTACK|1,受到水属性招式时特攻提升 1 级，触发后消耗
+e_cell_battery,充电电池,TYPE_REACTION,ELECTRIC|ATTACK|1,受到电属性招式时物攻提升 1 级，触发后消耗
+e_luminous_moss,光苔,TYPE_REACTION,WATER|SP_DEFENSE|1,受到水属性招式时特防提升 1 级，触发后消耗
+e_snowball,雪球,TYPE_REACTION,ICE|ATTACK|1,受到冰属性招式时物攻提升 1 级，触发后消耗
+e_utility_umbrella,万能伞,UTILITY_UMBRELLA,,不受天气影响：晴天/雨天的威力修正无效，沙暴/冰雹的回合末伤害也不生效

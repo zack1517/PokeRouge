@@ -49,6 +49,8 @@ public class Pokemon {
     private int badlyPoisonCounter;
     /** 混乱剩余回合数（0 表示未混乱），换宠或倒下即清零。 */
     private int confusionTurns;
+    /** 畏缩（挥发性状态）：为 true 时本回合无法行动，回合末自动清除。 */
+    private boolean flinched;
     /** 当前等级内累积的经验（跨级归零后进入下一级）。 */
     private long exp;
     /**
@@ -293,6 +295,23 @@ public class Pokemon {
         return had;
     }
 
+    /** 是否处于畏缩（挥发性状态，回合末清除）。 */
+    public boolean isFlinched() {
+        return flinched;
+    }
+
+    /** 设置畏缩状态（战斗引擎在被招式命中后按概率施加）。 */
+    public void setFlinch(boolean value) {
+        flinched = value;
+    }
+
+    /** 清除畏缩（回合末或换宠时调用），返回本次是否真的清除了畏缩。 */
+    public boolean clearFlinch() {
+        boolean had = flinched;
+        flinched = false;
+        return had;
+    }
+
     /** 同时清除主要异常与混乱（万灵药等全解道具）。 */
     public void clearAllStatus() {
         cureStatus();
@@ -341,9 +360,30 @@ public class Pokemon {
         return confusionTurns <= 0;
     }
 
-    /** 计入能力等级与异常状态后的实际速度（麻痹减半，最低 1）。 */
+    /**
+     * 计入能力等级、异常状态与携带装备后的实际速度（麻痹减半；能力等级按 {@link #stageMultiplier}；
+     * 黑色铁球按倍率减速、讲究围巾按倍率加速；最低 1）。
+     */
     public int effectiveSpeed() {
-        return applyModifiers(stats.getSpeed(), Stat.SPEED, status.speedMultiplier());
+        return applyModifiers(stats.getSpeed(), Stat.SPEED,
+                status.speedMultiplier() * heldItemSpeedMultiplier());
+    }
+
+    /**
+     * 携带装备的速度倍率修正：{@link HeldItemEffect#SPEED_MULTIPLIER} 直接取参数倍率，
+     * {@link HeldItemEffect#CHOICE} 仅在修正项为 {@code SPEED} 时生效。
+     *
+     * @return 速度倍率；未携带装备或无速度类效果时返回 1.0
+     */
+    private double heldItemSpeedMultiplier() {
+        if (heldItem == null) {
+            return 1.0;
+        }
+        return switch (heldItem.getEffectType()) {
+            case SPEED_MULTIPLIER -> heldItem.doubleParam();
+            case CHOICE -> "SPEED".equals(heldItem.choiceKind()) ? heldItem.choiceMultiplier() : 1.0;
+            default -> 1.0;
+        };
     }
 
     /** 计入能力等级与异常状态后的实际物理攻击（灼伤减半，最低 1）。 */
@@ -454,7 +494,7 @@ public class Pokemon {
     }
 
     /**
-     * 清除全部<b>挥发性</b>战斗状态：能力等级、守住保护与连续次数、寄生种子。
+     * 清除全部<b>挥发性</b>战斗状态：能力等级、守住保护与连续次数、寄生种子、畏缩。
      * <p>离场（换宠、倒下）与战斗开始时调用；这些状态不写入存档。</p>
      */
     public void clearVolatileState() {
@@ -462,6 +502,7 @@ public class Pokemon {
         protectedThisTurn = false;
         protectStreak = 0;
         seeded = false;
+        flinched = false;
     }
 
     public String getName() {

@@ -1,6 +1,6 @@
 # UI 模块接口与界面设计文档（接口文档_UI模块）
 
-> 版本：v0.1.18（草稿） · 日期：2026-09-11 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
+> 版本：v0.1.27（草稿） · 日期：2026-09-13 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
 > 角色：UI 负责人 · 状态：**待组长评审**，评审通过前不进入编码
 > 依据：《需求文档》§7 界面与交互需求、《测试用例草稿》§D、《接口文档_战斗服务.md》v1.14、
 > **本阶段六系统任务分工**（游戏流程系统 / 存档系统 / 宝可梦系统 / 战斗系统 / 肉鸽系统 / JavaFX UI；其中游戏流程与存档由同一人负责）
@@ -16,7 +16,15 @@
 > **v0.1.16 界面流转收敛到启动页：场景图新增启动页节点，主菜单由「进入层内事件 / 保存游戏 / 退出游戏」改为「进入层内事件 / 保存游戏 / 读取存档 / 返回主界面」，一轮远征结束（通关 / 战败 / 队伍全灭）改为回启动页开新游戏，「退出程序」只保留窗口关闭二次确认**；
 > **v0.1.17 同步战斗服务 v1.11 的逐只即时结算：经验改为「每击倒一只对手即时发放」，故战斗页日志可在**战斗进行中**出现升级 / 学招文本，`pendingLearnChoices()` 也可能在战斗中即非空——战斗页渲染顺序调整为「挂起抉择优先于战斗菜单、结局展示最后」，渲染字段无变化**；
 > **v0.1.18 同步战斗服务 v1.14 己方倒下后的玩家补位：战斗页新增「必须选出替补」面板（`showReplacementMenu`，不可返回），`isOngoing()` 为真但 `isAwaitingReplacement()` 为真时必须先 `chooseReplacement(int)` 才能继续；`playerActive()` 不再出现 null（补位前为刚倒下的那只），§4.1 / §6.4 / §6.6 相应修订**；
+> **v0.1.19 商店上架全部可携带装备（77 件）：§3.6 `ShopView` 改为「消耗品 / 装备」两分区抽签，装备池全量取自 `GameData#allEquipment()`、按 `HeldItemEffect` 定解锁段位与基础价、已拥有不再上架**；
+> **v0.1.20 新增道具图鉴页：§3.2 页面总表增「道具图鉴」行并把主菜单行补上入口，新增 §3.7 `ItemDexView`（93 件全量目录 + 四档筛选 + 已拥有 / 穿戴标注 + 装备直接穿脱）；目录口径复用 `ShopStock#catalog()`，与货架的定价 / 解锁段位同源**；
+> **v0.1.21 取消商店分段解锁：§3.6 `ShopView` 段改写 —— 消耗品与装备不再按段解锁，第 1 段起全部可能上架，「越往后越多」只由货架格位（`RouteConfig#shopStockSize`）与售价通胀体现；大师球改为剧情专属道具（不进商店，击败火箭队首领必得），§3.7 图鉴把「第 N 段起可在商店购买」改为「商店出售 / 不售卖」标识**；
+> **v0.1.22 道具图鉴补启动页入口：启动页在「宝可梦图鉴」下新增「道具图鉴」胶囊（第七个入口），`StartView` 构造多收一个 `onItemDex` 回调、`MainController#showItemDexFromStart()` 以 `player = null` 打开同一页（无存档 → 只读展示，无穿戴操作）；`ItemDexView` 构造新增 4 参重载（可自定义返回按钮文案），§3.1 场景图、§3.2 页面总表与 §3.7 相应更新**；
+> **v0.1.23 商店装备改为全量上架：§3.6 `ShopView` 段改写 —— 装备分区不再抽签、不再占「格位」，未拥有的装备（最多 77 件）进店即全量列出、想买哪件就买哪件；`RouteConfig#shopStockSize` 更名为 `#shopConsumableStockSize`（只约束随机上架的消耗品），`shopEquipmentStockSize` 及其三个常量删除**；
+> **v0.1.24 消耗品逐段解锁 + 购买后原地刷新：§3.6 `ShopView` 段改写 —— 消耗品恢复「按段解锁」（第 1 段 7 件、每段再放开 2 件，**解锁后常驻、只增不减**），`ShopStock.Consumable` 第四列由 `sold` 改回 `unlockSegment`（`NEVER_UNLOCKED` 表示剧情专属）、随机抽签的 `rollConsumables` 删除；因不再有格位，`RouteConfig#shopConsumableStockSize` 与四个 `SHOP_CONSUMABLE_*` 常量一并删除（装备口径不变，仍不分段、全量上架）。同时修掉「购买后被弹回列表最上面」：`ShopView#refresh` 原地重建卡片并用 `Platform.runLater` 恢复 `ScrollPane` 滚动位置，`MainController` 以 `currentShopView` + `refreshShopScene()` 取代重建 Scene。§3.7 图鉴来源行相应补「第 N 段起解锁后一直有货」**；
 > 文中「[待确认]」项为需与组长 / 对应系统负责人确认后方可定稿的内容。
+> **v0.1.25 ~ v0.1.26 商店消耗品解锁与神奇糖果：消耗品第 1 段 7 件起步、每段再放开 2 件且解锁后常驻（货架件数 7 → 10 → 12 → 14 → 16），新增「神奇糖果」（`i_rare_candy`）与「糖果补给」节点（`OptionType.CANDY`，AP 1 点，逐段 8 / 10 / 12 / 14 / 16 个），精灵详情页新增「道具使用卡」（局外喂食 / 回复 / 解除）**；
+> **v0.1.27 火箭队抓捕神兽在末段固定出现：末段（第 5 段）剧情线已开且首领未败时，`OptionType.ROCKET_CAPTURE` 随常驻节点无条件入列且不占用特殊事件槽位（节点列表上限 5 → 6，末段 4~6 项）；节点仍为一次性，**渲染与交互无需改动**，UI 若需提示可读 `RouteConfig#isRocketBossResidentSegment(int)`**；
 
 ## 1. 概述
 
@@ -131,10 +139,12 @@ src/main/java/org/example/
                 ┌──────────────┐
                 │ title 启动页   │ ← 程序启动 / 返回主界面 / 一轮结束
                 └──────┬───────┘   「开始游戏」新档、「继续游戏」读档
+                       ├────────► pokedex 宝可梦图鉴 / itemDex 道具图鉴（启动页入口，无存档时只读）
                        ▼
                 ┌──────────────┐
                 │ mainMenu 主菜单│ ← 新建档完成 / 读档完成
                 └──────┬───────┘   「保存游戏」「读取存档」「返回主界面」
+                       ├────────► itemDex 道具图鉴（94 件全量 + 装备穿脱）
                        ▼
                 ┌──────────────┐
                 │ teamSelect 选队│ 多选初始宝可梦，确定后开始新 Run
@@ -162,8 +172,8 @@ src/main/java/org/example/
 
 | 页面 | 主要功能 | 驱动/数据系统 | 对应用例 |
 | --- | --- | --- | --- |
-| 启动页 | 开始游戏（新档）/ 继续游戏（读档，无档置灰）/ 成就 / 设置 | 游戏流程系统 + 存档系统 | SAVE-01~03 |
-| 主菜单 | 进入层内事件 / 保存游戏 / 读取存档 / 返回主界面（不退出程序） | 游戏流程系统（读档动作归存档系统） | — |
+| 启动页 | 开始游戏（新档）/ 继续游戏（读档，无档置灰）/ 宝可梦图鉴 / 道具图鉴（只读） / 成就 / 设置 | 游戏流程系统 + 存档系统 | SAVE-01~03 |
+| 主菜单 | 进入层内事件 / 道具图鉴 / 保存游戏 / 读取存档 / 返回主界面（不退出程序） | 游戏流程系统（读档动作归存档系统） | — |
 | 存档位选择 | 4 个档位的摘要与可用状态，选定后新游戏 / 读档 / 保存 | 存档系统（详见《接口文档_存档系统.md》） | SAVE-01~03 |
 | 初始选队 | 多选初始宝可梦、数量上限校验、确定出发 | 游戏流程系统 + 宝可梦系统(初始池 I-01) | UI-01 |
 | 路线地图 | 段节点链、AP 显示、节点可选性（判定归服务侧）、金币/队伍摘要 | 游戏流程系统（调度 I-02a）+ 肉鸽系统（I-02b） | UI-02 |
@@ -173,8 +183,9 @@ src/main/java/org/example/
 | 商店 | 展示段内货架、金币余额、买不起的商品禁用、购买后即时扣款 | 肉鸽系统（货架由存档/肉鸽状态提供） | 见 §3.6 |
 | 合并/性格选择 | 同类合并（等级取高）提示、性格选择 | 宝可梦系统（I-06，范围 [待确认]） | GROW-06/07 / UI-04 |
 | 结算 | 失败原因/通关/侵略战结局 + 存档提示 | 游戏流程系统（I-07）+ 存档系统（I-09） | FLOW-10~17 |
-| 图鉴 | 收集展示 | 宝可梦系统 | [待确认] 是否首版 |
-| 精灵详情页（参考实现已落地） | 主菜单点精灵名进入：立绘/信息/数值/技能 + 装备槽（穿戴/脱下） | 宝可梦系统 + 肉鸽系统（装备库） | UI-03 相关 |
+| 图鉴 | 收集展示（宝可梦图鉴：全量列出 + 已捕获标注，入口在启动页） | 宝可梦系统 | [待确认] 是否首版 |
+| 道具图鉴（参考实现已落地） | 启动页「道具图鉴」（无存档 → 只读）/ 主菜单「道具图鉴」（可直接穿脱装备）进入：94 件全量目录（17 道具 + 77 装备）、四档筛选、已拥有/穿戴标注、装备直接穿脱 | 肉鸽系统（`ShopStock.catalog()` 定价与「在售 / 不售卖」口径）+ 宝可梦系统（装备库 / 背包） | 见 §3.7 |
+| 精灵详情页（参考实现已落地） | 主菜单点精灵名进入：立绘/信息/数值/技能 + 装备槽（穿戴/脱下）+ 道具使用卡（局外喂药 / 吃神奇糖果） | 宝可梦系统 + 肉鸽系统（装备库、`ItemUsageService`） | UI-03 相关 |
 
 ### 3.3 战斗页（FXML 版要求）
 
@@ -229,7 +240,7 @@ FXML 重写，要求：
   "从上一页顺序进入"的隐式前提**；
 - 页面自身不留跨页历史（返回路径由流程系统维护，UI 只响应调度）。
 
-### 3.5 精灵详情页与装备穿戴（v0.1.10，参考实现已落地）
+### 3.5 精灵详情页与装备穿戴（v0.1.10，参考实现已落地；v0.1.26 补道具使用）
 
 主菜单队伍面板中点击精灵名进入**精灵详情页**（`org.example.view.PokemonDetailView`，独立场景切换），
 精灵名以下划线样式 + 手型光标提示可点击。页面内容：
@@ -242,10 +253,17 @@ FXML 重写，要求：
 - **装备槽**：当前装备（名称+效果说明+「脱下」按钮）；下方装备库列表
   （`Player#getEquipment()`），每件显示名称/效果与状态按钮：已穿戴（禁用）、
   换过来（已穿在其他精灵上，穿戴时自动脱下原穿戴者）、穿戴；
+- **道具使用卡**（v0.1.26 新增）：列出背包里**可在局外使用**的消耗品（`Item#usableOutsideBattle()`，
+  即回复类 / 解除类 / 升级类；精灵球不在内），每行给出名称、效果说明、`已拥有 ×N` 与「使用」按钮。
+  点击后把该件用在**当前详情的这只精灵**上，并把 `ItemUsageService#use` 返回的文案弹窗展示；
+  **不满足条件的操作不消耗道具**（伤药对满 HP / 已倒下、解除药对无对应异常、神奇糖果对满级）。
+  升级走 `BattleGrowthPort#boostLevel`，因此吃神奇糖果与战斗结算出的升级同规则（到级学招 / 进化）。
+  用掉道具后本页即时重建，主菜单的背包计数随之刷新。
 
 交互规则：每次穿脱后**回调控制器重建主菜单**（`MainView.Actions#onShowPokemonDetail`），
 详情页自身即时重建装备区；装备唯一性由 `Player#equip` 保证（穿给一只自动脱下另一只）。
 装备获取来自肉鸽「装备补给」事件（`OptionType.REWARD`），由流程/控制器结算后入库。
+「神奇糖果」另有肉鸽「糖果补给」事件（`OptionType.CANDY`，见 §3.6）与商店两条获取途径。
 
 ### 3.5 存档位选择页（v0.1.11 新增，已落地）
 
@@ -293,7 +311,7 @@ FXML 重写，要求：
 | --- | --- |
 | 标题 | `第 N / 5 段 · <阶段名>`，阶段名取 `RoutePhase#getDisplayName()` |
 | 副标题 | `行动点：X / Max　金币：N 🪙` |
-| 节点列表 | 每段 3~5 个路线节点；**已走过的一次性节点**置灰且不可点；**常驻节点（路人 / 野外精灵 / 医院）走过后仍可点**，标题标注「已走过 N 次 · 可再次进入」与再次进入的行动点消耗；行动点不足以进入的节点禁用并给出提示 |
+| 节点列表 | 每段 3~6 个路线节点（末段剧情线未收束时为 4~6 个：3 常驻 + 固定「火箭队抓捕神兽」）；**已走过的一次性节点**置灰且不可点；**常驻节点（路人 / 野外精灵 / 医院）走过后仍可点**，标题标注「已走过 N 次 · 可再次进入」与再次进入的行动点消耗；行动点不足以进入的节点禁用并给出提示 |
 | 必然节点区 | 阶段为道馆 / 四天王 / 冠军 / 首领侵略战时改为展示 `buildMandatoryBox`（必然节点不占行动点） |
 | 兜底按钮 | 本段行动点耗尽或已无节点可走时，显示「挑战道馆」按钮触发必然节点 |
 
@@ -313,12 +331,105 @@ FXML 重写，要求：
 > 的 0 点节点会让道馆永远不触发）。因此界面上「［已走过 N 次 · 可再次进入］」标签在同段内通常不会再
 > 出现（旧节点已被替换），常驻节点仍因「每批必然入列」而随时可再次进入，可见的置灰条目只剩
 > 同一批内走完的一次性节点。页面渲染逻辑本身无需改动。
+>
+> **v0.1.26**：特殊事件槽位新增一次性节点「**糖果补给**」（`OptionType.CANDY`，1 点行动点，一次性），
+> 发放量逐段递增 **8 / 10 / 12 / 14 / 16** 个「神奇糖果」。它沿用同一张节点卡片渲染
+> （`Option#description()` 已带发放量与用法提示），UI 侧**无需新增分支**；结算与入包由
+> `MainController#resolveRogueCandySupply()` 负责。
+>
+> **v0.1.27**：**「火箭队抓捕神兽」（`OptionType.ROCKET_CAPTURE`）从末段（第 5 段）起固定出现**——
+> 剧情线已开且首领未被击败时，该节点随常驻节点一起无条件入列，并且**不占用特殊事件槽位**
+> （商店 / 神兽偶遇 / 火箭队队员 / 装备补给 / 糖果补给照旧）。因此末段节点列表最多 6 项、
+> 最少 4 项（3 常驻 + 固定抓捕）。节点的**渲染与交互无需改动**：它仍是一次性节点
+> （`ROCKET_CAPTURE.resident = false`），走过后按 v0.1.15 的整批刷新规则自然消失；
+> UI 若想提示玩家，可读 `RouteConfig#isRocketBossResidentSegment(int)` 判断当前段是否为固定段。
 
 **`ShopView`（商店）**
 
-- 构造参数 `ShopView(stock, gold, onBuy, onLeave)`，展示本次上架的 `ShopStock.Entry` 列表
-  （名称 + 售价）、当前金币余额；买不起的条目禁用；购买成功后即时刷新余额；
-- 商品**按段解锁**、售价按段通胀，均为 `RouteConfig` 中的可调数值（见需求文档 §4.5）。
+- 构造参数 `ShopView(session, stock, onBuy, onLeave)`，展示 `ShopStock.Entry` 列表
+  （类型标签 + 名称 + 效果说明 + 售价）、当前金币余额；买不起的条目禁用；购买成功后即时刷新余额；
+- **货架分两个分区**：先渲染「消耗品 · 已解锁 N 件（解锁后一直有货，可重复购买）」，
+  再渲染「装备 · 全部 N 件（已拥有的不再列出，可任选购买）」的全量列表（购买后入库并从货架下架）；
+- **消耗品逐段解锁、解锁后常驻**（v0.1.24；v0.1.26 增神奇糖果）—— 第 1 段只有普通精灵球 /
+  伤药 / 5 种状态药共 7 件，之后每段再放开（第 2 段纪念球·好伤药·**神奇糖果** → 第 3 段超级球·狩猎球 →
+  第 4 段竞赛球·高级球 → 第 5 段万灵药·贵重球）。解锁条件是「当前段 ≥ 解锁段」，故**已经解锁的
+  消耗品在后续所有段都仍在货架上**，货架只增不减（7 → 10 → 12 → 14 → 16 件），不抽签、不重新洗牌；
+- **装备不分段解锁**（v0.1.21 + v0.1.23）—— 第 1 段起全部可买，且**全量列出**：装备分区不抽签、
+  **不占格位**，`ShopStock` 直接列出未拥有的全部装备（按「基础价升序 → id」排列，与图鉴同口径）；
+  因此玩家进店即可任选一件，不需要反复刷新货架去「刷」心仪的装备；
+- **两个分区都不再有格位上限**（v0.1.24）—— 旧的 `RouteConfig#shopConsumableStockSize`（3 → 6 件）
+  与四个 `SHOP_CONSUMABLE_*` 常量已删除；「越往后越多」只剩**消耗品解锁数量**与**售价通胀**
+  （`RouteConfig#shopPrice`，每段 +15%，见需求文档 §4.5）两处；
+- **购买后原地刷新，不换 Scene**（v0.1.24）—— `ShopView#refresh(ShopStock)` 只重建头部与卡片，
+  并保住 `ScrollPane` 的滚动位置（记下 `vvalue`，卡片重建后经 `Platform.runLater` 恢复；
+  布局未跑完时同步写 `vvalue` 会被旧内容高度夹断，故必须延后）。
+  `MainController` 以字段 `currentShopView` 持有本次视图，购买路径走 `refreshShopScene()`，
+  因此玩家在长列表中段买一件商品**不会再被弹回列表最上面**；
+- **大师球不上架**：`i_master_ball` 是剧情专属道具（击败火箭队首领必得，见需求文档 §4.4），
+  `ShopStock` 的解锁段记为 `NEVER_UNLOCKED`（只出现在道具图鉴里并标注「不售卖」）；
+- **展示名不在商店侧自存**：`ShopStock` 通过 `GameData.instance().item(id).getName()` 取消耗品名、
+  `equipment(id).getName()` 取装备名，只有注册表里查不到该 id 时才退回内置兜底名。
+  这样即便道具表 / 装备表改名，商店也自动跟随。
+
+> **v0.1.16（商店上架装备）**：货架改为两个分区，装备与消耗品各自抽签、各自占位 ——
+> - **消耗品分区**：原 16 件池，购买走背包，可重复购买；
+> - **装备分区**：池子**全量取自 `GameData#allEquipment()`**（47 件装备 + 30 种树果），
+>   基础价按 `HeldItemEffect` 分类推出（`ShopStock#equipmentBasePrice`），
+>   因此**新增装备只要登记进数据表就会自动上架**；
+> - **格位**：`RouteConfig#shopStockSize` 只管总格数，装备另占
+>   `shopEquipmentStockSize` 格（第 1 段 1 格 → 第 3 段起 2 格），剩余格位全给消耗品；
+> - **已拥有不再上架**：`ShopStock.forSegment(segment, random, ownedIds)` 会把玩家已拥有的装备
+>   剔出池子，控制器传 `player.getEquipment()` 的 id 集合；
+> - **购买分流**：`MainController#buyFromShop` 按 `Entry#isEquipment()` 分流 —— 消耗品入背包，
+>   装备走 `Player#addEquipment` 并随即从货架下架（`ShopStock#withoutEntry`），
+>   避免同一件重复购买。
+>
+> 展示层只多渲染「【装备】/【道具】」前缀与装备的效果说明，禁用规则不变。
+>
+> **v0.1.21（取消分段解锁）**：原实现有「解锁段位」一维 —— 消耗品按 5 档、装备按
+> `HeldItemEffect` 分类逐段放开，第 1 段的货架只会出现三件基础商品与最便宜的装备。
+> 需求方裁决**取消这一维**：`Consumable` 记录的第四列由 `unlockSegment` 改为 `sold`
+> （是否在商店售卖），`equipmentUnlockSegment(...)` 整个删除，商品池退化为一个与段号无关的
+> 常量集合。因此 `ShopStock#unlockedConsumableIds` / `#unlockedEquipment` 更名为
+> `#sellableConsumableIds` / `#sellableEquipment`（去掉 `segment` 参数），
+> `CatalogEntry` 的 `unlockSegment` 字段也换成 `sold`。**段号对货架的影响只剩格位与售价两处**。
+>
+> **v0.1.23（装备全量上架）**：v0.1.21 只取消了「解锁段位」，装备仍是**每段抽签 1~2 格**，玩家想买
+> 某件装备还得反复刷商店。需求方明确「商店是直接所有装备就可购买」，故把装备分区改为**全量列出**：
+> `ShopStock#forSegment` 不再给装备抽签，直接把 `sellableEquipment(ownedIds)` 全量转成条目
+> （仍按段通胀计价、仍剔除已拥有者），排列顺序为「基础价升序 → id」；装备也因此**不再占用格位**，
+> `RouteConfig#shopStockSize` 更名为 `#shopConsumableStockSize`（只管随机上架的消耗品，
+> 3 → 6 件），`shopEquipmentStockSize` 与 `BASE_SHOP_EQUIPMENT_STOCK` /
+> `SHOP_EQUIPMENT_STOCK_PER_SEGMENT` / `MAX_SHOP_EQUIPMENT_STOCK` 一并删除。
+> 界面上货架加两行分区标题，长列表仍走原有 `ScrollPane`；购买 / 下架 / 已拥有拦截逻辑不变。
+>
+> **v0.1.24（消耗品逐段解锁 + 购买后原地刷新）**：两处改动 ——
+> - **消耗品恢复逐段解锁、但解锁后常驻**：需求方要求「消耗品类的可以是逐渐增加，加了后就一直都有，
+>   初始消耗品有普通精灵球和伤药和状态消除的药品」。`ShopStock.Consumable` 的第四列由 `sold`
+>   布尔**改回** `unlockSegment`（新增公开常量 `NEVER_UNLOCKED = Integer.MAX_VALUE` 表示剧情专属，
+>   大师球用它），`sold()` 变为由解锁段派生的方法；随机抽签的 `rollConsumables` **整个删除**，
+>   改为 `unlockedConsumables(int segment)` —— 把「解锁段 ≤ 当前段」的消耗品**全量列出**并按
+>   「基础价升序 → id」排序。因此货架件数 7 → 9 → 11 → 13 → 15 件（只增不减）。
+>   `CatalogEntry.sold` → `unlockSegment`（装备恒为 1），`ShopStock#sellableConsumableIds()` →
+>   `#sellableConsumableIds(int segment)`、`consumablePool()` → `consumablePool(int segment)`。
+>   因不再有格位概念，`RouteConfig` 的 `shopConsumableStockSize(int)` 与
+>   `BASE_SHOP_CONSUMABLE_STOCK` / `SHOP_CONSUMABLE_STOCK_PER_SEGMENT` / `MAX_SHOP_CONSUMABLE_STOCK`
+>   **一并删除**。附带影响：`ShopStock#forSegment(segment, random)` 的 `random` 参数自此
+>   **完全不影响结果**，保留仅为兼容既有调用方。
+> - **购买后原地刷新**：需求方反馈「买了东西会跳转到最上面的界面」。根因是控制器每次都
+>   `stage.setScene(new ShopView(...).createScene())` 重建整个场景，新 `ScrollPane` 的滚动位置
+>   必然归零。现改为 `ShopView` 内部保存 `header` / `list` / `scroll` 引用、`stock` 字段去
+>   `final`，`createScene()` 只搭一次骨架并调私有 `render()`，新增 `refresh(ShopStock)` 只重建头部
+>   与卡片；`refresh` 先记下 `scroll.getVvalue()`，重建后经 `Platform.runLater` 恢复
+>   （布局未结束就同步写 `vvalue` 会被旧内容高度夹断）。`MainController` 新增字段
+>   `currentShopView` 与 `refreshShopScene()`，三处购买路径（消耗品购买 / 装备已拥有拦截 /
+>   装备购买成功）改走刷新，`leaveShop()` 清空引用 —— **一次进店只建一次 Scene**。
+>
+> **v0.1.26（新增神奇糖果）**：消耗品池新增「神奇糖果」（`i_rare_candy`，`ItemCategory.LEVEL_UP`，
+> 基础价 100、**第 2 段起解锁**），因此消耗品解锁链变为第 1 段 7 件 → 第 2 段 10 件，
+> 逐段货架件数为 **7 → 10 → 12 → 14 → 16**（只增不减的口径不变）。
+> 除「战斗内投球 / 战斗中吃药」外，本件还多一条**局外**用法：精灵详情页的道具使用卡
+> （见 §3.5）可把伤药 / 状态药 / 神奇糖果直接喂给精灵，商店页本身仍只负责买卖。
 
 **`MainView` 标题栏**
 
@@ -329,6 +440,55 @@ FXML 重写，要求：
 > `MainController` 在展示前传入。
 
 
+
+### 3.7 道具图鉴页（v0.1.20 新增、v0.1.22 补启动页入口，已落地）
+
+**`ItemDexView`（道具图鉴）** —— 启动页「道具图鉴」或主菜单「道具图鉴」按钮进入，纯展示 + 装备穿脱：
+
+- 构造参数 `ItemDexView(player, background, onBack)`（返回文案固定「返回主菜单」）与
+  4 参重载 `ItemDexView(player, background, onBack, backLabel)`（启动页传「返回主界面」）；
+  `createScene()` 依次渲染标题栏、筛选栏、可滚动卡片列表与返回栏，`onBack` 回上一屏
+  （主菜单入口回主菜单并重建以同步队伍变化，启动页入口回启动页）。
+- **`player` 可为 `null`**（启动页尚未读档）：此时全部条目按「未拥有」只读展示，
+  卡片不给穿戴 / 脱下操作而显示「进入游戏后可在此直接穿戴 / 脱下装备。」，摘要行省去「已拥有 N 件」。
+- **口径是「全量列出」**：数据来自 `ItemDexData#build(player)`，其条目数与
+  `ShopStock#catalog()` 完全相同（当前 **94 件** = 17 件消耗品 + 77 件装备），
+  **不做收集解锁**——未拥有的也照常显示全部信息，只在状态位标注「未拥有」。
+- **四档筛选**（`ItemDexView.Filter`，单选 `ToggleButton`）：
+  全部 / 道具 / 装备 / 已拥有；摘录行同时给出「共 N 件（x 件道具 + y 件装备）已拥有 Z 件」。
+- **每张卡片**：名称（前置 `【道具】` / `【装备】`）、状态位（`已拥有 ×N` / `已拥有 · 未穿戴` /
+  `已拥有 · [精灵名] 持有` / `未拥有`）、效果说明、以及来源行
+  「商店出售 · 基础价 X 金币（段数越靠后售价越高）」；从**第 2 段起才解锁**的消耗品（v0.1.24）
+  来源行改写为「商店出售 · 第 N 段起解锁后一直有货 · 基础价 X 金币（段数越靠后售价越高）」；
+  不售卖的道具（大师球，`unlockSegment == NEVER_UNLOCKED`）来源行显示
+  「不售卖 · 剧情专属道具（击败火箭队首领必得）」；
+- **装备可直接穿脱**（已拥有时）：未被穿戴 → 「穿给」`ComboBox<Pokemon>`（显示 `名字 Lv.N`，
+  默认先发）+「穿戴」按钮；已被穿戴 → 「[名字] 持有」+「脱下」按钮。走的是
+  `Player#equip` / `Player#unequip`，因此**全队唯一穿戴**的约束由模型层保证，界面层不重复校验；
+  操作后本页即时重建。未拥有的装备给出「可在商店购买（第 1 段起即可购买），或在肉鸽『装备补给』事件中获得」提示。
+  （启动页入口 `player == null` 时不做穿脱，见上。）
+- **消耗品在本页只读**（v0.1.26 起改为「可在精灵详情页对指定精灵使用」，本页仍不提供使用按钮）；
+  `ItemDexData#describe(Item)` 按类别现推一句效果说明
+  （`HEAL` → 回复量、`POKE_BALL` → 捕捉倍率或「必定捕捉成功」、`CURE` → 解除范围、
+  `LEVEL_UP` → 「提升精灵 N 级（可在精灵详情页喂食）」），
+  因为 `items.csv` 没有描述列；装备说明直接取 `HeldItem#getDescription()`。
+
+> **v0.1.20（目录口径复用）**：`ShopStock#catalog()` 与 `#forSegment` 共用同一份消耗品池
+> （`CONSUMABLES`）与同一个定价函数（`equipmentBasePrice`），
+> 因此图鉴上写的价格**不会与货架说法不一**；新增装备登记进 `equipment.csv` 后，
+> 商店与图鉴都会自动包含，这两处都无需改动。
+>
+> 排序为「消耗品在前 → 基础价 → 名称」（v0.1.21 起不再按解锁段位排序，v0.1.24 起虽恢复了解锁段
+> 数据但排序口径不变），读起来即从便宜常见到稀有强力的推进线；
+> 展示名一律取自 `GameData`（查不到才退回内置兜底名），与商店同一套规则。
+
+**`MainView` 入口**：`Actions` 新增 `onShowItemDex()`，行动栏变为
+「进入层内事件 / 道具图鉴 / 保存游戏 / 读取存档 / 返回主界面」五个按钮。
+
+**`StartView` 入口**（v0.1.22）：启动页在「宝可梦图鉴」下新增第七个胶囊
+「道具图鉴」（`ITEM DEX`，行囊图标 `ICON_BAG`，色调 `teal`），构造签名变为
+`StartView(onStartGame, onContinueGame, canContinue, onCustomBattle, onPokedex, onItemDex)`；
+`MainController#showItemDexFromStart()` 以 `player = null` 打开同一页、返回回启动页。
 
 以下接口/类型已由 feature/battle（战斗系统）交付，版本 v1.0（v1.4 新增训练师轮战，
 见《接口文档_战斗服务.md》§3.4）；契约引用以此为准。
@@ -638,3 +798,12 @@ public interface ScreenFactory {
 | v0.1.16 | 2026-09-11 | **界面流转收敛到启动页（跟随《接口文档_存档系统.md》v2.3）**：§3.1 场景图新增启动页（程序启动 / 返回主界面 / 一轮结束的落点）并把「结束 → 回 mainMenu」改为回启动页；§3.2 页面总表增「启动页」行、主菜单行改为「进入层内事件 / 保存游戏 / 读取存档 / 返回主界面（不退出程序）」；§3.5 场景入口补「读取存档」「返回主界面」「一轮结束回启动页」与被拒读档的三种情况；§4.7 存档时机补「换档前保护进度 / 离开这一局前」 | [待确认：UI 负责人] |
 | v0.1.17 | 2026-09-11 | 同步《接口文档_战斗服务.md》v1.11 逐只即时结算：§1.2 战斗系统行说明「每击倒一只即时申报」；§4.2 组装入口与 `pendingLearnChoices()/decideLearn(int)` 行补「战斗进行中即可能非空」与战斗页渲染顺序（挂起抉择优先、结局最后）；裁决连线：`BattleController#render` 已按此顺序实现 | [待确认：UI 负责人] |
 | v0.1.18 | 2026-09-11 | 同步《接口文档_战斗服务.md》v1.14 己方倒下后的玩家补位：§3.3 新增「补位面板」界面要求（优先于主菜单渲染、复用队伍 3×2 六格、无返回键、选中后 `chooseReplacement`）；§4.1 契约表补 `isAwaitingReplacement()/chooseReplacement(int)` 并修订行动方法与 `playerActive()` 说明（不再为 null）；§6.4 / §6.6 去除「自动换宠」旧描述 | [待确认：UI 负责人] |
+| v0.1.19 | 2026-09-12 | **商店上架全部装备（77 件）**：§3.6 `ShopView` 段改写 —— 货架分「消耗品 / 装备」两分区各自抽签，装备池全量取自 `GameData#allEquipment()`（47 件装备 + 30 种树果）并按 `HeldItemEffect` 定解锁段位与基础价，格位由 `RouteConfig#shopEquipmentStockSize` 控制（第 1 段 1 格 → 第 3 段起 2 格）；已拥有的装备不再上架（`forSegment(segment, random, ownedIds)`）；购买按 `Entry#isEquipment()` 分流（消耗品入背包 / 装备入库并下架）；展示层增「【装备】/【道具】」前缀与装备说明 | [待确认：UI 负责人] |
+| v0.1.20 | 2026-09-12 | **新增道具图鉴页**：§3.2 页面总表增「道具图鉴」行、主菜单行补入口（五个按钮）；**新增 §3.7 `ItemDexView`**（`ItemDexData#build(player)` 全量列出 `ShopStock#catalog()` 的 93 件 = 16 消耗品 + 77 装备，四档筛选 `Filter`，卡片给出效果说明 / 来源（第 N 段起可买 + 基础价）/ 已拥有·未拥有·某队员持有标注；已拥有装备经 `Player#equip` / `#unequip` 直接穿脱，消耗品只读；`describe(Item)` 按类别现推消耗品说明）；`ShopStock` 新增 `CatalogEntry` 与 `catalog()`，与 `forSegment` 共用同一份消耗品池与定价 / 解锁函数 | [待确认：UI 负责人] |
+| v0.1.21 | 2026-09-12 | **取消商店分段解锁**：§3.6 `ShopView` 段改写 —— 消耗品与装备的「解锁段位」一维整个删除，第 1 段起全部商品都可能上架，段号对货架的影响只剩**格位数量**（`RouteConfig#shopStockSize` / `shopEquipmentStockSize`）与**售价通胀**（`shopPrice`）；**大师球 `i_master_ball` 改为剧情专属道具**（`Consumable.sold = false`，不进商店抽签池，仍由火箭队首领战必得，图鉴照常列出并标注「不售卖」）；`Consumable` 第四列 `unlockSegment` → `sold`，`equipmentUnlockSegment(...)` 删除，`ShopStock#unlockedConsumableIds` / `#unlockedEquipment` 更名为 `#sellableConsumableIds` / `#sellableEquipment`（去掉 `segment` 参数），`CatalogEntry.unlockSegment` → `sold`；§3.7 图鉴卡片来源行与排序口径同步改写（排序改为「消耗品在前 → 基础价 → 名称」） | [待确认：UI 负责人] |
+| v0.1.22 | 2026-09-13 | **道具图鉴补启动页入口**：启动页在「宝可梦图鉴」下新增第七个胶囊「道具图鉴」（`ITEM DEX`，行囊图标 `ICON_BAG`，色调 `teal` —— `start-menu.css` 的 tone 选择器补 `.menu-tone-teal`），`StartView` 构造新增 `onItemDex` 回调（5 参 → 6 参）、类文档与「六个入口」措辞改为七个；`MainController#showItemDexFromStart()` 以 `player = null` 打开 `ItemDexView`（无存档 → 全部条目按「未拥有」只读、摘要行省去「已拥有 N 件」、不展示穿脱操作），返回回启动页；`ItemDexView` 构造新增 4 参重载 `(player, background, onBack, backLabel)` 以复用「返回主界面」文案，3 参构造保留默认「返回主菜单」；§3.1 场景图、§3.2 页面总表、§3.7 相应更新 | [待确认：UI 负责人] |
+| v0.1.23 | 2026-09-13 | **商店装备改为全量上架**：§3.6 `ShopView` 段改写 —— 装备分区不再抽签（`ShopStock` 删除 `rollEquipment`，改为 `allEquipmentEntries` 把 `sellableEquipment(ownedIds)` 全量列成条目并按「基础价升序 → id」排序），装备**不再占格位**；`RouteConfig#shopStockSize` → `#shopConsumableStockSize`（常量同步更名 `BASE_SHOP_CONSUMABLE_STOCK` / `SHOP_CONSUMABLE_STOCK_PER_SEGMENT` / `MAX_SHOP_CONSUMABLE_STOCK`），`shopEquipmentStockSize` 与 `BASE_SHOP_EQUIPMENT_STOCK` / `SHOP_EQUIPMENT_STOCK_PER_SEGMENT` / `MAX_SHOP_EQUIPMENT_STOCK` 删除；货架增「消耗品 · 本次上架 N 件」/「装备 · 全部 N 件」两行分区标题，头部摘要文案改写；购买分流、已拥有拦截、售出下架、定价与通胀口径均不变 | [待确认：UI 负责人] |
+| v0.1.24 | 2026-09-13 | **消耗品逐段解锁 + 购买后原地刷新**：§3.6 `ShopView` 段改写 —— ①消耗品恢复「按段解锁、解锁后常驻」（第 1 段 7 件 → 第 5 段 15 件，只增不减、不再抽签）：`ShopStock.Consumable` 第四列 `sold` → `unlockSegment`（新增 `NEVER_UNLOCKED` 表示剧情专属，大师球用它）、`rollConsumables` 删除并改为 `unlockedConsumables(int)`、`sellableConsumableIds()` → `sellableConsumableIds(int)`、`consumablePool()` → `consumablePool(int)`、`CatalogEntry.sold` → `unlockSegment`（装备恒 1）、`forSegment(segment, random)` 的 `random` 自此不影响结果；因无格位概念，`RouteConfig#shopConsumableStockSize` 与 `BASE_SHOP_CONSUMABLE_STOCK` / `SHOP_CONSUMABLE_STOCK_PER_SEGMENT` / `MAX_SHOP_CONSUMABLE_STOCK` 一并删除（装备口径不变）；②`ShopView` 去 `final stock`、保存 `header`/`list`/`scroll` 引用、拆分 `createScene()` 与私有 `render()`、新增 `refresh(ShopStock)`（记 `vvalue` → 重建 → `Platform.runLater` 恢复，避免被旧内容高度夹断），`MainController` 新增 `currentShopView` 字段与 `refreshShopScene()`，三处购买路径改走刷新、`leaveShop()` 清空引用；§3.7 图鉴来源行对第 2 段起解锁的消耗品补「第 N 段起解锁后一直有货」 | [待确认：UI 负责人] |
+| v0.1.25 | 2026-09-13 | **删除「神秘事件」占位节点**：路线地图页可能渲染的节点类型少一种 —— `OptionType.SPECIAL` 删除（13 → 12 值），`NodeGenerator#rollSpecialEvent` 的五级优先级链收窄为四级、全部落空返回 `null`（该批只剩 3 个常驻节点 + 概率商店）；`RogueTurnManager#resolveImmediateEffect` 与 `RouteConfig` 的 `SPECIAL_PERCENT` / `SPECIAL_AP_COST` / `specialGold(int)` 一并删除。存档以类型名字符串存 `OPTION` 行，未识别类型丢弃并打日志，故**不升格式版本** | [待确认：UI 负责人] |
+| v0.1.26 | 2026-09-13 | **新增神奇糖果与局外道具使用**：§3.5 精灵详情页增「道具使用卡」（`ItemUsageService`，局外使用回复类 / 解除类 / 升级类消耗品，精灵球不可用；不满足条件不消耗；升级走 `BattleGrowthPort#boostLevel`）；§3.6 `ShopView` 段补「神奇糖果第 2 段起解锁后一直有货」（货架件数 7 → 10 → 12 → 14 → 16）；§3.7 图鉴目录 93 → **94 件**（16 → 17 件消耗品），`describe(Item)` 补 `LEVEL_UP` 分支「提升精灵 N 级（可在精灵详情页喂食）」；路线地图页的特殊事件槽位新增「糖果补给」节点（`OptionType.CANDY`，AP 1 点，发放量逐段 8 / 10 / 12 / 14 / 16） | [待确认：UI 负责人] |
+| v0.1.27 | 2026-09-13 | **火箭队抓捕神兽在末段固定出现**：§3.1 场景图无变化，§3.6 节点列表段补「每段 3~6 个节点；末段剧情线未收束时 3 常驻 + 固定 `ROCKET_CAPTURE`，最多 6 项最少 4 项」；节点渲染与交互**无需改动**（仍为一次性节点，走过后按 v0.1.15 整批刷新消失），UI 若需提示可读 `RouteConfig#isRocketBossResidentSegment(int)` | [待确认：UI 负责人] |

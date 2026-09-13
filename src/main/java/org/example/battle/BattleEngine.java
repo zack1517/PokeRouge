@@ -2,7 +2,10 @@ package org.example.battle;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 
@@ -14,9 +17,11 @@ import org.example.model.ItemCategory;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
 import org.example.model.MoveEffect;
+import org.example.model.MoveFlag;
 import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.Stat;
 import org.example.model.StatChange;
 import org.example.model.StatusCondition;
 import org.example.model.Terrain;
@@ -109,6 +114,18 @@ public class BattleEngine implements BattleService {
     private int weatherTurnsLeft = 0;
     /** 当前场地剩余回合数（含开启当回合；0 表示无场地）。 */
     private int terrainTurnsLeft = 0;
+    /**
+     * 讲究系装备的招式锁定表：精灵 uuid → 本场战斗第一个成功使用过的招式 id。
+     * 仅本场战斗内有效（换宠、战斗结束即失效），不落入存档。
+     */
+    private final Map<String, String> choiceLocks = new HashMap<>();
+    /**
+     * 节拍器（{@link HeldItemEffect#CONSECUTIVE_BOOST}）的连续使用记录：
+     * 精灵 uuid → 上一次使用过的招式 id，配合 {@link #consecutiveUses} 计算连续次数。
+     */
+    private final Map<String, String> lastMoves = new HashMap<>();
+    /** 节拍器连续使用次数表：精灵 uuid → 连续使用同一招式的次数（换招即归 1）。 */
+    private final Map<String, Integer> consecutiveUses = new HashMap<>();
     /** 满队时挂起的已捕捉精灵（队伍已满暂未入队，待玩家放生腾位或放弃；非满队捕捉为 {@code null}）。 */
     private Pokemon pendingCaptured;
 
@@ -368,6 +385,19 @@ public class BattleEngine implements BattleService {
         requirePlayerAction();
         MoveSlot usable = usableSlot(playerActive(), slot);
         if (usable == null) {
+            // 苹野果：招式 PP 全部耗尽时先补 PP 再重试（补不上才放弃本回合，与 PP 不足同样处理）
+            healPpWithBerry(playerActive(), slot);
+            usable = usableSlot(playerActive(), slot);
+        }
+        if (usable == null) {
+            return slice(mark);
+        }
+        // 讲究系装备的招式锁定：不合法时不消耗回合，让调用方改选（与 PP 不足同样处理）
+        if (!choiceAllows(playerActive(), usable)) {
+            return slice(mark);
+        }
+        // 突击背心的变化招式限制：同样不消耗回合与 PP
+        if (!assaultVestAllows(playerActive(), usable)) {
             return slice(mark);
         }
 
@@ -393,6 +423,69 @@ public class BattleEngine implements BattleService {
         }
         finishRound();
         return slice(mark);
+    }
+
+    /**
+     * 讲究系装备（{@link HeldItemEffect#CHOICE}）的招式锁定判定：携带者本场使用过的第一个招式成为
+     * 唯一可用招式。
+     *
+     * <p>为避免「锁定招式 PP 耗尽后无招可用」的死锁（本引擎无「挣扎」兜底），锁定招式 PP 用尽时
+     * 解除限制，允许改用其它招式（改用的招式随即成为新的锁定招式）。</p>
+     *
+     * @return 本回合是否允许使用该招式
+     */
+    private boolean choiceAllows(Pokemon pokemon, MoveSlot slot) {
+        if (pokemon == null || !holds(pokemon, HeldItemEffect.CHOICE)) {
+            return true;
+        }
+        String locked = choiceLocks.get(pokemon.getUuid());
+        if (locked == null || locked.equals(slot.getMove().getId())) {
+            return true;
+        }
+        MoveSlot lockedSlot = slotOf(pokemon, locked);
+        if (lockedSlot == null || lockedSlot.exhausted()) {
+            return true;
+        }
+        append(pokemon.getName() + " 因" + pokemon.getHeldItem().getName() + "的效果，只能使用【"
+                + lockedSlot.getMove().getName() + "】！");
+        return false;
+    }
+
+    /**
+     * 突击背心（{@link HeldItemEffect#ASSAULT_VEST}）的变化招式限制：携带者无法使用变化类招式。
+     *
+     * <p>与讲究系锁定同样在选招阶段拦截，不消耗回合与 PP，让调用方改选其它招式。携带者所有招式都是
+     * 变化招时无法行动（返回 {@code false} 且不改招式），由调用方按「PP 不足」的既有方式处理。</p>
+     *
+     * @return 本回合是否允许使用该招式
+     */
+    private boolean assaultVestAllows(Pokemon pokemon, MoveSlot slot) {
+        if (pokemon == null || slot == null || !holds(pokemon, HeldItemEffect.ASSAULT_VEST)) {
+            return true;
+        }
+        if (!slot.getMove().isStatus()) {
+            return true;
+        }
+        append(pokemon.getName() + " 因" + pokemon.getHeldItem().getName()
+                + "的效果，无法使用变化招式！");
+        return false;
+    }
+
+    /** 记录讲究系装备的招式锁定：首次成功使用招式时登记，已锁定其它招式时改锁到新招式。 */
+    private void lockChoiceMove(Pokemon pokemon, Move move) {
+        if (pokemon != null && move != null && holds(pokemon, HeldItemEffect.CHOICE)) {
+            choiceLocks.put(pokemon.getUuid(), move.getId());
+        }
+    }
+
+    /** 取指定精灵持有指定 id 的招式槽；没有该招式时返回 {@code null}。 */
+    private static MoveSlot slotOf(Pokemon pokemon, String moveId) {
+        for (MoveSlot s : pokemon.getMoveSlots()) {
+            if (s.getMove().getId().equals(moveId)) {
+                return s;
+            }
+        }
+        return null;
     }
 
     /**
@@ -470,9 +563,31 @@ public class BattleEngine implements BattleService {
             append(foe.getName() + " 的先制之爪抢先行动！");
             return false;
         }
+        boolean playerLast = holds(playerPokemon, HeldItemEffect.MOVE_LAST);
+        boolean foeLast = holds(foe, HeldItemEffect.MOVE_LAST);
+        if (playerLast != foeLast) {
+            // 仅一方携带后攻之尾：携带方在速度比较之前即后出手
+            if (playerLast) {
+                append(playerPokemon.getName() + " 因后攻之尾而最后行动！");
+            } else {
+                append(foe.getName() + " 因后攻之尾而最后行动！");
+            }
+            return !playerLast;
+        }
         int playerSpeed = playerPokemon.effectiveSpeed();
         int foeSpeed = foe.effectiveSpeed();
         return playerSpeed > foeSpeed || (playerSpeed == foeSpeed && random.nextBoolean());
+    }
+
+    /** 携带指定效果类型的装备判定。 */
+    private static boolean holds(Pokemon p, HeldItemEffect effect) {
+        return p != null && p.getHeldItem() != null && p.getHeldItem().getEffectType() == effect;
+    }
+
+    /** 携带者是否被「地面化」（黑色铁球类装备第 2 段参数为 {@code GROUND}）。 */
+    private static boolean isGrounded(Pokemon p) {
+        return holds(p, HeldItemEffect.SPEED_MULTIPLIER)
+                && "GROUND".equalsIgnoreCase(p.getHeldItem().textPart(1));
     }
 
     /** 先制之爪判定：携带者按概率触发（0 概率视为不触发）；双方同时触发时回退到速度判定。 */
@@ -496,6 +611,7 @@ public class BattleEngine implements BattleService {
         }
         append(self.getName() + " 使用了【" + slot.getMove().getName() + "】！");
         events.add(BattleEvent.move(BattleEvent.Side.PLAYER, self.getName(), slot.getMove()));
+        lockChoiceMove(self, slot.getMove());
         executeMove(self, foe, slot.getMove());
     }
 
@@ -628,9 +744,11 @@ public class BattleEngine implements BattleService {
         }
         append("你派出了 " + target.getName() + "！");
         events.add(BattleEvent.sendOut(BattleEvent.Side.PLAYER, target.getName()));
-        // 能力等级与守住/寄生种子都是挥发性状态：下场的精灵放弃自己的状态，上场的精灵从中立状态开始
+        // 能力等级与守住/寄生种子/畏缩都是挥发性状态：下场的精灵放弃自己的状态，上场的精灵从中立状态开始
         current.clearVolatileState();
         target.clearVolatileState();
+        // 场地种子：换上的精灵在场地已开启时立即触发
+        applyTerrainSeed(target, terrain);
         if (!foeActive().isFainted() && !target.isFainted()) {
             foeTurn(null);
         }
@@ -661,6 +779,10 @@ public class BattleEngine implements BattleService {
         MoveSlot usable = preselected != null && !preselected.exhausted()
                 ? preselected : pickFoeMove();
         if (usable == null) {
+            // 苹野果：全部招式 PP 耗尽时先补 PP，补不上才挣扎
+            usable = healPpWithBerry(foe, null);
+        }
+        if (usable == null) {
             append(foe.getName() + " 没有可用技能了，正在挣扎！");
             events.add(BattleEvent.move(BattleEvent.Side.FOE, foe.getName(), null));
             int dmg = Math.max(1, foe.getLevel() / 4);
@@ -677,11 +799,14 @@ public class BattleEngine implements BattleService {
             usable.use();
             append(foe.getName() + " 使用了【" + usable.getMove().getName() + "】！");
             events.add(BattleEvent.move(BattleEvent.Side.FOE, foe.getName(), usable.getMove()));
+            lockChoiceMove(foe, usable.getMove());
             executeMove(foe, playerActive(), usable.getMove());
         }
     }
 
-    /** 敌方自动选择技能：从仍有 PP 的技能中随机挑一个。 */
+    /**
+     * 敌方自动选择技能：讲究系装备锁定的招式仍有 PP 时优先使用，否则从仍有 PP 的技能中随机挑一个。
+     */
     private MoveSlot pickFoeMove() {
         Pokemon foe = foeActive();
         if (foe == null) {
@@ -689,9 +814,20 @@ public class BattleEngine implements BattleService {
         }
         List<MoveSlot> usable = foe.getMoveSlots().stream()
                 .filter(s -> !s.exhausted())
+                .filter(s -> !holds(foe, HeldItemEffect.ASSAULT_VEST) || !s.getMove().isStatus())
                 .toList();
         if (usable.isEmpty()) {
             return null;
+        }
+        if (holds(foe, HeldItemEffect.CHOICE)) {
+            String locked = choiceLocks.get(foe.getUuid());
+            if (locked != null) {
+                for (MoveSlot s : usable) {
+                    if (s.getMove().getId().equals(locked)) {
+                        return s;
+                    }
+                }
+            }
         }
         return usable.get(random.nextInt(usable.size()));
     }
@@ -713,15 +849,25 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 执行一次行动：先做命中判定；变化类技能应用能力等级变化、天气/场地效果并按概率施加异常状态，
-     * 其余（物理/特殊）技能正常造成伤害。
+     * 执行一次行动：先做粉末免疫、守住与命中判定；变化类技能应用能力等级变化、天气/场地效果并按概率
+     * 施加异常状态，其余（物理/特殊）技能正常造成伤害。
+     *
+     * <p>粉末类招式（{@link MoveFlag#POWDER}）在入口处统一拦截，携带防尘护目镜的防守方不受影响 ——
+     * 催眠粉/毒粉都是变化招，若只在伤害路径里判定会漏掉它们。</p>
      */
     private void executeMove(Pokemon attacker, Pokemon defender, Move move) {
+        if (move.isPowder() && holds(defender, HeldItemEffect.POWDER_IMMUNE)) {
+            append(defender.getName() + " 借助" + defender.getHeldItem().getName()
+                    + "，粉末类招式没有命中！");
+            return;
+        }
         // 守住优先于命中判定：被守住挡下的技能既不掷命中骰子，也不产生命中演出
         if (blocksWithProtect(defender)) {
             return;
         }
+        // 未命中：PP 已在行动前扣除，此处仅追加日志并按打空保险给使用者加成
         if (!moveHits(attacker, move)) {
+            applyBlunderPolicy(attacker);
             return;
         }
         // 连续使用守住的成功率递减，「守住连续次数」在改用其它技能后清零
@@ -738,6 +884,9 @@ public class BattleEngine implements BattleService {
                 applyFieldEffect(attacker, defender, move.getEffect());
             }
             tryInflict(move, defender);
+            // 爽喉喷雾与属性反应装备：叫声等声音类变化招同样能触发爽喉喷雾
+            applyThroatSpray(attacker, move);
+            applyTypeReaction(defender, move);
             events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
                     MoveCategory.STATUS, BattleEvent.hpOf(defender)));
             return;
@@ -781,27 +930,16 @@ public class BattleEngine implements BattleService {
     }
 
     /**
-     * 应用招式附带的能力等级增减，并按<b>实际</b>变化量播报。
+     * 应用招式附带的能力等级增减。
      *
-     * <p>幅度 ≥2 时用「大幅提高/下降」描述；等级已达 {@value Pokemon#MAX_STAT_STAGE}（或
-     * {@value Pokemon#MIN_STAT_STAGE}）时提示「已经无法再提高/下降」。</p>
+     * <p>逐条转交 {@link #applyStatChange(Pokemon, Stat, int, Pokemon)} 结算，使「招式造成的能力变化」
+     * 与「装备触发的能力变化」共用同一套口径：同样受清净坠饰（对手造成的下降无效）与能力等级上下限
+     * 约束，日志措辞也完全一致。</p>
      */
     private void applyStatChanges(Pokemon attacker, Pokemon defender, Move move) {
         for (StatChange change : move.getStatChanges()) {
             Pokemon target = change.recipient() == StatChange.Recipient.SELF ? attacker : defender;
-            if (target == null || target.isFainted()) {
-                continue;
-            }
-            int actual = target.changeStatStage(change.stat(), change.delta());
-            String stat = change.stat().getDisplayName();
-            if (actual > 0) {
-                append(target.getName() + " 的" + stat + (actual >= 2 ? "大幅" : "") + "提高了！");
-            } else if (actual < 0) {
-                append(target.getName() + " 的" + stat + (actual <= -2 ? "大幅" : "") + "下降了！");
-            } else {
-                append(target.getName() + " 的" + stat
-                        + (change.isIncrease() ? "已经无法再提高了！" : "已经无法再下降了！"));
-            }
+            applyStatChange(target, change.stat(), change.delta(), attacker);
         }
     }
 
@@ -816,6 +954,10 @@ public class BattleEngine implements BattleService {
      */
     private boolean canAct(Pokemon p) {
         if (p == null || p.isFainted()) {
+            return false;
+        }
+        if (p.isFlinched()) {
+            append(p.getName() + " 畏缩了，无法行动！");
             return false;
         }
         if (p.getStatus() == StatusCondition.SLEEP) {
@@ -896,6 +1038,7 @@ public class BattleEngine implements BattleService {
         };
         if (defender.tryApplyStatus(condition, turns)) {
             append(defender.getName() + " 陷入了" + condition.getDisplayName() + "状态！");
+            cureStatusWithBerry(defender, condition);
         }
     }
 
@@ -927,7 +1070,7 @@ public class BattleEngine implements BattleService {
         }
         Weather w = effect.toWeather();
         if (w != null) {
-            setWeather(w);
+            setWeather(attacker, w);
             return;
         }
         Terrain t = effect.toTerrain();
@@ -1005,14 +1148,47 @@ public class BattleEngine implements BattleService {
         }
     }
 
-    /** 开启指定天气并重置持续回合数。 */
-    private void setWeather(Weather target) {
+    /**
+     * 开启指定天气并重置持续回合数。开启者携带对应天气延长装备
+     * （{@link HeldItemEffect#WEATHER_DURATION}，如炽热岩石）时，按装备参数延长回合数。
+     */
+    private void setWeather(Pokemon setter, Weather target) {
         boolean refreshing = weather == target;
         weather = target;
-        weatherTurnsLeft = Weather.DURATION_TURNS;
+        weatherTurnsLeft = weatherDuration(setter, target);
         append(target.getStartMessage());
         if (refreshing) {
             append("持续回合重置了！");
+        }
+    }
+
+    /**
+     * 计算天气持续回合：默认 {@link Weather#DURATION_TURNS}；开启者携带的 WEATHER_DURATION 装备
+     * 匹配当前天气时取其参数回合数（大于默认值才生效）。
+     *
+     * @return 本次天气的持续回合数
+     */
+    private static int weatherDuration(Pokemon setter, Weather target) {
+        if (setter == null || !holds(setter, HeldItemEffect.WEATHER_DURATION)) {
+            return Weather.DURATION_TURNS;
+        }
+        HeldItem rock = setter.getHeldItem();
+        int turns = rock.durationTurns();
+        if (parseWeather(rock.weatherParam()) != target || turns <= Weather.DURATION_TURNS) {
+            return Weather.DURATION_TURNS;
+        }
+        return turns;
+    }
+
+    /** 解析装备参数中的天气英文名；无法解析时返回 {@code null}。 */
+    private static Weather parseWeather(String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+        try {
+            return Weather.valueOf(name.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return null;
         }
     }
 
@@ -1025,36 +1201,348 @@ public class BattleEngine implements BattleService {
         if (refreshing) {
             append("持续回合重置了！");
         }
+        // 场地种子：场地就位后立即为场上携带者结算
+        applyTerrainSeeds();
     }
 
     private void performAttack(Pokemon attacker, Pokemon defender, Move move) {
         double effectiveness = typeEffectiveness(move.getType(), defender);
+        // 标靶：携带者失去属性免疫，原本 0 倍（无效）的招式改为 1 倍命中
+        if (effectiveness <= 0 && holds(defender, HeldItemEffect.IGNORE_IMMUNITY)) {
+            effectiveness = 1.0;
+        }
+        // 气球：携带者免疫地面系招式，被地面系招式命中后消耗
+        if (effectiveness > 0 && move.getType() == ElementType.GROUND
+                && holds(defender, HeldItemEffect.GROUND_IMMUNE)) {
+            append(defender.getName() + " 借助气球浮在空中，地面系招式没有命中！");
+            consumeHeldItem(defender);
+            return;
+        }
         if (effectiveness <= 0) {
             append("这招对 " + defender.getName() + " 没有效果……");
             return;
         }
-        int damage = computeDamage(attacker, defender, move);
-        int dealt = defender.takeDamage(damage);
+        double resist = resistBerryMultiplier(defender, move, effectiveness);
+        int critStage = critStage(attacker);
+        boolean critical = rollCritical(critStage);
+        int damage = computeDamage(attacker, defender, move, effectiveness, critical);
+        // 属性减伤树果：受对应属性（默认要求效果拔群）招式时减伤并消耗，必须在保命判定之前生效
+        String resistMessage = null;
+        if (resist < 1.0) {
+            HeldItem berry = defender.getHeldItem();
+            damage = Math.max(1, (int) Math.floor(damage * resist));
+            consumeHeldItem(defender);
+            resistMessage = defender.getName() + " 的" + berry.getName() + " 减轻了招式伤害！";
+        }
+        String surviveMessage = survivedByHeldItem(defender, damage);
+        int dealt = defender.takeDamage(surviveMessage == null ? damage : defender.getCurrentHp() - 1);
         events.add(BattleEvent.hit(sideOf(defender), nameOf(defender), move.getType(),
                 move.getCategory(), BattleEvent.hpOf(defender)));
         applyLifeSteal(attacker, dealt);
+        applyLifeOrbRecoil(attacker, dealt);
         StringBuilder sb = new StringBuilder();
         sb.append("造成 ").append(dealt).append(" 点伤害");
+        if (critical) {
+            sb.append("，击中要害！");
+        }
         if (effectiveness > 1.0) {
             sb.append("，效果拔群！");
         } else if (effectiveness < 1.0) {
             sb.append("，效果不太理想……");
         }
         append(sb.toString());
+        if (resistMessage != null) {
+            append(resistMessage);
+        }
+        if (surviveMessage != null) {
+            append(surviveMessage);
+        }
+        // 凸凸头盔：携带者被接触类招式命中时反伤攻击方（攻击方倒下也照常结算）
+        applyContactPunish(attacker, defender, move);
         if (defender.isFainted()) {
             events.add(BattleEvent.faint(sideOf(defender), nameOf(defender), BattleEvent.hpOf(defender)));
             append(defender.getName() + " 倒下了！");
             return;
         }
         tryInflict(move, defender);
+        // 王者之证：命中造成伤害后按概率使目标畏缩（变化招不触发）
+        applyFlinchItem(attacker, defender, move);
+        // 弱点保险：被效果拔群招式命中后提升双攻（已倒下的目标不触发）
+        applyWeaknessPolicy(defender, effectiveness);
+        applyThroatSpray(attacker, move);
+        applyTypeReaction(defender, move);
+        // 受击后立即结算 HP 回复树果（未倒下才触发）
+        healHpWithBerry(defender);
     }
 
-    private int computeDamage(Pokemon attacker, Pokemon defender, Move move) {
+    /** 会心率分档的分母：索引即会心等级（0 级 1/24、1 级 1/8、2 级 1/2）。 */
+    private static final int[] CRIT_DENOMINATORS = {24, 8, 2};
+
+    /** 会心等级达到该值时必定会心。 */
+    private static final int CRIT_ALWAYS_STAGE = 3;
+
+    /** 会心一击的伤害倍率（{@value}）。 */
+    public static final double CRIT_MULTIPLIER = 1.5;
+
+    /**
+     * 会心等级：默认 0 级；携带锐利之爪（{@link HeldItemEffect#CRIT_BOOST}，param 为提升等级）
+     * 时按参数提升。
+     */
+    private static int critStage(Pokemon attacker) {
+        if (attacker == null || !holds(attacker, HeldItemEffect.CRIT_BOOST)) {
+            return 0;
+        }
+        return Math.max(0, (int) attacker.getHeldItem().doubleParam());
+    }
+
+    /**
+     * 会心判定：0 级 {@value #CRIT_DENOMINATORS} 分之一…按等级取分母，等级达到
+     * {@value #CRIT_ALWAYS_STAGE} 时必定会心。
+     */
+    private boolean rollCritical(int stage) {
+        if (stage >= CRIT_ALWAYS_STAGE) {
+            return true;
+        }
+        int denominator = CRIT_DENOMINATORS[Math.max(0, stage)];
+        return random.nextInt(denominator) == 0;
+    }
+
+    /**
+     * 凸凸头盔（{@link HeldItemEffect#CONTACT_PUNISH}）反伤：携带者被接触类招式命中后，
+     * 攻击方按最大 HP 比例扣血（param 为比例，通常 1/6）。
+     *
+     * <p>拳击手套（{@link HeldItemEffect#PUNCH_BOOST}）会让携带者使用拳类招式时不视为接触，
+     * 因此拳类招式不会触发反伤。反伤不消耗装备、也不受攻击方保命装备保护。</p>
+     */
+    private void applyContactPunish(Pokemon attacker, Pokemon defender, Move move) {
+        if (!move.isContact() || !holds(defender, HeldItemEffect.CONTACT_PUNISH)) {
+            return;
+        }
+        if (move.isPunch() && holds(attacker, HeldItemEffect.PUNCH_BOOST)) {
+            return;
+        }
+        HeldItem helmet = defender.getHeldItem();
+        int recoil = Math.max(1, (int) (attacker.getMaxHp() * helmet.doubleParam()));
+        int lost = attacker.takeDamage(recoil);
+        if (lost > 0) {
+            append(attacker.getName() + " 因" + defender.getName() + " 的" + helmet.getName()
+                    + " 受到了 " + lost + " 点伤害！");
+        }
+        if (attacker.isFainted()) {
+            events.add(BattleEvent.faint(sideOf(attacker), nameOf(attacker)));
+            append(attacker.getName() + " 倒下了！");
+        }
+    }
+
+    /**
+     * 王者之证（{@link HeldItemEffect#FLINCH_CHANCE}）判定：造成伤害后按参数概率使目标畏缩。
+     * 畏缩在回合末清除，因此只有「目标本回合尚未行动」时才会实际生效（与正作一致）。
+     */
+    private void applyFlinchItem(Pokemon attacker, Pokemon defender, Move move) {
+        if (move.isStatus() || defender.isFainted() || !holds(attacker, HeldItemEffect.FLINCH_CHANCE)) {
+            return;
+        }
+        HeldItem item = attacker.getHeldItem();
+        if (random.nextInt(100) >= item.chanceParam()) {
+            return;
+        }
+        defender.setFlinch(true);
+        append(defender.getName() + " 因" + attacker.getName() + " 的" + item.getName() + " 畏缩了！");
+    }
+
+    /**
+     * 结算一次能力等级变化并播报日志。
+     *
+     * @param target 被改变者；为空或已倒下时不结算
+     * @param stat   能力项；为空时不结算
+     * @param delta  期望变化量（正为提升、负为降低）
+     * @param source 变化的来源方；{@code null} 或与 {@code target} 相同时视为「自身造成」，
+     *               不受清净坠饰影响
+     */
+    private void applyStatChange(Pokemon target, Stat stat, int delta, Pokemon source) {
+        if (target == null || target.isFainted() || stat == null || delta == 0) {
+            return;
+        }
+        // 清净坠饰：对手造成的能力下降无效
+        if (delta < 0 && source != null && source != target && holds(target, HeldItemEffect.CLEAR_AMULET)) {
+            append(target.getName() + " 借助" + target.getHeldItem().getName() + "，"
+                    + stat.getDisplayName() + "没有被降低！");
+            return;
+        }
+        int actual = target.changeStatStage(stat, delta);
+        if (actual == 0) {
+            append(target.getName() + " 的" + stat.getDisplayName()
+                    + (delta > 0 ? "已经无法再提高了！" : "已经无法再降低了！"));
+            return;
+        }
+        String degree = Math.abs(actual) > 1 ? Math.abs(actual) + " 级" : "";
+        append(target.getName() + " 的" + stat.getDisplayName()
+                + (actual > 0 ? "提高了" : "降低了") + degree + "！");
+    }
+
+    /**
+     * 弱点保险（{@link HeldItemEffect#WEAKNESS_POLICY}）：被效果拔群招式命中后物攻与特攻各提升
+     * param 级，触发后消耗。
+     */
+    private void applyWeaknessPolicy(Pokemon defender, double effectiveness) {
+        if (effectiveness <= 1.0 || defender == null || defender.isFainted()
+                || !holds(defender, HeldItemEffect.WEAKNESS_POLICY)) {
+            return;
+        }
+        HeldItem policy = defender.getHeldItem();
+        int levels = Math.max(1, policy.statLevelsParam());
+        consumeHeldItem(defender);
+        append(defender.getName() + " 的" + policy.getName() + " 发动了！");
+        applyStatChange(defender, Stat.ATTACK, levels, defender);
+        applyStatChange(defender, Stat.SP_ATTACK, levels, defender);
+    }
+
+    /**
+     * 打空保险（{@link HeldItemEffect#BLUNDER_POLICY}）：自身招式未命中后速度提升 param 级，
+     * 触发后消耗。
+     */
+    private void applyBlunderPolicy(Pokemon attacker) {
+        if (attacker == null || attacker.isFainted() || !holds(attacker, HeldItemEffect.BLUNDER_POLICY)) {
+            return;
+        }
+        HeldItem policy = attacker.getHeldItem();
+        int levels = Math.max(1, policy.statLevelsParam());
+        consumeHeldItem(attacker);
+        append(attacker.getName() + " 的" + policy.getName() + " 发动了！");
+        applyStatChange(attacker, Stat.SPEED, levels, attacker);
+    }
+
+    /**
+     * 爽喉喷雾（{@link HeldItemEffect#THROAT_SPRAY}）：使用声音类招式（{@link MoveFlag#SOUND}）后
+     * 特攻提升 param 级，触发后消耗。
+     */
+    private void applyThroatSpray(Pokemon attacker, Move move) {
+        if (move == null || !move.isSound() || attacker == null || attacker.isFainted()
+                || !holds(attacker, HeldItemEffect.THROAT_SPRAY)) {
+            return;
+        }
+        HeldItem spray = attacker.getHeldItem();
+        int levels = Math.max(1, spray.statLevelsParam());
+        consumeHeldItem(attacker);
+        append(attacker.getName() + " 的" + spray.getName() + " 发动了！");
+        applyStatChange(attacker, Stat.SP_ATTACK, levels, attacker);
+    }
+
+    /**
+     * 属性反应装备（{@link HeldItemEffect#TYPE_REACTION}，球根 / 充电电池 / 光苔 / 雪球）：
+     * 受到 param 第 1 段所指属性的招式后，提升 param 第 2 段所指能力 param 第 3 段级数，触发后消耗。
+     */
+    private void applyTypeReaction(Pokemon defender, Move move) {
+        if (defender == null || defender.isFainted() || move == null
+                || !holds(defender, HeldItemEffect.TYPE_REACTION)) {
+            return;
+        }
+        HeldItem item = defender.getHeldItem();
+        ElementType trigger = ElementType.parse(item.reactionTypeParam());
+        Stat stat = Stat.parse(item.statParam());
+        if (trigger == null || trigger != move.getType() || stat == null) {
+            return;
+        }
+        int levels = Math.max(1, item.statLevels());
+        consumeHeldItem(defender);
+        append(defender.getName() + " 的" + item.getName() + " 发动了！");
+        applyStatChange(defender, stat, levels, defender);
+    }
+
+    /**
+     * 场地种子（{@link HeldItemEffect#TERRAIN_SEED}）结算：场上双方携带的种子与当前场地匹配时
+     * 提升对应能力，触发后消耗。param 为 {@code 场地|能力项|等级}。
+     */
+    private void applyTerrainSeeds() {
+        applyTerrainSeed(playerActive(), terrain);
+        applyTerrainSeed(foeActive(), terrain);
+    }
+
+    private void applyTerrainSeed(Pokemon p, Terrain active) {
+        if (p == null || p.isFainted() || active == null || active == Terrain.NONE
+                || !holds(p, HeldItemEffect.TERRAIN_SEED)) {
+            return;
+        }
+        HeldItem seed = p.getHeldItem();
+        Stat stat = Stat.parse(seed.statParam());
+        if (parseTerrain(seed.seedTerrainParam()) != active || stat == null) {
+            return;
+        }
+        int levels = Math.max(1, seed.statLevels());
+        consumeHeldItem(p);
+        append(p.getName() + " 的" + seed.getName() + " 发动了！");
+        applyStatChange(p, stat, levels, p);
+    }
+
+    /** 解析装备参数中的场地英文名；无法解析时返回 {@code null}。 */
+    private static Terrain parseTerrain(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        try {
+            return Terrain.valueOf(name.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * 保命装备判定：招式伤害足以令携带者倒下时，气势披带（{@link HeldItemEffect#FOCUS_SASH}，
+     * 满 HP 时必定保留 1 HP，触发后消耗）或气势头带（{@link HeldItemEffect#FOCUS_BAND}，按概率保留 1 HP）
+     * 可让其以 1 HP 存活。
+     *
+     * <p>只有「被招式命中」的伤害会触发；天气 / 异常状态 / 反伤等回合末或自身伤害不触发。</p>
+     *
+     * @param incoming 本次招式将要扣除的 HP
+     * @return 触发时的播报文本；未触发返回 {@code null}
+     */
+    private String survivedByHeldItem(Pokemon target, int incoming) {
+        if (incoming < target.getCurrentHp() || target.getHeldItem() == null) {
+            return null;
+        }
+        HeldItem item = target.getHeldItem();
+        // 注意短路顺序：只有气势头带才会消耗随机数，避免影响其它装备的随机序列
+        boolean sash = item.getEffectType() == HeldItemEffect.FOCUS_SASH
+                && target.getCurrentHp() == target.getMaxHp();
+        boolean band = item.getEffectType() == HeldItemEffect.FOCUS_BAND
+                && random.nextInt(100) < item.chanceParam();
+        if (!sash && !band) {
+            return null;
+        }
+        if (sash) {
+            consumeHeldItem(target);
+        }
+        return target.getName() + " 的" + item.getName() + " 让它撑住了！";
+    }
+
+    /** 消耗一次性装备（如已触发的气势披带、已生效的气球）。 */
+    private static void consumeHeldItem(Pokemon p) {
+        p.setHeldItem(null);
+    }
+
+    /**
+     * 生命宝珠（{@link HeldItemEffect#LIFE_ORB}）反伤：命中造成伤害后按最大 HP 比例扣血。
+     * 反伤不会由其自身的保命装备救回（保命装备只对招式命中的伤害生效）。
+     */
+    private void applyLifeOrbRecoil(Pokemon attacker, int dealt) {
+        if (dealt <= 0 || attacker == null || attacker.isFainted()
+                || !holds(attacker, HeldItemEffect.LIFE_ORB)) {
+            return;
+        }
+        HeldItem orb = attacker.getHeldItem();
+        int recoil = Math.max(1, (int) (attacker.getMaxHp() * orb.recoilRatio()));
+        int lost = attacker.takeDamage(recoil);
+        if (lost > 0) {
+            append(attacker.getName() + " 因" + orb.getName() + " 失去了 " + lost + " HP！");
+        }
+        if (attacker.isFainted()) {
+            events.add(BattleEvent.faint(sideOf(attacker), nameOf(attacker)));
+            append(attacker.getName() + " 倒下了！");
+        }
+    }
+
+    private int computeDamage(Pokemon attacker, Pokemon defender, Move move, double effectiveness,
+                             boolean critical) {
         double atk;
         double def;
         if (move.getCategory() == MoveCategory.PHYSICAL) {
@@ -1070,22 +1558,55 @@ public class BattleEngine implements BattleService {
                 && defender.getSpecies().getEvolvesToId() != null) {
             def *= defender.getHeldItem().doubleParam();
         }
+        // 突击背心：携带者特防提升（只在特殊招式的防御端生效）
+        if (move.getCategory() == MoveCategory.SPECIAL && holds(defender, HeldItemEffect.ASSAULT_VEST)) {
+            def *= defender.getHeldItem().doubleParam();
+        }
         int level = attacker.getLevel();
         double base = (2.0 * level / 5.0 + 2.0) * move.getPower()
                 * (atk / Math.max(1.0, def)) / 50.0 + 2.0;
         double stab = attacker.hasType(move.getType()) ? 1.5 : 1.0;
-        double effectiveness = typeEffectiveness(move.getType(), defender);
-        // 天气与场地对招式威力的加成
-        double field = weather.moveTypeMultiplier(move.getType())
-                * terrain.moveTypeMultiplier(move.getType());
-        // 携带装备加成：属性强化道具（木炭等）与达人带（效果拔群增伤）
+        // 天气与场地对招式威力的加成；万能伞让携带者的天气修正失效（场地仍照常生效）
+        double weatherMultiplier = holds(attacker, HeldItemEffect.UTILITY_UMBRELLA)
+                ? 1.0 : weather.moveTypeMultiplier(move.getType());
+        double field = weatherMultiplier * terrain.moveTypeMultiplier(move.getType());
+        // 携带装备加成：属性强化道具（木炭等）、达人带、力量头带/博识眼镜、生命宝珠、讲究眼镜
         double equipment = heldItemDamageMultiplier(attacker, move, effectiveness);
+        // 节拍器：连续使用同一招式时逐次增伤（换招即归零重算）
+        equipment *= consecutiveMoveMultiplier(attacker, move);
+        double crit = critical ? CRIT_MULTIPLIER : 1.0;
         double randomFactor = 0.85 + random.nextDouble() * 0.15;
-        int raw = (int) Math.floor(base * stab * effectiveness * field * equipment * randomFactor);
+        int raw = (int) Math.floor(base * stab * effectiveness * field * equipment * crit * randomFactor);
         return Math.max(1, raw);
     }
 
-    /** 攻击方携带装备的伤害倍率：DAMAGE_TYPE 属性匹配时生效；SUPER_EFFECTIVE 仅在克制时生效。 */
+    /** 节拍器（{@link HeldItemEffect#CONSECUTIVE_BOOST}）增伤上限（{@value}）。 */
+    public static final double CONSECUTIVE_MAX_MULTIPLIER = 2.0;
+
+    /**
+     * 节拍器增伤倍率：连续使用同一招式时每层增加 param 比例的威力，上限
+     * {@value #CONSECUTIVE_MAX_MULTIPLIER} 倍；一旦换招，连续次数归 1（无加成）。
+     *
+     * <p>本方法同时维护连续使用记录，因此每次攻击只应调用一次。</p>
+     */
+    private double consecutiveMoveMultiplier(Pokemon attacker, Move move) {
+        String uuid = attacker.getUuid();
+        int count = move.getId().equals(lastMoves.get(uuid))
+                ? consecutiveUses.getOrDefault(uuid, 1) + 1 : 1;
+        lastMoves.put(uuid, move.getId());
+        consecutiveUses.put(uuid, count);
+        if (!holds(attacker, HeldItemEffect.CONSECUTIVE_BOOST)) {
+            return 1.0;
+        }
+        double step = attacker.getHeldItem().doubleParam();
+        return Math.min(CONSECUTIVE_MAX_MULTIPLIER, 1.0 + step * (count - 1));
+    }
+
+    /**
+     * 攻击方携带装备的伤害倍率：DAMAGE_TYPE 属性匹配时生效；SUPER_EFFECTIVE 仅在克制时生效；
+     * PHYSICAL_DAMAGE / SPECIAL_DAMAGE 按招式类别生效；LIFE_ORB 无条件生效；
+     * CHOICE 仅在修正项与招式类别匹配时生效（{@code ATTACK} 配物理、{@code SPECIAL} 配特殊）。
+     */
     private static double heldItemDamageMultiplier(Pokemon attacker, Move move, double effectiveness) {
         HeldItem item = attacker.getHeldItem();
         if (item == null) {
@@ -1098,7 +1619,29 @@ public class BattleEngine implements BattleService {
                         ? item.doubleParam() : 1.0;
             }
             case SUPER_EFFECTIVE -> effectiveness > 1.0 ? item.doubleParam() : 1.0;
+            case PHYSICAL_DAMAGE -> move.getCategory() == MoveCategory.PHYSICAL ? item.doubleParam() : 1.0;
+            case SPECIAL_DAMAGE -> move.getCategory() == MoveCategory.SPECIAL ? item.doubleParam() : 1.0;
+            case LIFE_ORB -> item.damageMultiplier();
+            case CHOICE -> choiceKindMatches(item.choiceKind(), move.getCategory())
+                    ? item.choiceMultiplier() : 1.0;
+            // 拳击手套：拳类招式威力提升
+            case PUNCH_BOOST -> move.isPunch() ? item.doubleParam() : 1.0;
             default -> 1.0;
+        };
+    }
+
+    /**
+     * 讲究系装备的修正项是否匹配招式类别：{@code ATTACK} 对应物理、{@code SPECIAL} 对应特殊
+     * （大小写不敏感）；其它取值（含空）视为不匹配。
+     */
+    private static boolean choiceKindMatches(String kind, MoveCategory category) {
+        if (kind == null) {
+            return false;
+        }
+        return switch (category) {
+            case PHYSICAL -> "ATTACK".equalsIgnoreCase(kind);
+            case SPECIAL -> "SPECIAL".equalsIgnoreCase(kind);
+            case STATUS -> false;
         };
     }
 
@@ -1261,14 +1804,24 @@ public class BattleEngine implements BattleService {
         if (bothStanding) {
             applyFieldEndEffects(pa);
         }
+        // 畏缩只持续到本回合结束：双方都已行动，下一回合恢复正常
+        clearFlinch(pa);
+        clearFlinch(foe);
         resolveRoundEnd();
         if (status == Status.ONGOING) {
             tickFields();
         }
     }
 
+    /** 清除指定精灵的畏缩状态（为空或未畏缩时无操作）。 */
+    private static void clearFlinch(Pokemon p) {
+        if (p != null) {
+            p.clearFlinch();
+        }
+    }
+
     /**
-     * 回合末天气/场地效果：沙暴/冰雹对双方扣血，青草场地对双方回复；
+     * 回合末天气/场地效果：沙暴/冰雹对双方扣血（防尘护目镜携带者免疫），青草场地对双方回复；
      * 随后结算寄生种子、携带装备与异常状态。
      */
     private void applyFieldEndEffects(Pokemon pa) {
@@ -1281,10 +1834,61 @@ public class BattleEngine implements BattleService {
         }
         leftoversHeal(pa);
         leftoversHeal(foe);
+        poisonSludgeEffect(pa);
+        poisonSludgeEffect(foe);
         leechSeedDrain(pa, foe);
         leechSeedDrain(foe, pa);
         statusEndTurn(pa);
         statusEndTurn(foe);
+        // 宝珠类装备在异常状态结算之后生效，因此本回合不会立即吃到新异常状态的扣血
+        endTurnStatusOrb(pa);
+        endTurnStatusOrb(foe);
+        // HP 回复树果放在最后结算，使回合末的天气/异常扣血也能触发果实回复
+        healHpWithBerry(pa);
+        healHpWithBerry(foe);
+    }
+
+    /**
+     * 黑色污泥（{@link HeldItemEffect#POISON_HEAL}）回合末结算：毒属性回复、非毒属性扣血。
+     * 参数为 {@code 回血比例|扣血比例}。
+     */
+    private void poisonSludgeEffect(Pokemon p) {
+        if (p == null || p.isFainted() || !holds(p, HeldItemEffect.POISON_HEAL)) {
+            return;
+        }
+        HeldItem sludge = p.getHeldItem();
+        if (p.hasType(ElementType.POISON)) {
+            int healed = p.heal(Math.max(1, (int) (p.getMaxHp() * sludge.healRatio())));
+            if (healed > 0) {
+                append(p.getName() + " 的" + sludge.getName() + " 恢复了 " + healed + " HP！");
+            }
+            return;
+        }
+        int dealt = p.takeDamage(Math.max(1, (int) (p.getMaxHp() * sludge.damageRatio())));
+        append(p.getName() + " 受到" + sludge.getName() + "的伤害，失去了 " + dealt + " HP！");
+        if (p.isFainted()) {
+            events.add(BattleEvent.faint(sideOf(p), nameOf(p)));
+            append(p.getName() + " 倒下了！");
+        }
+    }
+
+    /**
+     * 宝珠类装备（{@link HeldItemEffect#END_TURN_STATUS}）回合末结算：尚无主要异常时陷入指定异常
+     * （火焰宝珠 → 灼伤、剧毒宝珠 → 剧毒）。
+     */
+    private void endTurnStatusOrb(Pokemon p) {
+        if (p == null || p.isFainted() || !holds(p, HeldItemEffect.END_TURN_STATUS)
+                || p.getStatus() != StatusCondition.NONE) {
+            return;
+        }
+        HeldItem orb = p.getHeldItem();
+        StatusCondition condition = StatusCondition.parse(orb.statusParam());
+        if (condition == null || condition == StatusCondition.NONE) {
+            return;
+        }
+        if (p.tryApplyStatus(condition, 0)) {
+            append(p.getName() + " 因" + orb.getName() + "陷入了" + condition.getDisplayName() + "状态！");
+        }
     }
 
     /**
@@ -1323,6 +1927,110 @@ public class BattleEngine implements BattleService {
         if (healed > 0) {
             append(p.getName() + " 的" + p.getHeldItem().getName() + " 恢复了 " + healed + " HP！");
         }
+    }
+
+    /**
+     * 属性减伤树果（{@link HeldItemEffect#RESIST_TYPE}）判定：招式属性与参数属性一致，且（默认要求）
+     * 本次结算为「效果拔群」时返回承伤倍率；否则返回 {@code 1.0}。
+     *
+     * <p>param 第 3 段为 {@code ALWAYS} 时不看克制关系（一般属性无克制对象，故灯浆果用该标记）。
+     * 本方法只判定不消耗，实际消耗由调用方在伤害打折后执行。</p>
+     */
+    private static double resistBerryMultiplier(Pokemon defender, Move move, double effectiveness) {
+        if (defender == null || !holds(defender, HeldItemEffect.RESIST_TYPE)) {
+            return 1.0;
+        }
+        HeldItem berry = defender.getHeldItem();
+        ElementType berryType = ElementType.parse(berry.resistTypeParam());
+        if (berryType == null || berryType != move.getType()) {
+            return 1.0;
+        }
+        if (!berry.resistUnconditional() && effectiveness <= 1.0) {
+            return 1.0;
+        }
+        return berry.resistMultiplier();
+    }
+
+    /**
+     * 异常治疗树果（{@link HeldItemEffect#CURE_STATUS}）判定：携带者刚陷入参数所列异常时立即治愈并消耗
+     * （樱子果治麻痹、桃桃果治中毒、木子果治全部）。
+     *
+     * <p>仅为「刚被施加」的异常触发：换人上场时已带异常、或战斗开始时已带异常都不会触发。</p>
+     */
+    private void cureStatusWithBerry(Pokemon pokemon, StatusCondition condition) {
+        if (pokemon == null || condition == null || condition == StatusCondition.NONE
+                || !holds(pokemon, HeldItemEffect.CURE_STATUS)) {
+            return;
+        }
+        HeldItem berry = pokemon.getHeldItem();
+        if (!berry.cureStatuses().contains(condition)) {
+            return;
+        }
+        if (condition == StatusCondition.CONFUSION) {
+            pokemon.clearConfusion();
+        } else {
+            pokemon.cureStatus();
+        }
+        consumeHeldItem(pokemon);
+        append(pokemon.getName() + " 因" + berry.getName() + "治愈了" + condition.getDisplayName() + "！");
+    }
+
+    /**
+     * HP 回复树果（{@link HeldItemEffect#HEAL_HP}）判定：当前 HP 不高于参数阈值比例时回复并消耗
+     * （橙橙果回复 10 HP、文柚果回复 1/4、危果树果回复 1/8）。
+     *
+     * <p>已倒下、HP 已满（回复量为 0）时不触发，因此不会白白消耗。</p>
+     */
+    private void healHpWithBerry(Pokemon p) {
+        if (p == null || p.isFainted() || !holds(p, HeldItemEffect.HEAL_HP)) {
+            return;
+        }
+        HeldItem berry = p.getHeldItem();
+        double threshold = berry.healThresholdRatio();
+        double amount = berry.healAmount();
+        if (threshold <= 0 || amount <= 0
+                || p.getCurrentHp() > p.getMaxHp() * threshold) {
+            return;
+        }
+        // 回复量小于 1 视为最大 HP 的比例，不小于 1 视为固定点数
+        int restore = amount < 1.0 ? (int) (p.getMaxHp() * amount) : (int) amount;
+        int healed = p.heal(Math.max(1, restore));
+        if (healed <= 0) {
+            return;
+        }
+        consumeHeldItem(p);
+        append(p.getName() + " 的" + berry.getName() + " 恢复了 " + healed + " HP！");
+    }
+
+    /**
+     * PP 回复树果（{@link HeldItemEffect#HEAL_PP}）判定：指定招式槽 PP 已归零时回复其 PP 并消耗（苹野果 10 PP）。
+     *
+     * @param p    携带者
+     * @param slot 已耗尽 PP 的招式槽；为 {@code null} 或该槽仍有 PP 时，改为取携带者第一个已耗尽的招式槽
+     * @return 实际完成回复的招式槽；未触发返回 {@code null}
+     */
+    private MoveSlot healPpWithBerry(Pokemon p, MoveSlot slot) {
+        if (p == null || !holds(p, HeldItemEffect.HEAL_PP)) {
+            return null;
+        }
+        MoveSlot target = slot;
+        if (target == null || !target.exhausted()) {
+            target = p.getMoveSlots().stream().filter(MoveSlot::exhausted).findFirst().orElse(null);
+        }
+        if (target == null || p.getHeldItem().ppRestoreAmount() <= 0) {
+            return null;
+        }
+        HeldItem berry = p.getHeldItem();
+        int before = target.getCurrentPp();
+        target.restore(berry.ppRestoreAmount());
+        int restored = target.getCurrentPp() - before;
+        if (restored <= 0) {
+            return null;
+        }
+        consumeHeldItem(p);
+        append(p.getName() + " 的" + berry.getName() + " 让【" + target.getMove().getName()
+                + "】回复了 " + restored + " PP！");
+        return target;
     }
 
     /** 贝壳之铃（LIFE_STEAL）吸血：攻击造成伤害后按比例回复自身 HP。 */
@@ -1376,6 +2084,12 @@ public class BattleEngine implements BattleService {
             default -> false;
         };
         if (immune) {
+            return;
+        }
+        // 防尘护目镜 / 万能伞：携带者不受沙暴/冰雹的回合末伤害
+        if (holds(p, HeldItemEffect.POWDER_IMMUNE) || holds(p, HeldItemEffect.UTILITY_UMBRELLA)) {
+            append(p.getName() + " 借助" + p.getHeldItem().getName() + "，不受"
+                    + weather.getDisplayName() + "影响！");
             return;
         }
         int dealt = p.takeDamage(Math.max(1, (int) (p.getMaxHp() * weather.chipRatio())));
@@ -1466,8 +2180,14 @@ public class BattleEngine implements BattleService {
 
     private static double typeEffectiveness(ElementType attack, Pokemon defender) {
         double result = 1.0;
+        boolean grounded = isGrounded(defender);
         for (ElementType t : defender.getSpecies().getTypes()) {
-            result *= TypeChart.effectiveness(attack, t);
+            double single = TypeChart.effectiveness(attack, t);
+            // 地面化（黑色铁球）：地面系招式不再被飞行属性免疫
+            if (single == 0 && grounded && attack == ElementType.GROUND) {
+                single = 1.0;
+            }
+            result *= single;
         }
         return result;
     }

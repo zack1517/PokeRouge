@@ -10,9 +10,12 @@ import java.util.Random;
  *
  * <p>生成规则：</p>
  * <ul>
- *   <li><b>常驻节点</b>（{@link OptionType#isResident()}）每段固定出现：路人、野外精灵、医院；</li>
- *   <li><b>随机节点</b>（商店 / 特殊事件 / 装备补给）按 {@link RouteConfig} 中的概率各自独立判定
- *       （特殊事件与装备补给共享同一事件槽位，先判定装备补给）；</li>
+ *   <li><b>常驻节点</b>（{@link OptionType#isResident()}）每段固定出现：路人、野外精灵、医院；
+ *       此外末段在火箭队剧情线未收束时会固定追加一个「火箭队抓捕神兽」（见
+ *       {@link #isRocketBossResident}，即《需求文档》§5.3）；</li>
+ *   <li><b>随机节点</b>（商店 / 装备补给 / 糖果补给 / 火箭队 / 神兽偶遇）按 {@link RouteConfig} 中的概率判定：
+ *       商店独立占位，其余几类共用同一个「特殊事件槽位」，按
+ *       {@link #rollSpecialEvent} 的优先级只取一个；</li>
  *   <li><b>必然节点</b>（道馆战 / 四天王连打 / 冠军战）不参与随机生成，由推进阶段决定，
  *       见 {@link #createMandatoryOption(RoutePhase, int)}。</li>
  * </ul>
@@ -49,12 +52,18 @@ public class NodeGenerator {
      *
      * <ol>
      *   <li>{@code pendingLegendary} 为真：必然放入一次 0 点的神兽偶遇（火箭队线击败首领后）；</li>
-     *   <li>后期 + 已开启火箭队线 + 尚未击败首领：按 {@link RouteConfig#ROCKET_CAPTURE_PERCENT}
-     *       尝试放入「火箭队抓捕神兽」（玩家可自主选择是否进入）；</li>
+     *   <li>后期 + 已开启火箭队线 + 尚未击败首领 + <b>尚未到末段</b>：按
+     *       {@link RouteConfig#ROCKET_CAPTURE_PERCENT} 尝试放入「火箭队抓捕神兽」
+     *       （玩家可自主选择是否进入）；到了末段该节点改为固定入列，不再占用本槽位；</li>
      *   <li>后期 + 本局尚未遇到过神兽：按 {@link RouteConfig#LEGENDARY_PERCENT} 尝试放入神兽偶遇；</li>
      *   <li>按 {@link RouteConfig#ROCKET_PERCENT} 尝试放入火箭队队员节点（各时期均有概率）；</li>
-     *   <li>以上均未命中时，按 {@link RouteConfig#SPECIAL_PERCENT} 放入通用「特殊事件」占位节点。</li>
+     *   <li>按 {@link RouteConfig#EQUIPMENT_PERCENT} 尝试放入装备补给节点；</li>
+     *   <li>按 {@link RouteConfig#CANDY_PERCENT} 尝试放入糖果补给节点；</li>
+     *   <li>以上均未命中时本段不含特殊事件节点（返回 {@code null}）。</li>
      * </ol>
+     *
+     * <p>另有末段固定的「火箭队抓捕神兽」：已开启剧情线且首领未败时，它随三个常驻节点一起
+     * 入列（见 {@link #isRocketBossResident}），不参与上面的概率判定。</p>
      *
      * @param segment             段号（1 起）
      * @param rocketLineUnlocked  是否已进入过火箭队节点（开启剧情线）
@@ -70,6 +79,10 @@ public class NodeGenerator {
         options.add(createTrainer());
         options.add(createWild());
         options.add(createHospital());
+        if (isRocketBossResident(seg, rocketLineUnlocked, rocketBossDefeated)) {
+            // 末段固定的火箭队首领节点：与常驻节点一起入列，不占特殊事件槽位
+            options.add(createRocketCapture());
+        }
 
         if (roll(RouteConfig.SHOP_PERCENT)) {
             options.add(createShop());
@@ -90,8 +103,21 @@ public class NodeGenerator {
     }
 
     /**
+     * 该段是否固定出现「火箭队抓捕神兽」节点（§5.3）：已开启火箭队剧情线（进入过火箭队节点）、
+     * 首领尚未被击败，且已到 {@link RouteConfig#ROCKET_BOSS_RESIDENT_SEGMENT} 及以后 ——
+     * 此时该节点不再掷概率，而是与常驻节点一起固定入列，且不占用特殊事件槽位。
+     */
+    private boolean isRocketBossResident(int segment, boolean rocketLineUnlocked, boolean rocketBossDefeated) {
+        return RouteConfig.isRocketBossResidentSegment(segment) && rocketLineUnlocked && !rocketBossDefeated;
+    }
+
+    /**
      * 按剧情线状态决定本段特殊事件槽位的节点；没有命中任何事件时返回 {@code null}。
      * 每段最多只有一个特殊事件槽位（见 {@link RouteConfig#MAX_ROUTE_NODES}）。
+     *
+     * <p>到了 {@link RouteConfig#ROCKET_BOSS_RESIDENT_SEGMENT} 及以后，首领节点已由
+     * {@link #generateSegment} 固定入列，因此这里不再掷抓捕概率，槽位留给神兽偶遇 / 火箭队队员 /
+     * 装备补给 / 糖果补给。</p>
      */
     public Option rollSpecialEvent(int segment, boolean rocketLineUnlocked, boolean rocketBossDefeated,
                                    boolean legendaryMet, boolean pendingLegendary) {
@@ -99,7 +125,8 @@ public class NodeGenerator {
         if (pendingLegendary) {
             return createLegendary(seg, true);
         }
-        if (RouteConfig.isLateGame(seg) && rocketLineUnlocked && !rocketBossDefeated
+        if (!isRocketBossResident(seg, rocketLineUnlocked, rocketBossDefeated)
+                && RouteConfig.isLateGame(seg) && rocketLineUnlocked && !rocketBossDefeated
                 && roll(RouteConfig.ROCKET_CAPTURE_PERCENT)) {
             return createRocketCapture();
         }
@@ -113,8 +140,8 @@ public class NodeGenerator {
         if (roll(RouteConfig.EQUIPMENT_PERCENT)) {
             return createReward();
         }
-        if (roll(RouteConfig.SPECIAL_PERCENT)) {
-            return createSpecial();
+        if (roll(RouteConfig.CANDY_PERCENT)) {
+            return createCandy();
         }
         return null;
     }
@@ -147,16 +174,19 @@ public class NodeGenerator {
                 "用金币购买回复品、道具与技能机；随进度商品种类与数量增多");
     }
 
-    /** 特殊事件：随机节点，低概率出现；具体事件类型由后续剧情线决定。 */
-    public Option createSpecial() {
-        return new Option("神秘事件", OptionType.SPECIAL, RouteConfig.SPECIAL_AP_COST,
-                "旅途中遇到的低概率特殊事件，类型随剧情进展变化");
-    }
-
     /** 装备补给：随机节点，低概率出现；随机获得一件可携带装备（结算由控制器执行）。 */
     public Option createReward() {
         return new Option("装备补给", OptionType.REWARD, OptionType.REWARD.getApCost(),
                 "拾获一件随机可携带装备");
+    }
+
+    /**
+     * 糖果补给：随机节点，低概率出现；按所在段获得一批神奇糖果（结算由控制器执行）。
+     * 数量随段递增（8 / 10 / 12 / 14 / 16，见 {@link RouteConfig#candyCountForSegment(int)}）。
+     */
+    public Option createCandy() {
+        return new Option("糖果补给", OptionType.CANDY, OptionType.CANDY.getApCost(),
+                "拾获一批神奇糖果；吃下可让一只精灵直接提升 1 级");
     }
 
     /**
@@ -171,6 +201,9 @@ public class NodeGenerator {
     /**
      * 火箭队抓捕神兽事件（§5.3）：后期开启剧情线后可自主选择是否进入；
      * 进入即与火箭队首领交手，胜利获得大师球并必然触发一次神兽偶遇。
+     *
+     * <p>后期（{@link RouteConfig#ROCKET_BOSS_RESIDENT_SEGMENT} 及以后）该节点固定出现，
+     * 不再掷概率；此时它紧随三个常驻节点入列，不占用特殊事件槽位。</p>
      */
     public Option createRocketCapture() {
         return new Option("火箭队抓捕神兽", OptionType.ROCKET_CAPTURE, RouteConfig.ROCKET_CAPTURE_AP_COST,

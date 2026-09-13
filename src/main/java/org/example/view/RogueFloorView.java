@@ -772,8 +772,8 @@ public class RogueFloorView {
             case WILD -> "🐾";
             case HOSPITAL -> "🏥";
             case SHOP -> "🛒";
-            case SPECIAL -> "✨";
             case REWARD -> "🎁";
+            case CANDY -> "🍬";
             case ROCKET -> "😈";
             case ROCKET_CAPTURE -> "🕸";
             case LEGENDARY -> "🌟";

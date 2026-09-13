@@ -43,20 +43,34 @@ public final class RouteConfig {
     /** 商店节点出现的概率（百分比，随机节点）。 */
     public static final int SHOP_PERCENT = 55;
 
-    /** 特殊事件节点出现的概率（百分比，低概率节点）。 */
-    public static final int SPECIAL_PERCENT = 30;
-
-    /** 装备补给节点出现的概率（百分比，低概率节点；与特殊事件共享同一事件槽位）。 */
+    /** 装备补给节点出现的概率（百分比，低概率节点；占用与火箭队 / 神兽偶遇共用的特殊事件槽位）。 */
     public static final int EQUIPMENT_PERCENT = 30;
 
-    /** 特殊事件节点的默认行动点消耗（神兽偶遇 1 点；火箭队线与火箭队节点在第二步接入）。 */
-    public static final int SPECIAL_AP_COST = 1;
+    /**
+     * 糖果补给节点出现的概率（百分比，低概率节点；在特殊事件槽位的优先级链里排在装备补给之后）。
+     * 命中后按 {@link #candyCountForSegment(int)} 发放神奇糖果。
+     */
+    public static final int CANDY_PERCENT = 30;
+
+    /**
+     * 糖果补给节点在第 {@code segment} 段发放的神奇糖果数量：首段 8 个，之后每段 +2
+     * （8 / 10 / 12 / 14 / 16）。段号非法时按第 1 段处理。
+     */
+    public static int candyCountForSegment(int segment) {
+        int seg = Math.max(1, segment);
+        return 8 + (seg - 1) * 2;
+    }
+
+    /** 糖果补给发放的道具 id（神奇糖果，见 {@code items.csv}）。 */
+    public static final String CANDY_ITEM_ID = "i_rare_candy";
 
     /**
      * 每段最多生成的路线节点数（不含必然节点）：
-     * 常驻的路人 / 野外精灵 / 医院必占 3 个，商店与特殊事件再按概率追加。
+     * 常驻的路人 / 野外精灵 / 医院必占 3 个，商店再按概率追加，共用的特殊事件槽位最多再占 1 个，
+     * 末段在火箭队剧情线未收束时还会固定多占 1 个「火箭队抓捕神兽」（见
+     * {@link #ROCKET_BOSS_RESIDENT_SEGMENT}），故上限为 6。
      */
-    public static final int MAX_ROUTE_NODES = 5;
+    public static final int MAX_ROUTE_NODES = 6;
 
     // ------------------------------------------------------------------
     // 金币奖惩（§4.2 节点说明 + §4.3 失败与惩罚规则）
@@ -70,11 +84,6 @@ public final class RouteConfig {
     /** 野外精灵战胜利的金币奖励。 */
     public static int wildWinGold(int segment) {
         return 20 + Math.max(1, segment) * 8;
-    }
-
-    /** 特殊事件的金币奖励。 */
-    public static int specialGold(int segment) {
-        return 30 + Math.max(1, segment) * 10;
     }
 
     /** 道馆战胜利的金币奖励。 */
@@ -124,23 +133,12 @@ public final class RouteConfig {
     }
 
     // ------------------------------------------------------------------
-    // 商店（§4.2 商店：随机出现，随游戏进展商品种类与数量越多）
+    // 商店（§4.2 商店：随机出现；消耗品按段解锁后全量上架，装备全量上架）
     // ------------------------------------------------------------------
-
-    /** 第 1 段上架的商品数量。 */
-    public static final int BASE_SHOP_STOCK = 3;
-
-    /** 每推进一段额外增加的商品数量。 */
-    public static final int SHOP_STOCK_PER_SEGMENT = 1;
-
-    /** 单次商店的商品数量上限。 */
-    public static final int MAX_SHOP_STOCK = 6;
-
-    /** 某一段商店的商品数量（数量随进展增加）。 */
-    public static int shopStockSize(int segment) {
-        int size = BASE_SHOP_STOCK + (Math.max(1, segment) - 1) * SHOP_STOCK_PER_SEGMENT;
-        return Math.min(MAX_SHOP_STOCK, size);
-    }
+    //
+    // 两个分区都不再有格位上限：装备全量上架（想买哪件就买哪件），消耗品解锁多少件就上架多少件
+    // （第 1 段 7 件 → 第 5 段 16 件）。旧的「第 1 段 3 件、每段 +1、上限 6 件」那套格位常量
+    // 已随随机抽签一起删除；消耗品的解锁节奏是逐件数据，写在 ShopStock.CONSUMABLES 的解锁段号上。
 
     /** 每推进一段的物价涨幅（百分比）。 */
     public static final int SHOP_PRICE_INFLATION_PERCENT = 15;
@@ -258,8 +256,20 @@ public final class RouteConfig {
     /** 火箭队队员节点出现的概率（百分比）；各时期均可能出现（§5.2）。 */
     public static final int ROCKET_PERCENT = 35;
 
-    /** 火箭队抓捕神兽事件出现的概率（百分比）；需后期且已开启剧情线。 */
+    /** 火箭队抓捕神兽事件出现的概率（百分比）；需后期且已开启剧情线，且尚未到固定出现的末段。 */
     public static final int ROCKET_CAPTURE_PERCENT = 60;
+
+    /**
+     * 火箭队首领（抓捕神兽）固定出现的起始段号：已开启火箭队剧情线且首领未被击败时，
+     * 从该段起该节点不再掷 {@link #ROCKET_CAPTURE_PERCENT}，而是随常驻节点一起固定入列 ——
+     * 玩家在打进冠军战前一定有机会与首领交手、拿到大师球并触发那一次必然的神兽偶遇。
+     */
+    public static final int ROCKET_BOSS_RESIDENT_SEGMENT = TOTAL_SEGMENTS;
+
+    /** 该段是否已到火箭队首领固定出现的段号（剧情线状态由节点生成器另行判定）。 */
+    public static boolean isRocketBossResidentSegment(int segment) {
+        return Math.max(1, segment) >= ROCKET_BOSS_RESIDENT_SEGMENT;
+    }
 
     /** 神兽偶遇出现的概率（百分比）；仅后期且每局至多一次（§5.1）。 */
     public static final int LEGENDARY_PERCENT = 30;
