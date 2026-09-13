@@ -44,7 +44,6 @@ class RouteConfigTest {
     void 金币奖惩随段提高() {
         assertTrue(RouteConfig.trainerWinGold(2) > RouteConfig.trainerWinGold(1));
         assertTrue(RouteConfig.wildWinGold(2) > RouteConfig.wildWinGold(1));
-        assertTrue(RouteConfig.specialGold(2) > RouteConfig.specialGold(1));
         assertTrue(RouteConfig.gymWinGold(2) > RouteConfig.gymWinGold(1));
         assertTrue(RouteConfig.eliteFourWinGold(2) > RouteConfig.eliteFourWinGold(1));
         assertTrue(RouteConfig.championWinGold(2) > RouteConfig.championWinGold(1));
@@ -132,9 +131,8 @@ class RouteConfigTest {
     @Test
     void 总段数与节点上限已被配置钉住() {
         assertEquals(5, RouteConfig.TOTAL_SEGMENTS);
-        assertTrue(RouteConfig.MAX_ROUTE_NODES >= 5, "3 个常驻节点外还要容得下商店与特殊事件");
+        assertTrue(RouteConfig.MAX_ROUTE_NODES >= 5, "3 个常驻节点外还要容得下商店与特殊事件槽位");
         assertTrue(RouteConfig.STARTING_GOLD > 0, "新远征必须带得动起始金币");
-        assertTrue(RouteConfig.SPECIAL_AP_COST > 0, "普通特殊事件（神兽偶遇）消耗行动点");
         assertEquals(2, RouteConfig.DEFEAT_RESCUE_AP_COST, "战败全灭救援固定消耗 2 点行动点");
     }
 }

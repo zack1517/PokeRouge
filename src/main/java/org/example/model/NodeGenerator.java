@@ -11,8 +11,9 @@ import java.util.Random;
  * <p>生成规则：</p>
  * <ul>
  *   <li><b>常驻节点</b>（{@link OptionType#isResident()}）每段固定出现：路人、野外精灵、医院；</li>
- *   <li><b>随机节点</b>（商店 / 特殊事件 / 装备补给）按 {@link RouteConfig} 中的概率各自独立判定
- *       （特殊事件与装备补给共享同一事件槽位，先判定装备补给）；</li>
+ *   <li><b>随机节点</b>（商店 / 装备补给 / 火箭队 / 神兽偶遇）按 {@link RouteConfig} 中的概率判定：
+ *       商店独立占位，其余几类共用同一个「特殊事件槽位」，按
+ *       {@link #rollSpecialEvent} 的优先级只取一个；</li>
  *   <li><b>必然节点</b>（道馆战 / 四天王连打 / 冠军战）不参与随机生成，由推进阶段决定，
  *       见 {@link #createMandatoryOption(RoutePhase, int)}。</li>
  * </ul>
@@ -53,7 +54,7 @@ public class NodeGenerator {
      *       尝试放入「火箭队抓捕神兽」（玩家可自主选择是否进入）；</li>
      *   <li>后期 + 本局尚未遇到过神兽：按 {@link RouteConfig#LEGENDARY_PERCENT} 尝试放入神兽偶遇；</li>
      *   <li>按 {@link RouteConfig#ROCKET_PERCENT} 尝试放入火箭队队员节点（各时期均有概率）；</li>
-     *   <li>以上均未命中时，按 {@link RouteConfig#SPECIAL_PERCENT} 放入通用「特殊事件」占位节点。</li>
+     *   <li>以上均未命中时本段不含特殊事件节点（返回 {@code null}）。</li>
      * </ol>
      *
      * @param segment             段号（1 起）
@@ -113,9 +114,6 @@ public class NodeGenerator {
         if (roll(RouteConfig.EQUIPMENT_PERCENT)) {
             return createReward();
         }
-        if (roll(RouteConfig.SPECIAL_PERCENT)) {
-            return createSpecial();
-        }
         return null;
     }
 
@@ -145,12 +143,6 @@ public class NodeGenerator {
     public Option createShop() {
         return new Option("商店", OptionType.SHOP, OptionType.SHOP.getApCost(),
                 "用金币购买回复品、道具与技能机；随进度商品种类与数量增多");
-    }
-
-    /** 特殊事件：随机节点，低概率出现；具体事件类型由后续剧情线决定。 */
-    public Option createSpecial() {
-        return new Option("神秘事件", OptionType.SPECIAL, RouteConfig.SPECIAL_AP_COST,
-                "旅途中遇到的低概率特殊事件，类型随剧情进展变化");
     }
 
     /** 装备补给：随机节点，低概率出现；随机获得一件可携带装备（结算由控制器执行）。 */

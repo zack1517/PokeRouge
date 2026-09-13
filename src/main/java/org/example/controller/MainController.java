@@ -499,8 +499,8 @@ public class MainController {
 
     /**
      * 路线节点统一入口：必然节点（道馆 / 四天王 / 冠军）直接开战且不消耗行动点；
-     * 其余节点先扣行动点，再按类型分发——战斗节点接管为真实战斗，医院 / 特殊事件当场结算，
-     * 商店打开购买界面。
+     * 其余节点先扣行动点，再按类型分发——战斗节点接管为真实战斗，医院当场结算，
+     * 商店打开购买界面，装备补给当场入库。
      */
     private void handleRogueOption(Option option) {
         if (option == null || session == null) {
@@ -521,7 +521,7 @@ public class MainController {
             case ROCKET -> startRocketBattle();
             case ROCKET_CAPTURE -> startRocketCaptureBattle();
             case LEGENDARY -> startLegendaryBattle();
-            case HOSPITAL, SPECIAL -> resolveNonBattleNode(option);
+            case HOSPITAL -> resolveNonBattleNode(option);
             case SHOP -> openShop();
             case REWARD -> {
                 resolveRogueEquipmentReward();
@@ -547,7 +547,7 @@ public class MainController {
                 + "\n可在主菜单点击精灵名，在详情页中穿戴。");
     }
 
-    /** 非战斗节点：当场效果（医院治疗 / 特殊事件金币）结算后走节点收尾。 */
+    /** 非战斗节点：当场效果（医院治疗全队）结算后走节点收尾。 */
     private void resolveNonBattleNode(Option option) {
         session.resolveRogueOptionEffect(option);
         finishNodeStep(true);

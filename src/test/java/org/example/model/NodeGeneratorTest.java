@@ -13,14 +13,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link NodeGenerator} 的单元测试：覆盖《需求文档》§4.2 的生成规则 ——
- * 常驻节点（路人 / 野外精灵 / 医院）每段必出、商店与特殊事件按概率出现、
+ * 常驻节点（路人 / 野外精灵 / 医院）每段必出、商店与共用的特殊事件槽位按概率出现、
  * 野外精灵有概率免单、必然节点由推进阶段决定且不占行动点。
  *
  * <p>用两个「恒命中 / 恒落空」的随机源把概率判定变成确定性断言，避免随机测试的偶发失败。</p>
  */
 class NodeGeneratorTest {
 
-    /** 随机数恒取下界：所有百分比判定都命中（商店与特殊事件必出、野外精灵必免单）。 */
+    /** 随机数恒取下界：所有百分比判定都命中（商店与特殊事件槽位必出、野外精灵必免单）。 */
     private static Random alwaysHit() {
         return new Random() {
             @Override
@@ -81,21 +81,20 @@ class NodeGeneratorTest {
 
         List<Option> miss = new NodeGenerator(alwaysMiss()).generateSegment(1).getRouteOptions();
         assertFalse(hasType(miss, OptionType.SHOP), "概率落空时不应有商店");
-        assertFalse(hasType(miss, OptionType.SPECIAL), "概率落空时不应有特殊事件");
         assertFalse(hasType(miss, OptionType.ROCKET), "概率落空时不应有火箭队节点");
         assertEquals(3, miss.size(), "概率落空时只剩 3 个常驻节点");
     }
 
-    /** 特殊事件槽位只有一个：火箭队判定落空时退回通用特殊事件。 */
+    /** 特殊事件槽位只有一个：火箭队与装备补给都落空时，本段不再追加任何节点。 */
     @Test
-    void 火箭队判定落空时特殊事件槽位退回通用特殊事件() {
-        // 段 1 的判定顺序：野外精灵免单 → 商店 → 火箭队 → 装备补给 → 通用特殊事件
-        List<Option> options = new NodeGenerator(scripted(99, 0, 99, 99, 0)).generateSegment(1).getRouteOptions();
+    void 火箭队与装备补给都落空时本段没有特殊事件节点() {
+        // 段 1 的判定顺序：野外精灵免单 → 商店 → 火箭队 → 装备补给
+        List<Option> options = new NodeGenerator(scripted(99, 0, 99, 99)).generateSegment(1).getRouteOptions();
 
         assertTrue(hasType(options, OptionType.SHOP), "商店判定命中");
         assertFalse(hasType(options, OptionType.ROCKET), "火箭队判定落空");
         assertFalse(hasType(options, OptionType.REWARD), "装备补给判定落空");
-        assertTrue(hasType(options, OptionType.SPECIAL), "此时才轮到通用特殊事件");
+        assertEquals(4, options.size(), "槽位落空时该段只剩 3 个常驻节点 + 商店");
     }
 
     @Test
@@ -108,7 +107,6 @@ class NodeGeneratorTest {
         assertEquals(1, generator.createHospital().getCost(), "§4.1 医院消耗 1 点");
         assertEquals(OptionType.SHOP.getApCost(), generator.createShop().getCost());
         assertEquals(1, generator.createShop().getCost(), "§4.1 商店消耗 1 点");
-        assertEquals(RouteConfig.SPECIAL_AP_COST, generator.createSpecial().getCost());
     }
 
     @Test
