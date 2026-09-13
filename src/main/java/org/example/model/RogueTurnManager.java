@@ -97,10 +97,11 @@ public class RogueTurnManager {
         runData.setAvailableOptions(new ArrayList<>(plan.getRouteOptions()));
     }
 
-    /** 按当前段号与剧情线状态生成本段方案（开段与刷新共用，保证两处规则一致）。 */
+    /** 按当前段号、剧情线状态与行动点生成本段方案（开段与刷新共用，保证两处规则一致）。 */
     private SegmentPlan generatePlan(int segment) {
         return generator.generateSegment(segment, runData.isRocketLineUnlocked(),
-                runData.isRocketBossDefeated(), runData.isLegendaryMet(), runData.isPendingLegendary());
+                runData.isRocketBossDefeated(), runData.isLegendaryMet(), runData.isPendingLegendary(),
+                runData.getAp(), runData.getApMax());
     }
 
     public void setTeam(List<PokemonInstance> team) {
@@ -368,6 +369,20 @@ public class RogueTurnManager {
         return false;
     }
 
+    /**
+     * 第一次道馆战全灭的免费救援（§4.3 补充规则）：消耗本段失败机会但<b>不扣金币</b>，
+     * 全队满状态恢复由控制器执行（本类不持有队伍状态）。
+     *
+     * @return 符合免费救援条件（道馆阶段、本段未用过失败机会）并已消耗机会返回 {@code true}
+     */
+    public boolean useFreeGymRescue() {
+        if (runData.getPhase() != RoutePhase.GYM || !runData.canRetry()) {
+            return false;
+        }
+        runData.useRetry();
+        return true;
+    }
+
     // ------------------------------------------------------------------
     // 金币
     // ------------------------------------------------------------------
@@ -388,7 +403,7 @@ public class RogueTurnManager {
             case ELITE_FOUR -> RouteConfig.eliteFourWinGold(segment);
             case CHAMPION -> RouteConfig.championWinGold(segment);
             case ROCKET_INVASION -> RouteConfig.bossAggressionWinGold(segment);
-            case HOSPITAL, SHOP, REWARD, CANDY -> 0;
+            case HOSPITAL, SHOP, REWARD, TRADE, CANDY -> 0;
         };
     }
 

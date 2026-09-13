@@ -52,11 +52,13 @@ public class NodeGenerator {
      *
      * <ol>
      *   <li>{@code pendingLegendary} 为真：必然放入一次 0 点的神兽偶遇（火箭队线击败首领后）；</li>
-     *   <li>后期 + 已开启火箭队线 + 尚未击败首领 + <b>尚未到末段</b>：按
+     *   <li>进入出现窗口（第 4 段行动点消耗过半之后，见 {@link RouteConfig#rocketCaptureAvailable}）
+     *       + 已开启火箭队线 + 尚未击败首领 + <b>尚未到末段</b>：按
      *       {@link RouteConfig#ROCKET_CAPTURE_PERCENT} 尝试放入「火箭队抓捕神兽」
      *       （玩家可自主选择是否进入）；到了末段该节点改为固定入列，不再占用本槽位；</li>
      *   <li>后期 + 本局尚未遇到过神兽：按 {@link RouteConfig#LEGENDARY_PERCENT} 尝试放入神兽偶遇；</li>
      *   <li>按 {@link RouteConfig#ROCKET_PERCENT} 尝试放入火箭队队员节点（各时期均有概率）；</li>
+     *   <li>按 {@link RouteConfig#TRADE_PERCENT} 尝试放入宝可梦交换节点；</li>
      *   <li>按 {@link RouteConfig#EQUIPMENT_PERCENT} 尝试放入装备补给节点；</li>
      *   <li>按 {@link RouteConfig#CANDY_PERCENT} 尝试放入糖果补给节点；</li>
      *   <li>以上均未命中时本段不含特殊事件节点（返回 {@code null}）。</li>
@@ -74,6 +76,20 @@ public class NodeGenerator {
     public SegmentPlan generateSegment(int segment, boolean rocketLineUnlocked, boolean rocketBossDefeated,
                                        boolean legendaryMet, boolean pendingLegendary) {
         int seg = Math.max(1, segment);
+        return generateSegment(seg, rocketLineUnlocked, rocketBossDefeated, legendaryMet, pendingLegendary,
+                RouteConfig.apLimitForSegment(seg), RouteConfig.apLimitForSegment(seg));
+    }
+
+    /**
+     * 同 {@link #generateSegment(int, boolean, boolean, boolean, boolean)}，
+     * 额外接收当前行动点状态用于抓捕神兽事件的出现窗口判定。
+     *
+     * @param ap    当前剩余行动点
+     * @param apMax 本段行动点上限
+     */
+    public SegmentPlan generateSegment(int segment, boolean rocketLineUnlocked, boolean rocketBossDefeated,
+                                       boolean legendaryMet, boolean pendingLegendary, int ap, int apMax) {
+        int seg = Math.max(1, segment);
         List<Option> options = new ArrayList<>();
 
         options.add(createTrainer());
@@ -88,7 +104,7 @@ public class NodeGenerator {
             options.add(createShop());
         }
         Option special = rollSpecialEvent(seg, rocketLineUnlocked, rocketBossDefeated,
-                legendaryMet, pendingLegendary);
+                legendaryMet, pendingLegendary, ap, apMax);
         if (special != null) {
             options.add(special);
         }
@@ -122,11 +138,23 @@ public class NodeGenerator {
     public Option rollSpecialEvent(int segment, boolean rocketLineUnlocked, boolean rocketBossDefeated,
                                    boolean legendaryMet, boolean pendingLegendary) {
         int seg = Math.max(1, segment);
+        return rollSpecialEvent(seg, rocketLineUnlocked, rocketBossDefeated, legendaryMet, pendingLegendary,
+                RouteConfig.apLimitForSegment(seg), RouteConfig.apLimitForSegment(seg));
+    }
+
+    /**
+     * 同 {@link #rollSpecialEvent(int, boolean, boolean, boolean, boolean)}，
+     * 额外接收当前行动点状态用于抓捕神兽事件的出现窗口判定。
+     */
+    public Option rollSpecialEvent(int segment, boolean rocketLineUnlocked, boolean rocketBossDefeated,
+                                   boolean legendaryMet, boolean pendingLegendary, int ap, int apMax) {
+        int seg = Math.max(1, segment);
         if (pendingLegendary) {
             return createLegendary(seg, true);
         }
         if (!isRocketBossResident(seg, rocketLineUnlocked, rocketBossDefeated)
-                && RouteConfig.isLateGame(seg) && rocketLineUnlocked && !rocketBossDefeated
+                && rocketLineUnlocked && !rocketBossDefeated
+                && RouteConfig.rocketCaptureAvailable(seg, ap, apMax)
                 && roll(RouteConfig.ROCKET_CAPTURE_PERCENT)) {
             return createRocketCapture();
         }
@@ -136,6 +164,9 @@ public class NodeGenerator {
         }
         if (roll(RouteConfig.ROCKET_PERCENT)) {
             return createRocket();
+        }
+        if (roll(RouteConfig.TRADE_PERCENT)) {
+            return createTrade();
         }
         if (roll(RouteConfig.EQUIPMENT_PERCENT)) {
             return createReward();
@@ -181,12 +212,21 @@ public class NodeGenerator {
     }
 
     /**
+     * 宝可梦交换：随机节点，低概率出现，行动点 2；系统提供一只「队伍平均等级（向下取整）+1 或 2」
+     * 的宝可梦，玩家可用队伍中的一只与其交换，也可放弃（均不返还行动点）。
+     */
+    public Option createTrade() {
+        return new Option("宝可梦交换", OptionType.TRADE, OptionType.TRADE.getApCost(),
+                "神秘商人带来一只宝可梦：可用队伍中的一只与其交换，也可放弃（均不返还行动点）");
+    }
+
+    /**
      * 糖果补给：随机节点，低概率出现；按所在段获得一批神奇糖果（结算由控制器执行）。
      * 数量随段递增（8 / 10 / 12 / 14 / 16，见 {@link RouteConfig#candyCountForSegment(int)}）。
      */
     public Option createCandy() {
         return new Option("糖果补给", OptionType.CANDY, OptionType.CANDY.getApCost(),
-                "拾获一批神奇糖果；吃下可让一只精灵直接提升 1 级（主菜单中栏喂食）");
+                "拾获一批神奇糖果；吃下可让一只精灵直接提升 1 级，在主菜单的道具区中喂食");
     }
 
     /**

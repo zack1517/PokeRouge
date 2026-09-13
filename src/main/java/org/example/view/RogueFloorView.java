@@ -773,6 +773,7 @@ public class RogueFloorView {
             case HOSPITAL -> "🏥";
             case SHOP -> "🛒";
             case REWARD -> "🎁";
+            case TRADE -> "🔁";
             case CANDY -> "🍬";
             case ROCKET -> "😈";
             case ROCKET_CAPTURE -> "🕸";
@@ -789,7 +790,7 @@ public class RogueFloorView {
      * （素材名与类型对应：passer=路人 / wildpokemon=野外精灵 / hospital=医院 / shop=商店 /
      * device=装备补给 / candy=糖果补给 / teamrocket=火箭队 / teamrocket_boss=火箭队抓捕神兽 /
      * legendarypokemon=神兽偶遇；均为 2x 396×158 中心预裁图，见临时/03-素材与图片处理/event_crop.py）。
-     * 未配图的类型返回 {@code null}（道馆 / 四天王 / 冠军等必然节点不出现于卡面），
+     * 未配图的类型返回 {@code null}（如宝可梦交换；道馆 / 四天王 / 冠军等必然节点不出现于卡面），
      * 调用方保持默认占位图案；结果带缓存（含空结果，避免重复回查 classpath）。
      */
     private static Image eventImageFor(OptionType type) {
@@ -809,7 +810,7 @@ public class RogueFloorView {
             case ROCKET -> "teamrocket";
             case ROCKET_CAPTURE -> "teamrocket_boss";
             case LEGENDARY -> "legendarypokemon";
-            default -> null; // 必然节点（道馆 / 四天王 / 冠军 / 火箭队入侵）不出现于卡面
+            default -> null; // 宝可梦交换暂无素材；必然节点（道馆 / 四天王 / 冠军 / 火箭队入侵）不出现于卡面
         };
         Image image = null;
         if (name != null) {

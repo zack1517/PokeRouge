@@ -1,17 +1,27 @@
 package org.example.integration;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.example.growth.GrowthProgress;
 import org.example.model.ElementType;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
+import org.example.model.MoveEffect;
 import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.Stat;
 import org.example.model.Trainer;
 import org.example.pokemon.domain.LearnableMove;
 import org.example.pokemon.domain.Species;
@@ -20,6 +30,7 @@ import org.example.pokemon.service.PokemonService;
 import org.example.pokemon.service.PokemonServiceImpl;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -129,6 +140,61 @@ class PokemonBattleAdapterTest {
                 assertEvolvedFormLegal(wild.get());
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 段号出现规则：段 1 无进化宝可梦不出场、绿毛虫一家加权
+    // ------------------------------------------------------------------
+
+    /** 无进化链宝可梦（自身不进化、也无前序进化型）物种 id，段 1 不应出现在遭遇候选池。 */
+    private static final Set<String> NO_EVOLUTION_IDS =
+            Set.of("pikachu", "eevee", "vulpix", "lapras", "snorlax", "chansey", "aerodactyl");
+
+    /** 段 1 不应出现无进化宝可梦：多次采样（固定等级 5）均不得抽中无进化链物种。 */
+    @Test
+    void testCreateWildPokemon_segment1NeverYieldsNoEvolutionSpecies() {
+        GrowthProgress progress = new GrowthProgress();
+        for (int i = 0; i < 200; i++) {
+            Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemonExact(5, 1, progress);
+            assertTrue(wild.isPresent());
+            assertFalse(NO_EVOLUTION_IDS.contains(wild.get().getSpecies().getId()),
+                    "段 1 不应出现无进化宝可梦：" + wild.get().getName());
+        }
+    }
+
+    /** 段 1 绿毛虫一家权重更高：多次采样统计应显著高于无加权时的期望占比。 */
+    @Test
+    void testCreateWildPokemon_segment1BoostsCaterpieLine() {
+        GrowthProgress progress = new GrowthProgress();
+        int caterpieLine = 0;
+        int samples = 3000;
+        for (int i = 0; i < samples; i++) {
+            Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemonExact(5, 1, progress);
+            assertTrue(wild.isPresent());
+            if (Set.of("caterpie", "metapod", "butterfree").contains(wild.get().getSpecies().getId())) {
+                caterpieLine++;
+            }
+        }
+        // 等级 5 的段 1 候选约 22 只基础形态 + 绿毛虫额外 1 份：加权后期望 ≈ 261/3000；
+        // 无加权时绿毛虫期望 ≈ 136/3000，其 5σ 上界 ≈ 193，故以 200 为「加权生效」的可靠下界。
+        assertTrue(caterpieLine >= 200,
+                "段 1 绿毛虫一家出现次数应显著高于无加权期望，实际 " + caterpieLine + "/" + samples);
+    }
+
+    /** 第 2 段起无进化宝可梦应进入遭遇候选池（段规则只约束段 1）。 */
+    @Test
+    void testCreateWildPokemon_segment2AllowsNoEvolutionSpecies() {
+        GrowthProgress progress = new GrowthProgress();
+        boolean seen = false;
+        for (int i = 0; i < 200; i++) {
+            Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemonExact(20, 2, progress);
+            assertTrue(wild.isPresent());
+            if (NO_EVOLUTION_IDS.contains(wild.get().getSpecies().getId())) {
+                seen = true;
+                break;
+            }
+        }
+        assertTrue(seen, "第 2 段起无进化宝可梦应进入遭遇候选池");
     }
 
     /** 断言该野生精灵不是非法进化形态：其前一进化型的进化等级必须不高于其实际等级。 */
@@ -246,6 +312,102 @@ class PokemonBattleAdapterTest {
         assertEquals(31, ivs.getSpeed());
     }
 
+    /**
+     * 变化类技能的效果（专属效果 / 能力等级变化）必须经接缝完整搬运。
+     *
+     * <p>回归防护：这两项漏搬时，招式在战斗引擎里会被判定为「空变化招」，玩家看到的只有
+     * 「但是什么也没有发生……」。</p>
+     */
+    @Test
+    void testToBattleMove_carriesEffectsAndStatChanges() {
+        Move growl = PokemonBattleAdapter.toBattleMove(requireLibraryMove("growl"));
+        assertEquals(1, growl.getStatChanges().size(), "叫声应带一项能力等级变化");
+        assertEquals(org.example.model.StatChange.Recipient.OPPONENT,
+                growl.getStatChanges().get(0).recipient());
+        assertEquals(Stat.ATTACK, growl.getStatChanges().get(0).stat());
+        assertEquals(-1, growl.getStatChanges().get(0).delta());
+
+        assertEquals(org.example.model.StatChange.Recipient.SELF,
+                PokemonBattleAdapter.toBattleMove(requireLibraryMove("harden")).getStatChanges().get(0).recipient(),
+                "硬邦邦应作用于自身");
+
+        assertEquals(MoveEffect.PROTECT, PokemonBattleAdapter.toBattleMove(requireLibraryMove("protect")).getEffect());
+        assertEquals(MoveEffect.LEECH_SEED, PokemonBattleAdapter.toBattleMove(requireLibraryMove("leech-seed")).getEffect());
+        assertEquals(MoveEffect.REST, PokemonBattleAdapter.toBattleMove(requireLibraryMove("rest")).getEffect());
+
+        Move tackle = PokemonBattleAdapter.toBattleMove(requireLibraryMove("tackle"));
+        assertEquals(MoveEffect.NONE, tackle.getEffect(), "攻击招不应凭空获得专属效果");
+        assertTrue(tackle.getStatChanges().isEmpty(), "攻击招不应凭空获得能力等级变化");
+    }
+
+    /** 新体系全部招式效果必须能在旧战斗模型中解析（防枚举漂移，守住/寄生种子/睡觉最容易漏）。 */
+    @Test
+    void testMoveEffect_everyNewEffectIsMappableToLegacy() {
+        for (org.example.pokemon.domain.MoveEffect effect : org.example.pokemon.domain.MoveEffect.values()) {
+            if (effect == org.example.pokemon.domain.MoveEffect.NONE) {
+                continue;
+            }
+            assertNotEquals(MoveEffect.NONE, MoveEffect.parse(effect.name()),
+                    "新体系效果 " + effect.name() + " 在旧战斗模型中缺少对应枚举");
+        }
+    }
+
+    /**
+     * 宝可梦库中任何变化招转换后都必须保留至少一项效果，否则战斗日志只会是「但是什么也没有发生……」。
+     *
+     * <p>例外：{@code splash}（跃起）在原作中<b>本就毫无效果</b>，属于数据侧有意为之，不视为降级。</p>
+     */
+    @Test
+    void testToBattleMove_noStatusMoveDegradesToEmptyEffect() {
+        int checked = 0;
+        Set<String> intentionallyNoEffect = Set.of("splash");
+        for (org.example.pokemon.domain.Move source : GameData.instance().getAllMoves()) {
+            if (source.getCategory() != org.example.pokemon.domain.MoveCategory.STATUS) {
+                continue;
+            }
+            checked++;
+            if (intentionallyNoEffect.contains(source.getId())) {
+                continue;
+            }
+            Move battle = PokemonBattleAdapter.toBattleMove(source);
+            assertTrue(battle.getEffect() != MoveEffect.NONE || battle.hasStatChanges() || battle.hasInfliction(),
+                    "变化招 " + source.getId() + " 经接缝转换后效果全部丢失");
+        }
+        assertTrue(checked > 0, "宝可梦库应至少包含一个变化招");
+    }
+
+    /** 端到端：走游戏真实数据端口（{@link PokemonLibraryDataPort}）拿到的变化招必须在战斗引擎里真正生效。 */
+    @Test
+    void testLibraryStatusMove_actuallyTakesEffectInBattle() {
+        org.example.battle.BattleDataPort port = PokemonBattleAdapter.battleDataPort();
+        Move growl = port.findMove("growl");
+        assertNotNull(growl, "宝可梦库应定义叫声");
+
+        org.example.model.Species species = port.findSpecies("bulbasaur");
+        Pokemon mine = Pokemon.create(species, 20, List.of(growl), NO_IV);
+        Pokemon foe = Pokemon.create(species, 20, List.of(port.findMove("tackle")), NO_IV);
+        Player player = new Player("玩家");
+        player.addPokemon(mine);
+
+        org.example.battle.BattleService engine =
+                org.example.battle.BattleServices.newBattle(player, foe, new java.util.Random(7));
+        engine.useMove(mine.getMoveSlots().get(0));
+
+        String log = String.join("\n", engine.getLog());
+        assertEquals(-1, foe.getStatStage(Stat.ATTACK), "叫声应降低对方物攻：" + log);
+        assertTrue(log.contains("物攻"), "应播报能力等级下降：" + log);
+        assertFalse(log.contains("什么也没有发生"), "不应落到无效果兜底：" + log);
+    }
+
+    /** 无个体值，使端到端断言不受个体浮动影响。 */
+    private static final org.example.model.Stats NO_IV = new org.example.model.Stats(0, 0, 0, 0, 0, 0);
+
+    /** 按 id 取出宝可梦库中必然存在的技能。 */
+    private static org.example.pokemon.domain.Move requireLibraryMove(String moveId) {
+        return GameData.instance().getMove(moveId)
+                .orElseThrow(() -> new AssertionError("宝可梦库中缺少技能: " + moveId));
+    }
+
     /** 种族经验值 baseExp 必须随种族一起跨系统转换，否则经验折算会退化。 */
     @Test
     void testToBattleSpecies_carriesBaseExpYield() {
@@ -261,7 +423,8 @@ class PokemonBattleAdapterTest {
     }
 
     /** 战斗侧技能应能在新系统数据中回查，且关键字段与源数据一致。 */
-    private void assertMovesAreValid(Pokemon battlePokemon) {        assertTrue(battlePokemon.getMoves().size() <= Pokemon.MAX_MOVES,
+    private void assertMovesAreValid(Pokemon battlePokemon) {
+        assertTrue(battlePokemon.getMoves().size() <= Pokemon.MAX_MOVES,
                 "战斗侧技能数不应超过 " + Pokemon.MAX_MOVES);
         for (Move move : battlePokemon.getMoves()) {
             org.example.pokemon.domain.Move source = GameData.instance().getMove(move.getId())
@@ -272,6 +435,10 @@ class PokemonBattleAdapterTest {
             assertEquals(source.getMaxPp(), move.getMaxPp());
             assertEquals(source.getType().name(), move.getType().name());
             assertEquals(source.getCategory().name(), move.getCategory().name());
+            assertEquals(source.getEffect().name(), move.getEffect().name(),
+                    "技能 " + move.getId() + " 的专属效果在生成个体时丢失");
+            assertEquals(source.getStatChanges().size(), move.getStatChanges().size(),
+                    "技能 " + move.getId() + " 的能力等级变化在生成个体时丢失");
         }
     }
 }

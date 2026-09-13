@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.example.battle.BattleDataPort;
@@ -134,12 +135,67 @@ public final class PokemonBattleAdapter {
     /** 野生等级浮动半宽：与宝可梦库 {@code createWildPokemon} 的 ±2 口径一致。 */
     private static final int WILD_LEVEL_OFFSET = WildEncounter.LEVEL_SPREAD;
 
+    /** 无进化宝可梦最早出现的段号：段 1 不出现，第 2 段起才进入遭遇候选池。 */
+    private static final int NO_EVOLUTION_MIN_SEGMENT = 2;
+
+    /** 绿毛虫一家（绿毛虫 / 铁甲蛹 / 巴大蝶）物种 id。 */
+    private static final Set<String> CATERPIE_LINE = Set.of("caterpie", "metapod", "butterfree");
+
+    /** 段 1 时绿毛虫一家在候选池中的权重（每只在池中出现的份数，1 = 与其他候选同权）。 */
+    private static final int SEGMENT1_CATERPIE_LINE_WEIGHT = 2;
+
+    /**
+     * 神兽偶遇专属候选池（传说宝可梦，捕获率极低，建议大师球）。
+     *
+     * <p>神兽不参与普通野生遭遇（见 {@link PokemonLibraryDataPort#wildSpeciesPool} 与
+     * {@link #wildCandidates}），只通过 LEGENDARY 节点出场：后期段随机神兽偶遇 /
+     * 火箭队线必然触发的神兽偶遇。</p>
+     */
+    static final List<String> LEGENDARY_POOL = List.of(
+            "milk-god", "articuno", "zapdos", "moltres",
+            "raikou", "entei", "suicune");
+
+    /** 该物种 id 是否属于神兽池（神兽不参与普通野生遭遇与训练家队伍）。 */
+    static boolean isLegendary(String speciesId) {
+        return LEGENDARY_POOL.contains(speciesId);
+    }
+
+    /**
+     * 生成一只神兽偶遇的对手精灵：从神兽专属候选池随机选一只，等级为目标等级 ±2 浮动。
+     *
+     * <p>与普通野生遭遇同源（个体值含局外成长加成、随机性格），区别仅在候选池——
+     * 池内种族全部不进化、捕获率 3，强度由「等级加成」体现（见
+     * {@code RouteConfig#legendaryLevelBonus}）。</p>
+     *
+     * @param aroundLevel 目标等级（实际等级 ±2 浮动）
+     * @param progress    局外成长进度（决定个体值加成）
+     * @return 生成的神兽精灵；候选池为空（数据缺失）时返回 {@link Optional#empty()}
+     */
+    public static Optional<Pokemon> createLegendaryPokemon(int aroundLevel, GrowthProgress progress) {
+        PokemonService source = new PokemonServiceImpl(progress);
+        int level = Math.max(1, aroundLevel
+                + ThreadLocalRandom.current().nextInt(-WILD_LEVEL_OFFSET, WILD_LEVEL_OFFSET + 1));
+        List<org.example.pokemon.domain.Species> choices = new ArrayList<>();
+        for (String id : LEGENDARY_POOL) {
+            org.example.pokemon.infrastructure.GameData.instance().getSpecies(id)
+                    .ifPresent(choices::add);
+        }
+        if (choices.isEmpty()) {
+            return Optional.empty();
+        }
+        org.example.pokemon.domain.Species species =
+                choices.get(ThreadLocalRandom.current().nextInt(choices.size()));
+        return Optional.of(toBattlePokemon(source.createPokemon(species.getId(), level, randomNature(source))));
+    }
+
     /**
      * 使用新宝可梦库生成一只野生精灵（个体值已含局外成长加成）。
      *
      * <p><b>生成顺序</b>：先确定最终等级（目标等级 ±2 浮动），再按最终等级做进化链合法性筛选
-     * （见 {@link #wildCandidates(int)}），最后随机选种族并以该等级创建 —— 保证不会出现
+     * （见 {@link #wildCandidates(int, int)}），最后随机选种族并以该等级创建 —— 保证不会出现
      * 「前一进化型进化等级高于实际等级」的非法形态（如 10 级的耿鬼）。</p>
+     *
+     * <p>本重载不区分段号（无进化宝可梦照常出现），适合非肉鸽流程的调用方。</p>
      */
     public static Optional<Pokemon> createWildPokemon(int aroundLevel) {
         return createWildPokemon(aroundLevel, GrowthProgress.instance());
@@ -148,18 +204,35 @@ public final class PokemonBattleAdapter {
     /**
      * 使用新宝可梦库生成野生精灵，并指定成长进度来源（便于测试隔离）。
      *
-     * <p>候选池按<b>最终确定等级</b>做进化链筛选（见 {@link #wildCandidates(int)}）：
+     * <p>候选池按<b>最终确定等级</b>做进化链筛选（见 {@link #wildCandidates(int, int)}）：
      * 低等级只出合法形态，进化形态到其前一进化型的进化等级之后才出现。</p>
+     *
+     * <p>本重载不区分段号（无进化宝可梦照常出现），适合非肉鸽流程的调用方。</p>
      *
      * @param aroundLevel 目标等级
      * @param progress    局外成长进度（决定个体值加成）
      */
     public static Optional<Pokemon> createWildPokemon(int aroundLevel, GrowthProgress progress) {
+        return createWildPokemon(aroundLevel, NO_EVOLUTION_MIN_SEGMENT, progress);
+    }
+
+    /**
+     * 使用新宝可梦库生成野生精灵（指定肉鸽段号，个体值已含局外成长加成）。
+     *
+     * <p>段号决定候选池的<b>出现规则</b>（见 {@link #wildCandidates(int, int)}）：
+     * 段 1 不出现无进化宝可梦（第 {@value #NO_EVOLUTION_MIN_SEGMENT} 段起才出现），
+     * 且绿毛虫一家在段 1 的候选权重略高。</p>
+     *
+     * @param aroundLevel 目标等级（结果在 ±2 内浮动）
+     * @param segment     当前段号（1 起）
+     * @param progress    局外成长进度（决定个体值加成）
+     */
+    public static Optional<Pokemon> createWildPokemon(int aroundLevel, int segment, GrowthProgress progress) {
         PokemonService source = new PokemonServiceImpl(progress);
         // 先确定最终等级（±2 浮动），再按最终等级筛选：避免筛选后又被浮动出非法等级
         int level = Math.max(1, aroundLevel
                 + ThreadLocalRandom.current().nextInt(-WILD_LEVEL_OFFSET, WILD_LEVEL_OFFSET + 1));
-        List<org.example.pokemon.domain.Species> choices = wildCandidates(level);
+        List<org.example.pokemon.domain.Species> choices = wildCandidates(level, segment);
         if (choices.isEmpty()) {
             return Optional.empty();
         }
@@ -169,17 +242,31 @@ public final class PokemonBattleAdapter {
 
     /**
      * 使用新宝可梦库生成一只<b>精确等级</b>的对手精灵（无 ±2 浮动；个体值仍含局外成长加成）。
-     * 候选池同样按该等级做进化链合法性筛选（见 {@link #wildCandidates(int)}）。
+     * 候选池同样按该等级做进化链合法性筛选（见 {@link #wildCandidates(int, int)}）。
      *
      * <p>适用于需要钉死等级的对手（如 1~4 段道馆馆主：12 / 18 / 25 / 34），避免
      * {@code createWildPokemon} 的等级浮动把配置值漂移出去。</p>
+     *
+     * <p>本重载不区分段号（无进化宝可梦照常出现），适合非肉鸽流程的调用方。</p>
      *
      * @param level    目标等级（生成结果即此等级）
      * @param progress 局外成长进度（决定个体值加成）
      */
     public static Optional<Pokemon> createWildPokemonExact(int level, GrowthProgress progress) {
+        return createWildPokemonExact(level, NO_EVOLUTION_MIN_SEGMENT, progress);
+    }
+
+    /**
+     * 使用新宝可梦库生成一只<b>精确等级</b>的对手精灵（指定肉鸽段号，个体值已含局外成长加成）。
+     * 候选池同样按该等级做进化链合法性与段号筛选（见 {@link #wildCandidates(int, int)}）。
+     *
+     * @param level    目标等级（生成结果即此等级）
+     * @param segment  当前段号（1 起）
+     * @param progress 局外成长进度（决定个体值加成）
+     */
+    public static Optional<Pokemon> createWildPokemonExact(int level, int segment, GrowthProgress progress) {
         PokemonService source = new PokemonServiceImpl(progress);
-        List<org.example.pokemon.domain.Species> choices = wildCandidates(level);
+        List<org.example.pokemon.domain.Species> choices = wildCandidates(level, segment);
         if (choices.isEmpty()) {
             return Optional.empty();
         }
@@ -206,6 +293,7 @@ public final class PokemonBattleAdapter {
         Trainer trainer = new Trainer(name);
         List<org.example.pokemon.domain.Species> pool =
                 new ArrayList<>(org.example.pokemon.infrastructure.GameData.instance().getAllSpecies());
+        pool.removeIf(species -> isLegendary(species.getId())); // 神兽不出现在训练家队伍
         Collections.shuffle(pool);
         PokemonService source = new PokemonServiceImpl();
         int picks = Math.min(Math.max(1, count), Math.min(Trainer.MAX_PARTY, pool.size()));
@@ -227,15 +315,60 @@ public final class PokemonBattleAdapter {
      * 基础形态任何等级都合法。</p>
      */
     private static List<org.example.pokemon.domain.Species> wildCandidates(int level) {
+        return wildCandidates(level, NO_EVOLUTION_MIN_SEGMENT);
+    }
+
+    /**
+     * 按<b>确定后的遭遇等级</b>与<b>段号</b>筛选合法候选。
+     *
+     * <p>在 {@link #wildCandidates(int)} 的进化链合法性筛选之上追加两条出现规则：</p>
+     * <ul>
+     *   <li>段 1 剔除无进化链的宝可梦（第 {@value #NO_EVOLUTION_MIN_SEGMENT} 段起才出现）；</li>
+     *   <li>段 1 的绿毛虫一家（绿毛虫 / 铁甲蛹 / 巴大蝶）按
+     *       {@value #SEGMENT1_CATERPIE_LINE_WEIGHT} 倍权重进入候选池（其余候选权重为 1）。</li>
+     * </ul>
+     *
+     * <p>加权采用「候选池内重复条目」实现：随机抽取仍均匀，但被加权物种被抽中的份数更多。</p>
+     */
+    private static List<org.example.pokemon.domain.Species> wildCandidates(int level, int segment) {
         List<org.example.pokemon.domain.Species> all =
                 org.example.pokemon.infrastructure.GameData.instance().getAllSpecies();
         List<org.example.pokemon.domain.Species> candidates = new ArrayList<>();
         for (org.example.pokemon.domain.Species species : all) {
-            if (legalAtLevel(species, level, all)) {
-                candidates.add(species);
+            if (isLegendary(species.getId())) {
+                continue; // 神兽只出现在神兽偶遇，不参与普通野生遭遇
+            }
+            if (!legalAtLevel(species, level, all)) {
+                continue;
+            }
+            if (segment < NO_EVOLUTION_MIN_SEGMENT && hasNoEvolutionLine(species, all)) {
+                continue;
+            }
+            candidates.add(species);
+            if (segment == 1 && CATERPIE_LINE.contains(species.getId())) {
+                for (int extra = 1; extra < SEGMENT1_CATERPIE_LINE_WEIGHT; extra++) {
+                    candidates.add(species);
+                }
             }
         }
         return candidates;
+    }
+
+    /**
+     * 无进化链判定：自身不能进化，且没有任何物种以它为进化目标。
+     * 进化链终态（如喷火龙）仍可进化而来，不属于「无进化宝可梦」。
+     */
+    private static boolean hasNoEvolutionLine(org.example.pokemon.domain.Species species,
+                                              List<org.example.pokemon.domain.Species> all) {
+        if (species.getEvolutionTarget() != null) {
+            return false;
+        }
+        for (org.example.pokemon.domain.Species pre : all) {
+            if (species.getId().equals(pre.getEvolutionTarget())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** 该形态在指定等级下是否合法：任一前一进化型的进化等级超过该等级即不合法。 */
@@ -300,11 +433,42 @@ public final class PokemonBattleAdapter {
         return battleSpecies;
     }
 
-    /** 新体系技能 → 战斗模型技能。供读档还原精灵技能时复用。 */
+    /**
+     * 新体系技能 → 战斗模型技能。供读档还原精灵技能时复用。
+     *
+     * <p>除基础数值与异常状态外，还必须搬运<b>专属效果</b>（守住/寄生种子/睡觉/天气场地）与
+     * <b>能力等级变化</b>：这两项是变化类技能的全部效果来源，漏搬会让招式在战斗引擎里
+     * 变成「空变化招」而播报「但是什么也没有发生……」。</p>
+     */
     public static Move toBattleMove(org.example.pokemon.domain.Move source) {
         return new Move(source.getId(), source.getName(), ElementType.valueOf(source.getType().name()),
                 MoveCategory.valueOf(source.getCategory().name()), source.getPower(), source.getAccuracy(),
-                source.getMaxPp(), source.getPriority(), MoveEffect.NONE,
-                StatusCondition.parse(source.getInflicts()), source.getInflictionChance());
+                source.getMaxPp(), source.getPriority(), toBattleEffect(source.getEffect()),
+                StatusCondition.parse(source.getInflicts()), source.getInflictionChance(),
+                toBattleStatChanges(source.getStatChanges()));
+    }
+
+    /** 招式效果跨系统映射：按枚举名对齐（新体系 {@link org.example.pokemon.domain.MoveEffect} 必须与战斗模型一一对应）。 */
+    private static MoveEffect toBattleEffect(org.example.pokemon.domain.MoveEffect source) {
+        return source == null ? MoveEffect.NONE : MoveEffect.parse(source.name());
+    }
+
+    /** 能力等级变化跨系统映射：按枚举名对齐，战斗模型不支持的能力项（如 HP）被忽略。 */
+    private static List<org.example.model.StatChange> toBattleStatChanges(
+            List<org.example.pokemon.domain.StatChange> source) {
+        if (source == null || source.isEmpty()) {
+            return List.of();
+        }
+        List<org.example.model.StatChange> mapped = new ArrayList<>();
+        for (org.example.pokemon.domain.StatChange change : source) {
+            org.example.model.Stat stat = org.example.model.Stat.parse(change.stat().name());
+            if (stat == null) {
+                continue;
+            }
+            mapped.add(new org.example.model.StatChange(
+                    org.example.model.StatChange.Recipient.valueOf(change.recipient().name()),
+                    stat, change.delta()));
+        }
+        return List.copyOf(mapped);
     }
 }

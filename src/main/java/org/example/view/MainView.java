@@ -22,6 +22,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -65,7 +66,7 @@ import org.example.util.UiScale;
  *     右侧为灰色「已设首发」标识；非首发格第二行右侧附蓝色「设为首发」小按钮；悬停格子看中栏信息）；
  *     右栏为背包列表（精灵球恒置顶、按捕捉强度降序，其余保持原序）；中栏为简要信息框，随光标在
  *     左/右栏按钮上悬停切换内容（精灵：插画/名称/属性/等级与状态同行/图鉴描述/性格/HP/EXP/
- *     六项能力值/出战技能与技能库/装备与装备库，一次展示完整信息；技能库可「换上」，满 4 槽时
+ *     六项能力值/出战技能与技能库/装备与装备库/道具，一次展示完整信息；技能库可「换上」，满 4 槽时
  *     在出战技能行「换下」完成互换；装备可「穿戴/换过来/脱下」，操作即时生效并局部刷新中栏；
  *     道具：插图/数量/功能表述，可在局外使用的道具附「使用」按钮——点击进入选择目标模式，
  *     左侧适用精灵格金框闪光，点击目标即结算，结果在道具详情框内就地展示）。中栏保持最后一次
@@ -142,7 +143,9 @@ public class MainView {
     private final int segment; // 当前地图段号（仅用于展示）
     private final int gold; // 金币余额（负数表示本轮远征尚未开始，不展示）
     private final String slotName; // 当前存档位名（null = 尚未选档，仅用于展示）
-    private final ItemUsageService itemUsage; // 局外道具使用服务（null = 不提供中栏「道具」使用）
+
+    /** 局外道具使用服务（伤药 / 状态药 / 神奇糖果）；为 {@code null} 时中栏道具区展示为不可用。 */
+    private final ItemUsageService itemUsage;
 
     /** 入场动画节点：左栏六格与右栏背包行各自从上到下错峰（每次重建场景时清空重收集）。 */
     private final List<Node> partyEntrance = new ArrayList<>();
@@ -196,6 +199,10 @@ public class MainView {
         this(player, actions, mapBackground, segment, gold, slotName, null);
     }
 
+    /**
+     * @param itemUsage 局外道具使用服务（伤药 / 状态药 / 神奇糖果）；{@code null} 表示中栏
+     *                  不提供道具使用，道具区只显示提示文案
+     */
     public MainView(Player player, Actions actions, String mapBackground, int segment,
                     int gold, String slotName, ItemUsageService itemUsage) {
         this.player = player;
@@ -616,8 +623,8 @@ public class MainView {
 
     /**
      * 中栏内容：精灵完整信息（插画 → 名称/属性 → 等级与状态同行 → 图鉴/性格/HP·EXP → 能力值 →
-     * 技能库 → 装备）；技能库「换上」与装备「穿戴/换过来/脱下」即时生效，操作后由本方法重建中栏
-     * （局外道具使用入口在道具详情框，见 {@link #showItemDetail}）。
+     * 技能库 → 装备 → 道具）；技能库「换上」、装备「穿戴/换过来/脱下」与道具「使用」即时生效
+     * （道具「使用」进入选择目标模式，入口见 {@link #showItemDetail}），操作后由本方法重建中栏。
      */
     private void showPokemonDetail(Pokemon pokemon) {
         lastViewedPokemon = pokemon; // 记住最近查看对象：中栏切到道具内容后「使用」按钮仍能定位到它
@@ -772,7 +779,90 @@ public class MainView {
                 divider(), sectionLabel("能力值（左：当前　右：种族）"), statsRows(pokemon),
                 divider(), sectionLabel("出战技能（" + pokemon.getMoveSlots().size() + "/4）"), moves,
                 poolTitle, movePool,
-                divider(), sectionLabel("装备"), equipment);
+                divider(), sectionLabel("装备"), equipment,
+                divider(), sectionLabel("道具（点击使用，作用于 " + pokemon.getName() + "）"),
+                itemSection(pokemon));
+    }
+
+    /**
+     * 中栏道具区：列出背包中可在局外使用的道具（回复 / 解除 / 升级），点「使用」作用于当前精灵。
+     * 精灵球不在列；数量为 0 的道具不显示。
+     */
+    private VBox itemSection(Pokemon pokemon) {
+        VBox box = new VBox(3);
+        if (itemUsage == null) {
+            Label unavailable = new Label("本页不提供道具使用。");
+            unavailable.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #888;");
+            box.getChildren().add(unavailable);
+            return box;
+        }
+
+        List<ItemStack> usable = new ArrayList<>();
+        for (ItemStack stack : player.getBag().availableStacks()) {
+            if (stack.getItem().usableOutsideBattle()) {
+                usable.add(stack);
+            }
+        }
+        if (usable.isEmpty()) {
+            Label empty = new Label("背包里没有可用的道具：伤药 / 状态药 / 神奇糖果可在商店购买或事件中获得。");
+            empty.setWrapText(true);
+            empty.setMaxWidth(Double.MAX_VALUE);
+            empty.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #888;");
+            box.getChildren().add(empty);
+            return box;
+        }
+        for (ItemStack stack : usable) {
+            box.getChildren().add(itemUsageRow(pokemon, stack));
+        }
+        Label hint = new Label("回复 / 解除道具对满 HP 或无异常的精灵不消耗；精灵球只能在对战中投出。");
+        hint.setWrapText(true);
+        hint.setMaxWidth(Double.MAX_VALUE);
+        hint.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #777;");
+        box.getChildren().add(hint);
+        return box;
+    }
+
+    /** 道具单行：名称 + 数量 + 效果说明 + 「使用」按钮（结果弹窗提示后重建中栏）。 */
+    private HBox itemUsageRow(Pokemon pokemon, ItemStack stack) {
+        Item item = stack.getItem();
+        Label info = new Label(item.getName() + " x" + stack.getCount() + "：" + itemSummary(item));
+        info.setWrapText(true);
+        info.setMaxWidth(Double.MAX_VALUE);
+        info.setMinWidth(0); // 允许 HBox 收缩换行，避免挤掉右侧按钮
+        HBox.setHgrow(info, Priority.ALWAYS);
+        info.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
+
+        Button use = new Button("使用");
+        use.setMinWidth(Region.USE_PREF_SIZE); // 钉宽：不随行收缩
+        use.getStyleClass().add("item-use");
+        use.setStyle(pillStyle(false));
+        use.setOnMouseEntered(e -> use.setStyle(pillStyle(true)));
+        use.setOnMouseExited(e -> use.setStyle(pillStyle(false)));
+        use.setOnAction(e -> {
+            ItemUsageService.Result result = itemUsage.use(item, player.getBag(), pokemon);
+            Alert alert = new Alert(result.used() ? Alert.AlertType.INFORMATION : Alert.AlertType.WARNING);
+            alert.setTitle("使用道具");
+            alert.setHeaderText(item.getName() + " → " + pokemon.getName());
+            alert.setContentText(result.message());
+            alert.showAndWait();
+            showPokemonDetail(pokemon); // 道具数量 / HP / 异常 / 等级都可能在这次使用后变化
+        });
+        HBox row = new HBox(6, info, use);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    /** 道具效果简述（道具模型只存数值，说明文案在此拼接，口径与战斗背包一致）。 */
+    private static String itemSummary(Item item) {
+        return switch (item.getCategory()) {
+            case HEAL -> "回复 " + (int) item.getEffect() + " HP";
+            case CURE -> item.curesAll() ? "解除全部异常状态"
+                    : "解除" + item.curedStatuses().stream()
+                            .map(StatusCondition::getDisplayName)
+                            .collect(Collectors.joining(" / "));
+            case LEVEL_UP -> "等级 +" + (int) item.getEffect();
+            case POKE_BALL -> ItemDescription.describe(item);
+        };
     }
 
     /** 能力值 6 行：名称 + 当前值 + 比例条 + 种族值。 */
@@ -1011,7 +1101,7 @@ public class MainView {
                 : item.getName() + "（已用完）");
         title.setStyle(YH + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
 
-        Label description = new Label(describeItem(item));
+        Label description = new Label(ItemDescription.describe(item));
         description.setWrapText(true);
         description.setMaxWidth(Double.MAX_VALUE);
         description.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #333;");
@@ -1332,43 +1422,6 @@ public class MainView {
             ITEM_ICON_CACHE.put(itemName, null);
             return null;
         }
-    }
-
-    /** 道具功能表述（与战斗背包口径一致）：回复量 / 解除范围 / 捕捉率；升级类为「等级 +N」。 */
-    private static String describeItem(Item item) {
-        if (item.getCategory() == ItemCategory.HEAL) {
-            return "回复 " + (int) item.getEffect() + " HP";
-        }
-        if (item.getCategory() == ItemCategory.CURE) {
-            return "解除" + curesText(item);
-        }
-        if (item.getCategory() == ItemCategory.POKE_BALL) {
-            return item.isAlwaysCatch() ? "必定捕捉" : "捕捉率 ×" + effectText(item.getEffect());
-        }
-        if (item.getCategory() == ItemCategory.LEVEL_UP) {
-            return "等级 +" + (int) item.getEffect();
-        }
-        return "";
-    }
-
-    /** 数值文案：整数省略小数位（精灵球 ×3 而非 ×3.0）。 */
-    private static String effectText(double value) {
-        return value == Math.floor(value) ? String.valueOf((int) value) : String.valueOf(value);
-    }
-
-    /** 解除道具的适用范围文案：万灵药显示「全部异常状态」，其余逐一列出具体状态名。 */
-    private static String curesText(Item item) {
-        if (item.curesAll()) {
-            return "全部异常状态";
-        }
-        List<StatusCondition> conditions = item.curedStatuses();
-        if (conditions.isEmpty()) {
-            return "异常状态";
-        }
-        return conditions.stream()
-                .map(StatusCondition::getDisplayName)
-                .collect(Collectors.joining("/"))
-                + "状态";
     }
 
     /** 彩色徽章（属性 / 状态）。 */
