@@ -19,17 +19,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * {@link ShopStock} 的单元测试：覆盖《需求文档》§4.2 商店节点 ——
- * 消耗品按段解锁后常驻货架、装备全量上架，以及金币计价。
+ * 消耗品按段解锁后常驻货架、装备每次随机上架固定件数，以及金币计价。
  *
- * <p>货架分消耗品与装备两个分区：<b>消耗品</b>逐段放开（第 1 段 7 件 → 末段 15 件），
- * 解锁后一直有货、可重复购买，池为 15 件（另有 1 件剧情专属道具只进目录、不进商店）；
- * <b>装备</b>把未拥有的<b>全量</b>列出（47 件装备 + 30 种树果），玩家进店即可任选购买。
- * 「越往后越多」只由消耗品解锁数量与售价通胀体现。</p>
+ * <p>货架分消耗品与装备两个分区：<b>消耗品</b>逐段放开（第 1 段 7 件 → 末段 16 件），
+ * 解锁后一直有货、可重复购买，池为 16 件（另有 1 件剧情专属道具只进目录、不进商店）；
+ * <b>装备</b>从未拥有的抽签池（47 件装备 + 30 种树果）里<b>每次随机抽
+ * {@link RouteConfig#SHOP_EQUIPMENT_STOCK_SIZE} 件</b>上架（池不足时全部上架），
+ * 买走即下架、不补货。「越往后越多」只由消耗品解锁数量与售价通胀体现。</p>
  *
  * <p>装备定价分两组：47 件<b>对战道具</b>（{@code e_*}）统一 200，30 种<b>树果</b>（{@code b_*}）
  * 按效果强弱分四档 80 / 100 / 120 / 150。</p>
  *
- * <p>用固定随机源保证结果可复现；只断言趋势与上架约束，不锁死具体商品组合。</p>
+ * <p>用固定随机源保证结果可复现 —— 装备分区真读随机源（不同种子给出不同组合，
+ * 同一种子必然复现同一货架）；只断言趋势与上架约束，不锁死具体商品组合。</p>
  */
 class ShopStockTest {
 
@@ -50,10 +52,13 @@ class ShopStockTest {
     }
 
     @Test
-    void 装备数量不随段号变化() {
-        assertEquals(entriesOf(ShopStock.forSegment(1, new Random(1)), true).size(),
-                entriesOf(ShopStock.forSegment(RouteConfig.TOTAL_SEGMENTS, new Random(1)), true).size(),
-                "装备全量上架，数量不随段号变化");
+    void 装备每次上架固定件数且与段号无关() {
+        for (int segment = 1; segment <= RouteConfig.TOTAL_SEGMENTS; segment++) {
+            assertEquals(RouteConfig.SHOP_EQUIPMENT_STOCK_SIZE,
+                    entriesOf(ShopStock.forSegment(segment, new Random(segment)), true).size(),
+                    "第 " + segment + " 段装备池充足，应恰好上架 "
+                            + RouteConfig.SHOP_EQUIPMENT_STOCK_SIZE + " 件");
+        }
     }
 
     @Test
@@ -124,36 +129,37 @@ class ShopStockTest {
     }
 
     @Test
-    void 每段货架都一次列全未拥有的装备() {
-        int all = ShopStock.sellableEquipment(Set.of()).size();
+    void 每段货架都随机上架三件未拥有装备() {
+        Set<String> pool = ShopStock.sellableEquipment(Set.of()).stream()
+                .map(HeldItem::getId)
+                .collect(Collectors.toSet());
 
         for (int segment = 1; segment <= RouteConfig.TOTAL_SEGMENTS; segment++) {
             for (int seed = 1; seed <= 40; seed++) {
-                ShopStock stock = ShopStock.forSegment(segment, new Random(seed));
-                Set<String> onShelf = new TreeSet<>(entriesOf(stock, true).stream()
-                        .map(ShopStock.Entry::itemId).toList());
+                List<String> onShelf = equipmentIds(ShopStock.forSegment(segment, new Random(seed)));
 
-                assertEquals(all, onShelf.size(),
-                        "第 " + segment + " 段应一次列出全部 " + all + " 件装备（seed=" + seed + "）");
+                assertEquals(RouteConfig.SHOP_EQUIPMENT_STOCK_SIZE, onShelf.size(),
+                        "第 " + segment + " 段的装备应恰好上架 "
+                                + RouteConfig.SHOP_EQUIPMENT_STOCK_SIZE + " 件（seed=" + seed + "）");
+                assertEquals(onShelf.size(), Set.copyOf(onShelf).size(), "上架装备不应重复：" + onShelf);
+                assertTrue(pool.containsAll(onShelf), "上架的装备都应来自未拥有池：" + onShelf);
             }
         }
     }
 
     @Test
-    void 首段即可任选任意一件装备购买() {
-        Set<String> all = GameData.instance().allEquipment().stream()
-                .map(HeldItem::getId)
-                .collect(Collectors.toCollection(TreeSet::new));
-        Set<String> onShelf = new TreeSet<>(entriesOf(ShopStock.forSegment(1, new Random(1)), true).stream()
-                .map(ShopStock.Entry::itemId).toList());
+    void 随机源决定上架组合() {
+        Set<String> combos = new TreeSet<>();
+        for (int seed = 1; seed <= 20; seed++) {
+            combos.add(String.join(",", equipmentIds(ShopStock.forSegment(1, new Random(seed)))));
+        }
 
-        assertEquals(all, onShelf, "第 1 段的货架就应覆盖全部装备（含高价讲究系 / 生命宝珠）");
-        assertTrue(onShelf.contains("e_life_orb") && onShelf.contains("e_choice_band"),
-                "高价装备也应在第 1 段直接可买");
+        assertTrue(combos.size() > 1,
+                "不同随机源应能抽出不同组合，实际只有 " + combos.size() + " 种：" + combos);
     }
 
     @Test
-    void 全部装备都能上架且第一件就可能出现() {
+    void 全部装备都在抽签池中且都可能上架() {
         Set<String> all = GameData.instance().allEquipment().stream()
                 .map(HeldItem::getId)
                 .collect(Collectors.toCollection(TreeSet::new));
@@ -163,11 +169,19 @@ class ShopStockTest {
 
         assertEquals(all, pool, "装备池应等于数据表的全部装备（不分段解锁）");
         assertTrue(all.size() >= 77, "装备与树果合计应不少于 77 件，实际：" + all.size());
-        assertTrue(all.stream().anyMatch(id -> id.startsWith("b_")), "树果也应上架（30 种）");
+        assertTrue(all.stream().anyMatch(id -> id.startsWith("b_")), "树果也应参与抽签（30 种）");
+
+        Set<String> seen = new TreeSet<>();
+        for (int seed = 1; seed <= 300; seed++) {
+            seen.addAll(equipmentIds(ShopStock.forSegment(1, new Random(seed))));
+        }
+        Set<String> missing = new TreeSet<>(all);
+        missing.removeAll(seen);
+        assertEquals(all, seen, "大量抽取后每件装备都应可能出现，未出现：" + missing);
     }
 
     @Test
-    void 装备与段号无关一次列全() {
+    void 同随机源下装备组合与段号无关() {
         Set<String> all = GameData.instance().allEquipment().stream()
                 .map(HeldItem::getId)
                 .collect(Collectors.toSet());
@@ -176,12 +190,13 @@ class ShopStockTest {
                         .map(HeldItem::getId).toList()),
                 "第 1 段的装备池就应等于全量装备池，不再按段位放开");
 
-        Set<String> firstSegment = new TreeSet<>(entriesOf(ShopStock.forSegment(1, new Random(1)), true).stream()
-                .map(ShopStock.Entry::itemId).toList());
-        assertEquals(all.size(), firstSegment.size(),
-                "第 1 段就应一次列出全部装备，实际只见到 " + firstSegment.size() + " 件");
-        assertTrue(firstSegment.contains("e_life_orb") && firstSegment.contains("e_choice_band"),
-                "高价的讲究系与生命宝珠也应在第 1 段直接可买，实际：" + firstSegment);
+        List<String> firstSegment = equipmentIds(ShopStock.forSegment(1, new Random(1)));
+        List<String> lastSegment = equipmentIds(ShopStock.forSegment(RouteConfig.TOTAL_SEGMENTS, new Random(1)));
+
+        assertEquals(RouteConfig.SHOP_EQUIPMENT_STOCK_SIZE, firstSegment.size(),
+                "第 1 段应随机上架固定件数，实际：" + firstSegment);
+        assertEquals(firstSegment, lastSegment,
+                "装备抽签不读段号，同随机源下各段组合应一致（价格另由通胀抬高）");
     }
 
     @Test
@@ -204,6 +219,25 @@ class ShopStockTest {
             assertEquals(List.of("e_charcoal"), entriesOf(stock, true).stream()
                             .map(ShopStock.Entry::itemId).toList(),
                     "未拥有的那件装备仍应照常上架");
+        }
+    }
+
+    @Test
+    void 已拥有装备在抽签中被剔除() {
+        List<HeldItem> all = GameData.instance().allEquipment();
+        Set<String> keep = all.stream().map(HeldItem::getId).limit(4).collect(Collectors.toSet());
+        Set<String> owned = all.stream()
+                .map(HeldItem::getId)
+                .filter(id -> !keep.contains(id))
+                .collect(Collectors.toSet());
+
+        for (int seed = 1; seed <= 40; seed++) {
+            List<String> onShelf = equipmentIds(ShopStock.forSegment(3, new Random(seed), owned));
+
+            assertEquals(RouteConfig.SHOP_EQUIPMENT_STOCK_SIZE, onShelf.size(),
+                    "只留 4 件未拥有（多于 3 件），应恰好抽 3 件（seed=" + seed + "）");
+            assertTrue(keep.containsAll(onShelf),
+                    "抽签只应在未拥有的 4 件里进行，实际：" + onShelf);
         }
     }
 
@@ -240,8 +274,8 @@ class ShopStockTest {
         ShopStock stock = ShopStock.forSegment(RouteConfig.TOTAL_SEGMENTS, new Random(5));
 
         assertEquals(16, entriesOf(stock, false).size(), "末段应解锁全部 16 件可售消耗品");
-        assertEquals(ShopStock.sellableEquipment(Set.of()).size(), entriesOf(stock, true).size(),
-                "装备始终全量上架");
+        assertEquals(RouteConfig.SHOP_EQUIPMENT_STOCK_SIZE, entriesOf(stock, true).size(),
+                "装备每次随机上架固定件数，也不随段号变化");
 
         for (ShopStock.Entry entry : stock.entries()) {
             int base = catalogEntry(entry.itemId()).basePrice();
@@ -326,13 +360,13 @@ class ShopStockTest {
     }
 
     @Test
-    void 空随机源不影响货架内容() {
+    void 空随机源与空已拥有集合不崩溃() {
         assertFalse(ShopStock.forSegment(2, null).isEmpty(), "随机源为 null 时不应崩，也不应给出空商店");
+        assertEquals(RouteConfig.SHOP_EQUIPMENT_STOCK_SIZE,
+                entriesOf(ShopStock.forSegment(2, null), true).size(),
+                "随机源为 null 时应退回默认随机源，装备照常上架固定件数");
         assertFalse(ShopStock.forSegment(2, new Random(1), null).isEmpty(),
                 "已拥有装备集合为 null 时不应崩");
-        assertEquals(ShopStock.forSegment(2, new Random(1)).entries(),
-                ShopStock.forSegment(2, new Random(2)).entries(),
-                "货架不再抽签，随机源不影响上架内容");
     }
 
     @Test
@@ -406,6 +440,11 @@ class ShopStockTest {
         return ShopStock.catalog().stream()
                 .filter(entry -> entry.id().equals(id))
                 .findFirst().orElseThrow();
+    }
+
+    /** 货架上的装备 id（按上架顺序），供抽签相关测试复用。 */
+    private static List<String> equipmentIds(ShopStock stock) {
+        return entriesOf(stock, true).stream().map(ShopStock.Entry::itemId).toList();
     }
 
     /** 取货架上的某类商品（{@code equipment = true} 取装备，否则取消耗品），保持货架顺序。 */

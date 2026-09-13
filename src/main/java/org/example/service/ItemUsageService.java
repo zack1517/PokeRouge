@@ -10,7 +10,7 @@ import org.example.model.Pokemon;
 import org.example.model.StatusCondition;
 
 /**
- * 局外道具使用服务：在主菜单的精灵详情页把背包里的道具用在指定精灵身上。
+ * 局外道具使用服务：在主菜单中栏把背包里的道具用在指定精灵身上（与技能换装、装备穿脱并列）。
  *
  * <p><b>可在局外使用的道具</b>：回复类（{@link ItemCategory#HEAL}）、解除类
  * （{@link ItemCategory#CURE}）与升级类（{@link ItemCategory#LEVEL_UP}，神奇糖果）。

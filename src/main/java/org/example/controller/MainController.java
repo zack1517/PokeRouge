@@ -29,6 +29,7 @@ import org.example.model.Trainer;
 import org.example.save.SaveFormatException;
 import org.example.save.SaveManager;
 import org.example.save.SaveSlot;
+import org.example.service.ItemUsageService;
 import org.example.util.LogUtil;
 import org.example.util.MusicPlayer;
 import org.example.view.CustomBattleSetupView;
@@ -105,6 +106,15 @@ public class MainController {
     /** 本次会话的局外成长进度：捕捉次数 / 对战次数 / 个体值加成（图鉴数据来源）。 */
     private GrowthProgress growthProgress() {
         return session != null ? session.getGrowthProgress() : GrowthProgress.instance();
+    }
+
+    /**
+     * 局外道具使用服务：与战斗共用同一份成长端口，因此主菜单中栏吃神奇糖果升级
+     * 同样会到级学招与进化（口径见 {@link ItemUsageService}）。
+     */
+    private ItemUsageService newItemUsageService() {
+        BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
+        return new ItemUsageService(PokemonBattleAdapter.battleGrowthPort(dataPort, growthProgress()));
     }
 
     /** 对手等级锚点：队伍中宝可梦的最高等级（空队伍兑底 1）。 */
@@ -334,7 +344,8 @@ public class MainController {
             }
         }, session.mapBackgroundPath(), session.getSegment(),
                 session.getRogueRunData().isNotStarted() ? -1 : session.getRogueRunData().getGold(),
-                activeSlot == null ? null : activeSlot.displayName());
+                activeSlot == null ? null : activeSlot.displayName(),
+                newItemUsageService());
         stage.setScene(view.createScene());
     }
 
@@ -601,7 +612,7 @@ public class MainController {
         }
         player.getBag().add(candy, count);
         LogUtil.info("糖果补给：获得 " + candy.getName() + " x" + count);
-        infoAlert("糖果补给", "获得神奇糖果 x" + count + "：喂给精灵可直接提升 1 级。");
+        infoAlert("糖果补给", "获得神奇糖果 x" + count + "：喂给精灵可直接提升 1 级（主菜单中栏道具区可喂食）。");
     }
 
     /** 非战斗节点：当场效果（医院治疗全队）结算后走节点收尾。 */

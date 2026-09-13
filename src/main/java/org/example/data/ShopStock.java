@@ -15,17 +15,19 @@ import java.util.Set;
 /**
  * 商店商品库存（《需求文档》§4.2 商店：随机节点，金币购买道具、回复品、技能机。
  *
- * <p><b>两个分区都全量上架、都不抽签</b>：</p>
+ * <p><b>两个分区的上架口径不同</b>：</p>
  * <ul>
- *   <li><b>装备</b>：玩家尚未拥有的装备<b>全量列出</b>（{@link GameData#allEquipment()} 全 77 件：
- *       47 件对战道具 + 30 种树果），<b>从第 1 段起</b>即可任选购买，不分段解锁；</li>
+ *   <li><b>装备</b>：从玩家尚未拥有的装备池（{@link GameData#allEquipment()} 全 77 件：
+ *       47 件对战道具 + 30 种树果）里<b>每次进店随机上架
+ *       {@link RouteConfig#SHOP_EQUIPMENT_STOCK_SIZE} 件</b>（2026-09-13 裁决恢复随机抽签），
+ *       <b>从第 1 段起</b>即可购买，不分段解锁；买走即下架、不补货；</li>
  *   <li><b>消耗品</b>：列出<b>本段已解锁</b>的那几件（解锁段写在 {@link #CONSUMABLES}），
  *       解锁后<b>永久保留</b>在货架上、只增不减（第 1 段 7 件 → 第 5 段 16 件），
  *       购买后进背包、可重复购买。</li>
  * </ul>
  *
  * <p>两个分区都随段涨价，口径见 {@link RouteConfig#shopPrice}（装备 2026-09-12 裁决不分段解锁、
- * 消耗品 2026-09-13 裁决按段渐进解锁）。</p>
+ * 2026-09-13 裁决每次随机上架 3 件；消耗品 2026-09-13 裁决按段渐进解锁）。</p>
  *
  * <p>消耗品池、基础价与解锁段写在 {@link #CONSUMABLES}（其中解锁段为 {@link #NEVER_UNLOCKED}
  * 的条目只进 {@link #catalog()}、不进商店，如击败火箭队首领必得的大师球）；装备基础价按
@@ -206,36 +208,33 @@ public final class ShopStock {
         this.entries = entries;
     }
 
-    /** 生成某一段的商店库存（本段已解锁的消耗品 + 未拥有的全量装备，均按段通胀计价）。 */
+    /** 生成某一段的商店库存（本段已解锁的消耗品 + 未拥有装备中随机抽出的固定件数，均按段通胀计价）。 */
     public static ShopStock forSegment(int segment) {
         return forSegment(segment, new Random(), Set.of());
     }
 
-    /**
-     * 生成某一段的商店库存。
-     *
-     * <p><b>随机源已不影响结果</b>：货架从 2026-09-12 起不再抽签（装备全量、消耗品按段解锁后全量），
-     * 保留 {@code random} 参数只为兼容既有调用方与历史测试的多随机源遍历。</p>
-     */
+    /** 生成某一段的商店库存（装备抽签用默认随机源）。 */
     public static ShopStock forSegment(int segment, Random random) {
         return forSegment(segment, random, Set.of());
     }
 
     /**
-     * 生成某一段的商店库存：本段已解锁的消耗品全量上架，未拥有的装备全量上架。
+     * 生成某一段的商店库存：本段已解锁的消耗品全量上架，未拥有的装备随机上架固定件数。
      *
      * <p>装备池会剔除玩家已拥有的装备 —— 装备全库唯一，已拥有的列在货架上也买不了。
      * 消耗品不剔除：它买进背包、可重复购买。</p>
      *
+     * @param random            装备抽签用的随机源，可为 {@code null}（视作新建默认随机源）
      * @param ownedEquipmentIds 玩家已拥有的装备 id，可为 {@code null}（视作无）
      */
     public static ShopStock forSegment(int segment, Random random, Set<String> ownedEquipmentIds) {
         int seg = Math.max(1, segment);
+        Random rng = random == null ? new Random() : random;
         Set<String> owned = ownedEquipmentIds == null ? Set.of() : ownedEquipmentIds;
 
         List<Entry> stock = new ArrayList<>();
         stock.addAll(unlockedConsumables(seg));
-        stock.addAll(allEquipmentEntries(seg, owned));
+        stock.addAll(equipmentEntries(seg, rng, owned));
         return new ShopStock(seg, stock);
     }
 
@@ -263,19 +262,25 @@ public final class ShopStock {
     }
 
     /**
-     * 装备分区：把玩家尚未拥有的装备<b>全量上架</b>（不抽签、不限件数），玩家想买哪件就买哪件。
+     * 装备分区：从玩家尚未拥有的装备里<b>随机抽
+     * {@link RouteConfig#SHOP_EQUIPMENT_STOCK_SIZE} 件上架</b>（2026-09-13 裁决恢复随机抽签）。
      *
-     * <p>排列顺序为「基础价升序 → id」，与消耗品分区同一口径，越往下越贵；售价仍按段通胀。
-     * 47 件对战道具基础价统一，因此这一段实际按 id 排列。</p>
+     * <p>每次生成货架重抽一次；池不足该件数时全部上架。上架顺序为「基础价升序 → id」，
+     * 与消耗品分区同一口径，越往下越贵；售价仍按段通胀。47 件对战道具基础价统一，
+     * 因此这一段实际按 id 排列。</p>
      */
-    private static List<Entry> allEquipmentEntries(int segment, Set<String> owned) {
-        List<HeldItem> sellable = new ArrayList<>(sellableEquipment(owned));
-        sellable.sort(Comparator
+    private static List<Entry> equipmentEntries(int segment, Random random, Set<String> owned) {
+        List<HeldItem> pool = new ArrayList<>(sellableEquipment(owned));
+        if (pool.size() > RouteConfig.SHOP_EQUIPMENT_STOCK_SIZE) {
+            Collections.shuffle(pool, random);
+            pool = new ArrayList<>(pool.subList(0, RouteConfig.SHOP_EQUIPMENT_STOCK_SIZE));
+        }
+        pool.sort(Comparator
                 .comparingInt((HeldItem item) -> equipmentBasePrice(item.getEffectType()))
                 .thenComparing(HeldItem::getId));
 
         List<Entry> entries = new ArrayList<>();
-        for (HeldItem equipment : sellable) {
+        for (HeldItem equipment : pool) {
             entries.add(new Entry(equipment.getId(), equipment.getName(), equipment.getDescription(),
                     RouteConfig.shopPrice(equipmentBasePrice(equipment.getEffectType()), segment),
                     Kind.EQUIPMENT));
@@ -305,7 +310,7 @@ public final class ShopStock {
     }
 
     /**
-     * 可上架的装备池（<b>全部装备自第 1 段起即可购买</b>，仅剔除已拥有者），供商店全量上架与测试断言。
+     * 可上架的装备池（<b>全部装备自第 1 段起即可购买</b>，仅剔除已拥有者），供商店随机抽签与测试断言。
      *
      * @param ownedEquipmentIds 玩家已拥有的装备 id，可为 {@code null}（视作无）
      */

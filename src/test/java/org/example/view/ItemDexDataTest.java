@@ -168,7 +168,7 @@ class ItemDexDataTest {
                 ItemDexData.describe(GameData.instance().item("i_full_heal")));
         assertTrue(ItemDexData.describe(GameData.instance().item("i_antidote")).startsWith("解除"),
                 "单项解除药应列出可解除的异常状态名");
-        assertEquals("提升精灵 1 级（可在精灵详情页喂食）",
+        assertEquals("提升精灵 1 级（可在主菜单中栏喂食）",
                 ItemDexData.describe(GameData.instance().item("i_rare_candy")));
         assertEquals("", ItemDexData.describe(null), "数据缺失时描述为空串");
     }

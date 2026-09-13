@@ -46,7 +46,8 @@ import java.util.stream.Collectors;
  * 商店界面（《需求文档》§4.2 商店 + §七 界面需求）：用金币购买消耗品与可携带装备。
  *
  * <p>货架按分区展示：<b>消耗品</b>列出本段已解锁的那些（逐段增加、解锁后一直有货），<b>装备</b>为
- * 未拥有装备的全量列表（可任选购买）。只负责展示 {@link ShopStock} 与收集购买意图；金币校验与
+ * 未拥有装备中每次进店随机上架的固定件数（默认 3 件，买走即下架、不补货）。只负责展示
+ * {@link ShopStock} 与收集购买意图；金币校验与
  * 扣款、入包 / 入库由控制器完成 —— 购买成功后控制器调用 {@link #refresh(ShopStock)} 原地刷新
  * （不重建场景，不重播入场动画）。</p>
  *
@@ -406,22 +407,20 @@ public class ShopView {
                 .filter(ShopStock.Entry::isEquipment)
                 .toList();
         if (!consumables.isEmpty()) {
-            stockList.getChildren().add(sectionLabel("消耗品 · 已解锁 " + consumables.size()
-                    + " 件（解锁后一直有货，可重复购买）"));
+            stockList.getChildren().add(sectionLabel("消耗品"));
             for (ShopStock.Entry entry : consumables) {
                 stockList.getChildren().add(buildStockRow(entry, gold));
             }
         }
         if (!equipment.isEmpty()) {
-            stockList.getChildren().add(sectionLabel("装备 · 全部 " + equipment.size()
-                    + " 件（已拥有的不再列出，购买后可在主菜单中栏穿戴）"));
+            stockList.getChildren().add(sectionLabel("装备"));
             for (ShopStock.Entry entry : equipment) {
                 stockList.getChildren().add(buildStockRow(entry, gold));
             }
         }
     }
 
-    /** 分区标题：把按段解锁的消耗品与全量上架的装备分开，便于在长列表里定位。 */
+    /** 分区标题：把按段解锁的消耗品与随机上架的装备分开，便于在长列表里定位。 */
     private static Label sectionLabel(String text) {
         Label section = new Label(text);
         section.setStyle(FONT + "-fx-font-size: 11px; -fx-font-weight: bold; -fx-text-fill: #123c63;"
@@ -530,10 +529,16 @@ public class ShopView {
     // 样式与图片
     // ------------------------------------------------------------------
 
-    /** 信息框：白底蓝环卡（与主菜单中栏详情框同族）。 */
+    /** 信息框：蓝环照片卡（与主菜单中栏详情框同族；背景为素材照片 /images/ui/bg_info_main.png）。 */
     private static String infoBoxStyle() {
-        return "-fx-background-color: #123c63, rgba(255, 255, 255, 0.92);"
-                + " -fx-background-insets: 0, 1.5; -fx-background-radius: 14, 12.5;"
+        return "-fx-background-color: #123c63;"
+                + " -fx-background-image: url(\"/images/ui/bg_info_main.png\");"
+                + " -fx-background-size: 100% 100%;"
+                + " -fx-background-position: center center;"
+                + " -fx-background-repeat: no-repeat;"
+                + " -fx-background-insets: 0;"
+                + " -fx-background-radius: 14;"
+                + " -fx-border-color: #123c63; -fx-border-width: 1.5; -fx-border-radius: 14;"
                 + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 10, 0.08, 0, 3);";
     }
 
