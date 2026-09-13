@@ -268,7 +268,7 @@ class GrowthServiceTest {
     }
 
     @Test
-    void 未升级时返回经验日志() {
+    void 未升级时返回带进度的经验日志() {
         Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
         Pokemon active = pokemon(mine, 50, SLAM);
         // 50 级升到下一级需 7651 点，70 点经验远不足以升级，但必须能从日志中看到经验入账
@@ -284,8 +284,8 @@ class GrowthServiceTest {
         String line = settlement.log().get(0);
         assertTrue(line.contains(active.getName() + " 获得了 70 点经验！"),
                 "应写明获得经验的具体数值，实际：" + line);
-        assertEquals(active.getName() + " 获得了 70 点经验！", line,
-                "未升级时的经验反馈日志即为完整内容，不附带其他片段");
+        assertTrue(line.contains("（70/" + active.expToNextLevel() + "）"),
+                "应附带「当前 / 升级所需」进度，实际：" + line);
     }
 
     @Test
@@ -639,7 +639,8 @@ class GrowthServiceTest {
 
         BattleGrowthPort.Settlement settlement = growth.settle(List.of(active), List.of(foe));
 
-        assertTrue(settlement.log().contains(active.getName() + " 获得了 70 点经验！"),
+        assertTrue(settlement.log().stream()
+                        .anyMatch(l -> l.startsWith(active.getName() + " 获得了 70 点经验！")),
                 "段数非法时经验应保持原值：" + settlement.log());
     }
 

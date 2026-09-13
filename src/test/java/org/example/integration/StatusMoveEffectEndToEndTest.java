@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Random;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -40,6 +42,9 @@ class StatusMoveEffectEndToEndTest {
     /** 一般系，对全部异常状态都不免疫（也不是草系）。 */
     private static final String FOE_SPECIES = "eevee";
 
+    /** 战斗日志里的「造成 N 点伤害」片段（见 {@code BattleEngine} 的伤害播报）。 */
+    private static final Pattern DAMAGE_DEALT = Pattern.compile("造成 (\\d+) 点伤害");
+
     /** 最有利随机源：命中恒成、附加效果恒触发、守住恒成功。 */
     private static final class LuckyRandom extends Random {
         @Override
@@ -62,6 +67,17 @@ class StatusMoveEffectEndToEndTest {
         String text() {
             return String.join("\n", log);
         }
+    }
+
+    /** 取日志里第一处「造成 N 点伤害」的数值；没有则返回 -1。 */
+    private static int damageDealtIn(List<String> log) {
+        for (String line : log) {
+            Matcher m = DAMAGE_DEALT.matcher(line);
+            if (m.find()) {
+                return Integer.parseInt(m.group(1));
+            }
+        }
+        return -1;
     }
 
     private static Species species(String id) {
@@ -112,7 +128,7 @@ class StatusMoveEffectEndToEndTest {
     void growl() {
         Probe p = probe("growl", 0);
         assertEquals(-1, p.foe().getStatStage(Stat.ATTACK));
-        assertTrue(p.text().contains("物攻下降了"), p.text());
+        assertTrue(p.text().contains("物攻降低了"), p.text());
     }
 
     @Test
@@ -120,7 +136,7 @@ class StatusMoveEffectEndToEndTest {
     void tailWhip() {
         Probe p = probe("tail-whip", 0);
         assertEquals(-1, p.foe().getStatStage(Stat.DEFENSE));
-        assertTrue(p.text().contains("物防下降了"), p.text());
+        assertTrue(p.text().contains("物防降低了"), p.text());
     }
 
     @Test
@@ -144,7 +160,7 @@ class StatusMoveEffectEndToEndTest {
         Probe p = probe("agility", 0);
         assertEquals(2, p.mine().getStatStage(Stat.SPEED));
         assertTrue(p.mine().effectiveSpeed() > before, p.text());
-        assertTrue(p.text().contains("速度大幅提高了"), p.text());
+        assertTrue(p.text().contains("速度提高了2 级"), p.text());
     }
 
     @Test
@@ -152,7 +168,7 @@ class StatusMoveEffectEndToEndTest {
     void stringShot() {
         Probe p = probe("string-shot", 0);
         assertEquals(-1, p.foe().getStatStage(Stat.SPEED));
-        assertTrue(p.text().contains("速度下降了"), p.text());
+        assertTrue(p.text().contains("速度降低了"), p.text());
     }
 
     // ---------------------------------------------------------------- 专属效果
@@ -187,7 +203,10 @@ class StatusMoveEffectEndToEndTest {
         assertTrue(p.text().contains("睡着了！"), p.text());
         // 恰好把出手前缺失的那部分补满 => 睡觉当时已回满（之后对手的撞击会再掉血，故不直接比对满血）
         assertTrue(p.text().contains("HP 恢复了 " + missing + " 点！"), p.text());
-        assertTrue(p.mine().getCurrentHp() > max - missing, "回满后只应被对手的攻击扣血：" + p.text());
+        int dealt = damageDealtIn(p.log());
+        assertTrue(dealt > 0, "本回合对手应当有攻击命中：" + p.text());
+        assertEquals(max - dealt, p.mine().getCurrentHp(),
+                "回满后只应被对手的攻击扣掉 " + dealt + " 点：" + p.text());
     }
 
     // ---------------------------------------------------------------- 异常状态
