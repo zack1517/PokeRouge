@@ -168,7 +168,7 @@ public final class RouteConfig {
 
     /**
      * 路人训练家队伍数量下限（按段）：1 段 1 只、2 段 1 只、3 段 2 只、4 段 3 只；
-     * 第 5 段保持随机 1~2 只。
+     * 第 5 段保持随机 3~4 只。
      */
     public static int trainerPartyMin(int segment) {
         int seg = Math.max(1, segment);
@@ -176,13 +176,13 @@ public final class RouteConfig {
             case 1, 2 -> 1;
             case 3 -> 2;
             case 4 -> 3;
-            default -> 1; // 第 5 段保持随机 1~2
+            default -> 3; // 第 5 段保持随机 3~4
         };
     }
 
     /**
      * 路人训练家队伍数量上限（按段）：1 段 1 只、2 段 2 只、3 段 2 只、4 段 3 只；
-     * 第 5 段保持随机 1~2 只。
+     * 第 5 段保持随机 3~4 只。
      */
     public static int trainerPartyMax(int segment) {
         int seg = Math.max(1, segment);
@@ -190,7 +190,7 @@ public final class RouteConfig {
             case 1 -> 1;
             case 2, 3 -> 2;
             case 4 -> 3;
-            default -> 2; // 第 5 段保持随机 1~2
+            default -> 4; // 第 5 段保持随机 3~4
         };
     }
 
@@ -224,24 +224,40 @@ public final class RouteConfig {
         };
     }
 
-    /** 四天王连打相对队伍最高等级的等级加成。 */
+    /**
+     * 四天王连打相对队伍最高等级的等级加成：固定 0（即队伍最高等级 ±2，无额外加成）。
+     *
+     * <p>保留段号参数以兼容既有调用口径，当前不再随段数增强。</p>
+     */
     public static int eliteFourLevelBonus(int segment) {
-        return 4 + Math.max(1, segment) * 2;
+        return 0;
     }
 
-    /** 冠军战相对队伍最高等级的等级加成。 */
+    /**
+     * 冠军战相对队伍最高等级的等级加成：固定 +3（实际等级再 ±1 浮动，见控制器）。
+     *
+     * <p>保留段号参数以兼容既有调用口径，当前不再随段数增强。</p>
+     */
     public static int championLevelBonus(int segment) {
-        return 6 + Math.max(1, segment) * 3;
+        return 3;
     }
 
-    /** 四天王连打的对手宝可梦数量。 */
+    /**
+     * 四天王连打的对手宝可梦数量：固定 4 只。
+     *
+     * <p>保留段号参数以兼容既有调用口径。</p>
+     */
     public static int eliteFourPartySize(int segment) {
-        return Math.min(4, 2 + Math.max(1, segment) / 2);
+        return 4;
     }
 
-    /** 冠军战的对手宝可梦数量。 */
+    /**
+     * 冠军战的对手宝可梦数量：固定 5 只。
+     *
+     * <p>保留段号参数以兼容既有调用口径。</p>
+     */
     public static int championPartySize(int segment) {
-        return Math.min(6, 3 + Math.max(1, segment) / 2);
+        return 5;
     }
 
     // ------------------------------------------------------------------
@@ -259,7 +275,10 @@ public final class RouteConfig {
     /** 火箭队队员节点出现的概率（百分比）；各时期均可能出现（§5.2）。 */
     public static final int ROCKET_PERCENT = 35;
 
-    /** 火箭队抓捕神兽事件出现的概率（百分比）；需后期且已开启剧情线，且尚未到固定出现的末段。 */
+    /**
+     * 火箭队抓捕神兽事件出现的概率（百分比）；需进入出现窗口
+     * （第 4 段行动点消耗过半之后，见 {@link #rocketCaptureAvailable}），且尚未到固定出现的末段。
+     */
     public static final int ROCKET_CAPTURE_PERCENT = 60;
 
     /**
@@ -272,6 +291,25 @@ public final class RouteConfig {
     /** 该段是否已到火箭队首领固定出现的段号（剧情线状态由节点生成器另行判定）。 */
     public static boolean isRocketBossResidentSegment(int segment) {
         return Math.max(1, segment) >= ROCKET_BOSS_RESIDENT_SEGMENT;
+    }
+
+    /** 火箭队抓捕神兽事件的起始段号：第 4 段行动点消耗过半后才出现（§5.3）。 */
+    public static final int ROCKET_CAPTURE_SEGMENT = 4;
+
+    /**
+     * 火箭队抓捕神兽事件是否可在当前状态下出现：
+     * 第 4 段需行动点消耗过半（当前行动点不超过上限的一半）之后，第 5 段起直接可出现。
+     *
+     * @param segment 段号（1 起）
+     * @param ap      当前剩余行动点
+     * @param apMax   本段行动点上限
+     */
+    public static boolean rocketCaptureAvailable(int segment, int ap, int apMax) {
+        int seg = Math.max(1, segment);
+        if (seg > ROCKET_CAPTURE_SEGMENT) {
+            return true;
+        }
+        return seg == ROCKET_CAPTURE_SEGMENT && apMax > 0 && ap * 2 <= apMax;
     }
 
     /** 神兽偶遇出现的概率（百分比）；仅后期且每局至多一次（§5.1）。 */
@@ -320,33 +358,49 @@ public final class RouteConfig {
         return Math.max(1, segment) - 1;
     }
 
-    /** 火箭队首领战相对队伍最高等级的等级加成。 */
-    public static int rocketBossLevelBonus(int segment) {
-        return 5 + Math.max(1, segment) * 3;
-    }
+    /** 火箭队首领战相对队伍最高等级的等级加成：固定 +4（实际等级再 ±1 浮动，见控制器）。 */
+    public static final int ROCKET_BOSS_LEVEL_BONUS = 4;
 
-    /** 神兽偶遇相对队伍最高等级的等级加成（神兽强度高于普通野生精灵）。 */
+    /** 火箭队首领战的对手宝可梦数量：固定 4 只。 */
+    public static final int ROCKET_BOSS_PARTY_SIZE = 4;
+
+    /**
+     * 神兽偶遇相对队伍最高等级的等级加成：固定 +6（实际等级再 ±2 浮动，见控制器）。
+     *
+     * <p>保留段号参数以兼容既有调用口径，当前不再随段数增强。</p>
+     */
     public static int legendaryLevelBonus(int segment) {
-        return 4 + Math.max(1, segment) * 3;
+        return 6;
     }
 
-    /** 首领侵略战相对队伍最高等级的等级加成。 */
+    /**
+     * 首领侵略战相对队伍最高等级的等级加成：固定 +1（实际等级再 ±1 浮动，见控制器）。
+     *
+     * <p>保留段号参数以兼容既有调用口径，当前不再随段数增强。</p>
+     */
     public static int bossAggressionLevelBonus(int segment) {
-        return 7 + Math.max(1, segment) * 3;
+        return 1;
     }
 
-    /** 火箭队队员战的对手宝可梦数量。 */
+    /**
+     * 火箭队队员战的对手宝可梦数量：1~5 段固定为 2 / 3 / 3 / 4 / 4。
+     * {@code default} 为非法段号的防御性兑底。
+     */
     public static int rocketPartySize(int segment) {
-        return Math.min(4, 1 + Math.max(1, segment) / 2);
+        int seg = Math.max(1, segment);
+        return switch (seg) {
+            case 1 -> 2;
+            case 2, 3 -> 3;
+            default -> 4;
+        };
     }
 
-    /** 火箭队首领战的对手宝可梦数量。 */
-    public static int rocketBossPartySize(int segment) {
-        return Math.min(6, 2 + Math.max(1, segment) / 2);
-    }
-
-    /** 首领侵略战的对手宝可梦数量。 */
+    /**
+     * 首领侵略战的对手宝可梦数量：固定 6 只。
+     *
+     * <p>保留段号参数以兼容既有调用口径。</p>
+     */
     public static int bossAggressionPartySize(int segment) {
-        return Math.min(6, 3 + Math.max(1, segment) / 2);
+        return 6;
     }
 }
