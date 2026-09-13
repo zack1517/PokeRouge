@@ -1036,13 +1036,14 @@ public class MainController {
         startRocketNodeBattle(boss, OptionType.ROCKET_CAPTURE);
     }
 
-    /** LEGENDARY 节点：野生神兽（§5.1），判定与普通遭遇一致，可战斗也可捕获，战败仅扣金币。 */
+    /** LEGENDARY 节点：神兽偶遇（§5.1），从专属候选池生成，可战斗也可捕获，战败仅扣金币。 */
     private void startLegendaryBattle() {
         if (!ensureRogueBattleReady()) {
             return;
         }
         int level = highestPartyLevel() + RouteConfig.legendaryLevelBonus(session.getSegment());
-        Optional<Pokemon> legendary = PokemonBattleAdapter.createWildPokemon(level, session.getSegment(), growthProgress());
+        // 神兽从专属候选池生成（传说宝可梦，捕获率极低，不会混入普通野生遭遇）
+        Optional<Pokemon> legendary = PokemonBattleAdapter.createLegendaryPokemon(level, growthProgress());
         if (legendary.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的神兽（数据缺失）。");
             showRogueFloorScene();

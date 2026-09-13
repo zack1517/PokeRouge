@@ -51,7 +51,7 @@ public final class PokemonLibraryDataPort implements BattleDataPort {
     }
 
     /**
-     * 野生遭遇可用的种族 id 列表：返回宝可梦库全部种族。
+     * 野生遭遇可用的种族 id 列表：返回宝可梦库全部种族（神兽除外，神兽只出现在神兽偶遇）。
      *
      * <p>按等级分层（低种族值基础形态 → 高种族值最终形态）由遭遇生成层
      * （{@link PokemonBattleAdapter#createWildPokemon}）负责。</p>
@@ -60,6 +60,9 @@ public final class PokemonLibraryDataPort implements BattleDataPort {
     public List<String> wildSpeciesPool() {
         List<String> ids = new ArrayList<>();
         for (org.example.pokemon.domain.Species species : library.getAllSpecies()) {
+            if (PokemonBattleAdapter.isLegendary(species.getId())) {
+                continue;
+            }
             ids.add(species.getId());
         }
         return ids;
