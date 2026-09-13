@@ -771,7 +771,7 @@ public class MainView {
                             .map(StatusCondition::getDisplayName)
                             .collect(Collectors.joining(" / "));
             case LEVEL_UP -> "等级 +" + (int) item.getEffect();
-            case POKE_BALL -> "对战中投出捕捉野生精灵";
+            case POKE_BALL -> ItemDescription.describe(item);
         };
     }
 
@@ -1006,7 +1006,7 @@ public class MainView {
         Label title = new Label(item.getName() + " ×" + stack.getCount());
         title.setStyle(YH + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
 
-        Label description = new Label(describeItem(item));
+        Label description = new Label(ItemDescription.describe(item));
         description.setWrapText(true);
         description.setMaxWidth(Double.MAX_VALUE);
         description.setStyle(YH + "-fx-font-size: 12px; -fx-text-fill: #333;");
@@ -1164,40 +1164,6 @@ public class MainView {
             ITEM_ICON_CACHE.put(itemName, null);
             return null;
         }
-    }
-
-    /** 道具功能表述（与战斗背包口径一致）：回复量 / 解除范围 / 捕捉率。 */
-    private static String describeItem(Item item) {
-        if (item.getCategory() == ItemCategory.HEAL) {
-            return "回复 " + (int) item.getEffect() + " HP";
-        }
-        if (item.getCategory() == ItemCategory.CURE) {
-            return "解除" + curesText(item);
-        }
-        if (item.getCategory() == ItemCategory.POKE_BALL) {
-            return item.isAlwaysCatch() ? "必定捕捉" : "捕捉率 ×" + effectText(item.getEffect());
-        }
-        return "";
-    }
-
-    /** 数值文案：整数省略小数位（精灵球 ×3 而非 ×3.0）。 */
-    private static String effectText(double value) {
-        return value == Math.floor(value) ? String.valueOf((int) value) : String.valueOf(value);
-    }
-
-    /** 解除道具的适用范围文案：万灵药显示「全部异常状态」，其余逐一列出具体状态名。 */
-    private static String curesText(Item item) {
-        if (item.curesAll()) {
-            return "全部异常状态";
-        }
-        List<StatusCondition> conditions = item.curedStatuses();
-        if (conditions.isEmpty()) {
-            return "异常状态";
-        }
-        return conditions.stream()
-                .map(StatusCondition::getDisplayName)
-                .collect(Collectors.joining("/"))
-                + "状态";
     }
 
     /** 彩色徽章（属性 / 状态）。 */

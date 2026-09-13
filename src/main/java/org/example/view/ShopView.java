@@ -24,12 +24,9 @@ import javafx.scene.layout.VBox;
 import org.example.GameSession;
 import org.example.data.GameData;
 import org.example.data.ShopStock;
-import org.example.model.Item;
-import org.example.model.ItemCategory;
 import org.example.model.ItemStack;
 import org.example.model.RouteConfig;
 import org.example.model.RunData;
-import org.example.model.StatusCondition;
 import org.example.util.ImageBackgrounds;
 import org.example.util.UiScale;
 
@@ -39,7 +36,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 /**
  * 商店界面（《需求文档》§4.2 商店 + §七 界面需求）：用金币购买道具、回复品。
@@ -342,8 +338,22 @@ public class ShopView {
         detailState.setStyle(stateStyle(affordable));
         detailOwned.setText("背包已有 ×" + bagCount(entry.itemName()));
 
-        Item item = GameData.instance().item(entry.itemId());
-        detailDesc.setText(item == null ? "" : describeItem(item));
+        detailDesc.setText(effectTextOf(entry));
+    }
+
+    /**
+     * 商品的效果说明：装备用数据表（{@code equipment.csv}）自带的描述，
+     * 消耗品没有描述列，改由 {@link ItemDescription} 按类别现推（与道具图鉴同一份口径）。
+     *
+     * <p>两层都取不到（数据表缺条目）时返回空串，信息框只显示名称与价格，不会出现占位符。</p>
+     *
+     * <p>包级可见而非私有：{@code ShopViewTest} 用它来断言货架上不会出现「有名称、没说明」的商品。</p>
+     */
+    static String effectTextOf(ShopStock.Entry entry) {
+        if (!entry.description().isBlank()) {
+            return entry.description();
+        }
+        return ItemDescription.describe(GameData.instance().item(entry.itemId()));
     }
 
     /** 背包中该商品当前的拥有数量（按道具名匹配堆叠；不在背包则为 0）。 */
@@ -570,40 +580,6 @@ public class ShopView {
             ITEM_ICON_CACHE.put(itemName, null);
             return null;
         }
-    }
-
-    /** 道具具体描述（与主菜单中栏口径一致）：回复量 / 解除范围 / 捕捉率。 */
-    private static String describeItem(Item item) {
-        if (item.getCategory() == ItemCategory.HEAL) {
-            return "回复 " + (int) item.getEffect() + " HP";
-        }
-        if (item.getCategory() == ItemCategory.CURE) {
-            return "解除" + curesText(item);
-        }
-        if (item.getCategory() == ItemCategory.POKE_BALL) {
-            return item.isAlwaysCatch() ? "必定捕捉" : "捕捉率 ×" + effectText(item.getEffect());
-        }
-        return "";
-    }
-
-    /** 数值文案：整数省略小数位（精灵球 ×3 而非 ×3.0）。 */
-    private static String effectText(double value) {
-        return value == Math.floor(value) ? String.valueOf((int) value) : String.valueOf(value);
-    }
-
-    /** 解除道具的适用范围文案：万灵药显示「全部异常状态」，其余逐一列出具体状态名。 */
-    private static String curesText(Item item) {
-        if (item.curesAll()) {
-            return "全部异常状态";
-        }
-        List<StatusCondition> conditions = item.curedStatuses();
-        if (conditions.isEmpty()) {
-            return "异常状态";
-        }
-        return conditions.stream()
-                .map(StatusCondition::getDisplayName)
-                .collect(Collectors.joining("/"))
-                + "状态";
     }
 
     /** 滚动容器 viewport 透明化（与主菜单同款局部递归，避免整页样式表被 ScrollPane 覆盖）。 */

@@ -10,6 +10,7 @@ import org.example.model.Move;
 import org.example.model.MoveCategory;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.RouteConfig;
 import org.example.model.Species;
 import org.example.model.Stats;
 
@@ -168,9 +169,30 @@ class ItemDexDataTest {
                 ItemDexData.describe(GameData.instance().item("i_full_heal")));
         assertTrue(ItemDexData.describe(GameData.instance().item("i_antidote")).startsWith("解除"),
                 "单项解除药应列出可解除的异常状态名");
-        assertEquals("提升精灵 1 级（可在精灵详情页喂食）",
+        assertEquals("提升精灵 1 级（可在主菜单的道具区喂食）",
                 ItemDexData.describe(GameData.instance().item("i_rare_candy")));
         assertEquals("", ItemDexData.describe(null), "数据缺失时描述为空串");
+    }
+
+    @Test
+    void 全部商品都有非空效果说明() {
+        List<ItemDexData.Entry> entries = ItemDexData.build(null);
+        assertEquals(ShopStock.catalog().size(), entries.size(), "图鉴应涵盖商店目录的全部商品");
+
+        for (ItemDexData.Entry entry : entries) {
+            assertFalse(entry.description().isBlank(),
+                    entry.id() + "（" + entry.name() + "）缺少效果说明");
+        }
+    }
+
+    @Test
+    void 商店货架的每件商品都能拼出说明() {
+        // 走 ShopView 真实取说明的路径：装备用数据表描述，消耗品回退 ItemDescription；
+        // 两种来源都必须给出可读文案，否则货架上会出现「有名称、没说明」的商品
+        for (ShopStock.Entry entry : ShopStock.forSegment(RouteConfig.TOTAL_SEGMENTS).entries()) {
+            assertFalse(ShopView.effectTextOf(entry).isBlank(),
+                    entry.itemId() + "（" + entry.itemName() + "）在货架上没有说明");
+        }
     }
 
     @Test

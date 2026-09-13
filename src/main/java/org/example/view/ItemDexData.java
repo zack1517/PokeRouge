@@ -6,7 +6,6 @@ import org.example.model.HeldItem;
 import org.example.model.Item;
 import org.example.model.Player;
 import org.example.model.Pokemon;
-import org.example.model.StatusCondition;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -15,7 +14,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * 道具图鉴的数据层：把「商店商品目录」（{@link ShopStock#catalog()}，17 件消耗品 + 77 件装备）
@@ -27,7 +25,7 @@ import java.util.stream.Collectors;
  * <p>在售商品还会带一列来源信息：装备从第 1 段起即可购买，消耗品标注「第几段起解锁」
  * （解锁段取自 {@link ShopStock#catalog()}，与货架同一份口径）。</p>
  *
- * <p>消耗品在数据表里没有描述列，本类按类别现推一句效果说明（回复量 / 捕捉倍率 / 解除范围）；
+ * <p>消耗品在数据表里没有描述列，说明由 {@link ItemDescription} 按类别现推（与商店货架同一份口径）；
  * 装备描述直接取 {@link HeldItem#getDescription()}。</p>
  */
 public final class ItemDexData {
@@ -37,7 +35,7 @@ public final class ItemDexData {
      *
      * @param id            道具 / 装备 id
      * @param name          展示名（取自数据注册表）
-     * @param description   效果说明（消耗品由本类按类别生成，装备取自数据表）
+     * @param description   效果说明（消耗品见 {@link ItemDescription}，装备取自数据表）
      * @param equipment     是否为可携带装备（false = 消耗品）
      * @param basePrice     第 1 段的基础售价（段数越靠后越贵，见 {@code RouteConfig#shopPrice}）
      * @param unlockSegment 从第几段起可在商店买到（装备恒为第 1 段，消耗品逐段放开；
@@ -108,29 +106,8 @@ public final class ItemDexData {
         return List.copyOf(entries);
     }
 
-    /** 按类别现推消耗品效果说明；数据缺失（{@code null}）返回空串。 */
+    /** 按类别现推消耗品效果说明（{@link ItemDescription} 的图鉴入口）；数据缺失（{@code null}）返回空串。 */
     static String describe(Item item) {
-        if (item == null) {
-            return "";
-        }
-        return switch (item.getCategory()) {
-            case HEAL -> "回复 " + number(item.getEffect()) + " 点 HP";
-            case POKE_BALL -> item.isAlwaysCatch()
-                    ? "必定捕捉成功"
-                    : "捕捉倍率 ×" + number(item.getEffect());
-            case CURE -> item.curesAll()
-                    ? "解除全部主要异常状态"
-                    : "解除" + item.curedStatuses().stream()
-                            .map(StatusCondition::getDisplayName)
-                            .collect(Collectors.joining("、"));
-            case LEVEL_UP -> "提升精灵 " + number(item.getEffect()) + " 级（可在精灵详情页喂食）";
-        };
-    }
-
-    /** 整数倍率不显示小数点（3 → "3"，4.5 仍为 "4.5"）。 */
-    private static String number(double value) {
-        return value == Math.rint(value)
-                ? String.valueOf((long) value)
-                : String.valueOf(value);
+        return ItemDescription.describe(item);
     }
 }

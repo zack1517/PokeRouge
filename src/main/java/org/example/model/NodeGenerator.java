@@ -226,7 +226,7 @@ public class NodeGenerator {
      */
     public Option createCandy() {
         return new Option("糖果补给", OptionType.CANDY, OptionType.CANDY.getApCost(),
-                "拾获一批神奇糖果；吃下可让一只精灵直接提升 1 级，在主菜单的精灵详情页中喂食");
+                "拾获一批神奇糖果；吃下可让一只精灵直接提升 1 级，在主菜单的道具区中喂食");
     }
 
     /**
