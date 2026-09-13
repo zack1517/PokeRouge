@@ -20,7 +20,7 @@ import java.util.List;
  *     （战斗节点：控制器战斗 → awardWinGold / applyDefeatPenalty）
  *     resolveImmediateEffect(option)   // 医院治疗等当场效果结算
  *     applyNodeHeal()                  // 节点自回血：未濒死宝可梦回复最大 HP 的 1/5
- *     advanceAfterNode()               // AP 耗尽或无节点可走 → 触发道馆战
+ *     advanceAfterNode()               // AP 耗尽或无节点可走 → 触发必然节点（末段直接进入四天王连打）
  *   mandatory:
  *     resolveMandatoryVictory()        // 道馆胜利 → 下一段；四天王 → 冠军；冠军 → 通关
  *     resolveMandatoryDefeat()         // 可失败一次；重试再败则 Run 结束
@@ -246,8 +246,9 @@ public class RogueTurnManager {
 
     /**
      * 节点结束后检查是否该进入必然节点：本段已无节点可走（行动点不足且没有 0 点节点，
-     * 例如火箭队线必然触发的神兽偶遇）时触发道馆战（§4.1：行动点耗尽后无法再进入本段
-     * 随机节点，直接触发道馆战）。
+     * 例如火箭队线必然触发的神兽偶遇）时触发必然节点（§4.1：行动点耗尽后无法再进入本段
+     * 随机节点）——常规段为道馆战，末段直接进入四天王连打
+     * （见 {@link #triggerMandatoryNode()}）。
      *
      * @return 触发了必然节点返回 true
      */
@@ -269,10 +270,16 @@ public class RogueTurnManager {
     // 必然节点
     // ------------------------------------------------------------------
 
-    /** 触发当前段应到的必然节点：路线探索阶段 → 道馆战。 */
+    /**
+     * 触发当前段应到的必然节点：路线探索阶段 → 道馆战；
+     * 末段（第 {@link RouteConfig#TOTAL_SEGMENTS} 段）不再有道馆战，行动点耗尽后直接进入四天王连打。
+     */
     public Option triggerMandatoryNode() {
         if (runData.getPhase() != RoutePhase.EXPLORING) {
             return runData.getMandatoryOption();
+        }
+        if (runData.getSegment() >= RouteConfig.TOTAL_SEGMENTS) {
+            return enterPhase(RoutePhase.ELITE_FOUR);
         }
         return enterPhase(RoutePhase.GYM);
     }
@@ -301,6 +308,8 @@ public class RogueTurnManager {
                 if (runData.getSegment() < RouteConfig.TOTAL_SEGMENTS) {
                     enterSegment(runData.getSegment() + 1);
                 } else {
+                    // 末段道馆战胜利 → 四天王连打；仅旧存档停留在末段道馆阶段时才会走到这里
+                    // （新规则：末段行动点耗尽已直接进入四天王连打，见 triggerMandatoryNode）
                     enterPhase(RoutePhase.ELITE_FOUR);
                 }
             }

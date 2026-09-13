@@ -66,7 +66,8 @@ import java.util.function.Consumer;
  *       「名字等于『隐藏事件』」的哨兵写法）；</li>
  *   <li>已走过的常驻节点（路人 / 野外精灵 / 医院）—— 仍是可点击卡片，卡面标注「已走过 N 次」，
  *       再次进入的行动点消耗沿用 {@link Option#apCostForNextEntry()}，仅受行动点限制；</li>
- *   <li>行动点耗尽 / 无节点可走 —— 提示必然节点（道馆战）即将展开，并给出「挑战道馆」按钮。</li>
+ *   <li>行动点耗尽 / 无节点可走 —— 提示必然节点即将展开，并给出挑战按钮
+ *       （末段为四天王连打，其余段为道馆战）。</li>
  * </ul>
  */
 public class RogueFloorView {
@@ -702,19 +703,23 @@ public class RogueFloorView {
         return box;
     }
 
-    /** 行动点耗尽 / 无节点可走：提示道馆战即将展开并提供挑战按钮（文案与旧版一致）。 */
+    /** 行动点耗尽 / 无节点可走：提示下一个必然节点即将展开并提供挑战按钮（末段为四天王连打，其余段为道馆战）。 */
     private VBox buildNoOptionBox(RunData data) {
         Label icon = new Label("⛔");
         // 大字号 emoji 在 JavaFX 下回退为单色字形，用 text-fill 染红（小字号才是彩色字形）
         icon.setStyle("-fx-font-size: 30px; -fx-text-fill: #C62828;");
 
-        Label bossHint = new Label("行动点已用尽，无法再进入本段节点 —— 道馆战即将展开！");
+        // 末段不再有道馆战：行动点耗尽后直接进入四天王连打
+        boolean finalSegment = data.getSegment() >= RouteConfig.TOTAL_SEGMENTS;
+        String next = finalSegment ? RoutePhase.ELITE_FOUR.getDisplayName()
+                : RoutePhase.GYM.getDisplayName();
+        Label bossHint = new Label("行动点已用尽，无法再进入本段节点 —— " + next + "即将展开！");
         bossHint.setWrapText(true);
         bossHint.setAlignment(Pos.CENTER);
         bossHint.setMaxWidth(230); // 收窄使换行落在「——」之后，两行长度均衡
         bossHint.setStyle(FONT + " -fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #8b3a00;");
 
-        HBox row = new HBox(buildPrimaryButton("挑战道馆",
+        HBox row = new HBox(buildPrimaryButton(finalSegment ? "挑战四天王" : "挑战道馆",
                 () -> onOptionSelected.accept(data.getMandatoryOption())));
         row.setAlignment(Pos.CENTER);
 
@@ -756,9 +761,15 @@ public class RogueFloorView {
         return "本节点不可失败：战败本轮远征立即结束。";
     }
 
+    /** 必然节点预告名：探索阶段预告下一个必然节点（末段为四天王连打，其余段为道馆战）。 */
     private String mandatoryName(RunData data) {
         Option mandatory = data.getMandatoryOption();
-        return mandatory == null ? RoutePhase.GYM.getDisplayName() : mandatory.getName();
+        if (mandatory != null) {
+            return mandatory.getName();
+        }
+        return data.getSegment() >= RouteConfig.TOTAL_SEGMENTS
+                ? RoutePhase.ELITE_FOUR.getDisplayName()
+                : RoutePhase.GYM.getDisplayName();
     }
 
     /** 节点类型 → 图片预留区 emoji（设计稿卡片顶部大图标）。 */

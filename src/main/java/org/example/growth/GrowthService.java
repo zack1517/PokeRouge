@@ -64,9 +64,9 @@ public final class GrowthService implements BattleGrowthPort {
     public static final int GYM_EXP_NUMERATOR = 2;
     public static final int GYM_EXP_DENOMINATOR = 1;
 
-    /** 段数经验倍率：1 + 0.4×段数，折算为 (10 + 4×段数) / 10（整数截断）。 */
+    /** 段数经验倍率：1 + 0.3×段数，折算为 (10 + 3×段数) / 10（整数截断）。 */
     private static final int SEGMENT_EXP_NUMERATOR_BASE = 10;
-    private static final int SEGMENT_EXP_STEP = 4;
+    private static final int SEGMENT_EXP_STEP = 3;
     private static final int SEGMENT_EXP_DENOMINATOR = 10;
 
     /** 技能与种族数据的唯一来源。 */
@@ -114,8 +114,8 @@ public final class GrowthService implements BattleGrowthPort {
     }
 
     /**
-     * 设置段数经验倍率：所有经验获取（击倒 / 捕捉）统一乘以 1 + 0.4×段数，
-     * 即 {@code (10 + 4×段数) / 10}。段数小于 1 时按 1 倍处理（不生效）。
+     * 设置段数经验倍率：所有经验获取（击倒 / 捕捉）统一乘以 1 + 0.3×段数，
+     * 即 {@code (10 + 3×段数) / 10}。段数小于 1 时按 1 倍处理（不生效）。
      *
      * @param segment 当前肉鸽段号（1 起）
      */
@@ -375,7 +375,7 @@ public final class GrowthService implements BattleGrowthPort {
         return expOf(caught) * CAPTURE_EXP_NUMERATOR / CAPTURE_EXP_DENOMINATOR;
     }
 
-    /** 把段数经验倍率（1 + 0.4×段数）应用到经验数值上（未设置时分子分母均为 1，保持原值）。 */
+    /** 把段数经验倍率（1 + 0.3×段数）应用到经验数值上（未设置时分子分母均为 1，保持原值）。 */
     private int applySegmentMultiplier(int exp) {
         return exp * segmentExpNumerator / segmentExpDenominator;
     }

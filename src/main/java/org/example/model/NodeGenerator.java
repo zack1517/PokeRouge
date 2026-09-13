@@ -114,8 +114,11 @@ public class NodeGenerator {
         }
         Collections.shuffle(options, random);
 
+        // 必然节点预告：末段不再有道馆战，行动点耗尽后直接进入四天王连打
+        RoutePhase nextMilestone = seg >= RouteConfig.TOTAL_SEGMENTS
+                ? RoutePhase.ELITE_FOUR : RoutePhase.GYM;
         return new SegmentPlan(seg, RouteConfig.apLimitForSegment(seg), options,
-                createMandatoryOption(RoutePhase.GYM, seg));
+                createMandatoryOption(nextMilestone, seg));
     }
 
     /**

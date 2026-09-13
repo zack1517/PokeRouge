@@ -135,20 +135,11 @@ public final class PokemonBattleAdapter {
     /** 野生等级浮动半宽：与宝可梦库 {@code createWildPokemon} 的 ±2 口径一致。 */
     private static final int WILD_LEVEL_OFFSET = WildEncounter.LEVEL_SPREAD;
 
-    /** 无进化宝可梦最早出现的段号：段 1 不出现，第 2 段起才进入遭遇候选池。 */
-    private static final int NO_EVOLUTION_MIN_SEGMENT = 2;
-
-    /** 绿毛虫一家（绿毛虫 / 铁甲蛹 / 巴大蝶）物种 id。 */
-    private static final Set<String> CATERPIE_LINE = Set.of("caterpie", "metapod", "butterfree");
-
-    /** 段 1 时绿毛虫一家在候选池中的权重（每只在池中出现的份数，1 = 与其他候选同权）。 */
-    private static final int SEGMENT1_CATERPIE_LINE_WEIGHT = 2;
-
     /**
      * 神兽偶遇专属候选池（传说宝可梦，捕获率极低，建议大师球）。
      *
      * <p>神兽不参与普通野生遭遇（见 {@link PokemonLibraryDataPort#wildSpeciesPool} 与
-     * {@link #wildCandidates}），只通过 LEGENDARY 节点出场：后期段随机神兽偶遇 /
+     * {@link #wildCandidates(int, int)}），只通过 LEGENDARY 节点出场：后期段随机神兽偶遇 /
      * 火箭队线必然触发的神兽偶遇。</p>
      */
     static final List<String> LEGENDARY_POOL = List.of(
@@ -163,7 +154,7 @@ public final class PokemonBattleAdapter {
     /**
      * 生成一只神兽偶遇的对手精灵：从神兽专属候选池随机选一只，等级为目标等级 ±2 浮动。
      *
-     * <p>与普通野生遭遇同源（个体值含局外成长加成、随机性格），区别仅在候选池——
+     * <p>与普通野生遭遇同源（个体值含局外成长加成、随机性格），区别仅在候选池 ——
      * 池内种族全部不进化、捕获率 3，强度由「等级加成」体现（见
      * {@code RouteConfig#legendaryLevelBonus}）。</p>
      *
@@ -188,12 +179,22 @@ public final class PokemonBattleAdapter {
         return Optional.of(toBattlePokemon(source.createPokemon(species.getId(), level, randomNature(source))));
     }
 
+    /** 无进化宝可梦最早出现的段号：段 1 不出现，第 2 段起才进入遭遇候选池。 */
+    private static final int NO_EVOLUTION_MIN_SEGMENT = 2;
+
+    /** 绿毛虫一家（绿毛虫 / 铁甲蛹 / 巴大蝶）物种 id。 */
+    private static final Set<String> CATERPIE_LINE = Set.of("caterpie", "metapod", "butterfree");
+
+    /** 段 1 时绿毛虫一家在候选池中的权重（每只在池中出现的份数，1 = 与其他候选同权）。 */
+    private static final int SEGMENT1_CATERPIE_LINE_WEIGHT = 2;
+
     /**
      * 使用新宝可梦库生成一只野生精灵（个体值已含局外成长加成）。
      *
      * <p><b>生成顺序</b>：先确定最终等级（目标等级 ±2 浮动），再按最终等级做进化链合法性筛选
      * （见 {@link #wildCandidates(int, int)}），最后随机选种族并以该等级创建 —— 保证不会出现
-     * 「前一进化型进化等级高于实际等级」的非法形态（如 10 级的耿鬼）。</p>
+     * 「前一进化型进化等级高于实际等级」的非法形态（如 10 级的耿鬼），也不会出现
+     * 「自身进化等级小于实际等级」的过时形态（如 20 级的妙蛙种子）。</p>
      *
      * <p>本重载不区分段号（无进化宝可梦照常出现），适合非肉鸽流程的调用方。</p>
      */
@@ -205,7 +206,8 @@ public final class PokemonBattleAdapter {
      * 使用新宝可梦库生成野生精灵，并指定成长进度来源（便于测试隔离）。
      *
      * <p>候选池按<b>最终确定等级</b>做进化链筛选（见 {@link #wildCandidates(int, int)}）：
-     * 低等级只出合法形态，进化形态到其前一进化型的进化等级之后才出现。</p>
+     * 低等级只出合法形态，进化形态到其前一进化型的进化等级之后才出现；
+     * 已过自身进化等级的形态不再出现（如 20 级不会遇到妙蛙种子）。</p>
      *
      * <p>本重载不区分段号（无进化宝可梦照常出现），适合非肉鸽流程的调用方。</p>
      *
@@ -244,7 +246,7 @@ public final class PokemonBattleAdapter {
      * 使用新宝可梦库生成一只<b>精确等级</b>的对手精灵（无 ±2 浮动；个体值仍含局外成长加成）。
      * 候选池同样按该等级做进化链合法性筛选（见 {@link #wildCandidates(int, int)}）。
      *
-     * <p>适用于需要钉死等级的对手（如 1~4 段道馆馆主：12 / 18 / 25 / 34），避免
+     * <p>适用于需要钉死等级的对手（如 1~4 段道馆馆主：11 / 18 / 25 / 34），避免
      * {@code createWildPokemon} 的等级浮动把配置值漂移出去。</p>
      *
      * <p>本重载不区分段号（无进化宝可梦照常出现），适合非肉鸽流程的调用方。</p>
@@ -306,13 +308,17 @@ public final class PokemonBattleAdapter {
     }
 
     /**
-     * 按<b>确定后的遭遇等级</b>筛选合法候选：剔除「前一进化型进化等级高于该等级」的形态。
+     * 按<b>确定后的遭遇等级</b>筛选合法候选：剔除「前一进化型进化等级高于该等级」的形态，
+     * 以及「自身进化等级小于该等级」的形态。
      *
      * <p>进化链数据来自宝可梦库 species.csv：{@code evolutionTarget} 指向进化目标，
-     * {@code evolutionLevel} 为该物种进化成目标形态的等级。因此对候选形态 S，若存在某个
-     * 物种 T 满足 {@code T.evolutionTarget == S.id} 且 {@code T.evolutionLevel > level}，
-     * 则 S 在该等级不合法（例如 10 级遭遇不会出现需 32 级进化来的妙蛙花）。没有前一进化型的
-     * 基础形态任何等级都合法。</p>
+     * {@code evolutionLevel} 为该物种进化成目标形态的等级。因此对候选形态 S：</p>
+     * <ul>
+     *   <li>若存在某个物种 T 满足 {@code T.evolutionTarget == S.id} 且 {@code T.evolutionLevel > level}，
+     *       则 S 在该等级不合法（例如 10 级遭遇不会出现需 32 级进化来的妙蛙花）；</li>
+     *   <li>若 S 自身 {@code evolutionTarget != null} 且 {@code evolutionLevel < level}，
+     *       则 S 在该等级不合法（例如 20 级遭遇不会出现 16 级就该进化的妙蛙种子）。</li>
+     * </ul>
      */
     private static List<org.example.pokemon.domain.Species> wildCandidates(int level) {
         return wildCandidates(level, NO_EVOLUTION_MIN_SEGMENT);
@@ -371,7 +377,11 @@ public final class PokemonBattleAdapter {
         return true;
     }
 
-    /** 该形态在指定等级下是否合法：任一前一进化型的进化等级超过该等级即不合法。 */
+    /**
+     * 该形态在指定等级下是否合法：命中任一条即不合法 ——
+     * 任一前一进化型（退化型）的进化等级超过该等级（本形态还没进化出来，如 10 级不会出现耿鬼）；
+     * 或自身进化等级小于该等级（本形态早已该进化，如 20 级不会出现妙蛙种子）。
+     */
     private static boolean legalAtLevel(org.example.pokemon.domain.Species species, int level,
                                         List<org.example.pokemon.domain.Species> all) {
         for (org.example.pokemon.domain.Species pre : all) {
@@ -379,7 +389,7 @@ public final class PokemonBattleAdapter {
                 return false;
             }
         }
-        return true;
+        return species.getEvolutionTarget() == null || species.getEvolutionLevel() >= level;
     }
 
     /**

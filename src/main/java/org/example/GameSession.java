@@ -308,9 +308,9 @@ public class GameSession {
     }
 
     /**
-     * 节点结束后检查是否该进入本段必然节点（道馆战）。
+     * 节点结束后检查是否该进入本段必然节点（常规段为道馆战，末段直接进入四天王连打）。
      *
-     * @return 触发了道馆战返回 {@code true}
+     * @return 触发了必然节点返回 {@code true}
      */
     public boolean advanceRogueNode() {
         return rogueTurnManager.advanceAfterNode();

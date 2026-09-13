@@ -589,24 +589,24 @@ class GrowthServiceTest {
     }
 
     // ------------------------------------------------------------------
-    // 段数经验倍率：所有经验获取统一乘以 1 + 0.4×段数
+    // 段数经验倍率：所有经验获取统一乘以 1 + 0.3×段数
     // ------------------------------------------------------------------
 
-    /** 段数经验倍率作用于击倒经验：段 2 → (10 + 4×2)/10 = 1.8 倍。 */
+    /** 段数经验倍率作用于击倒经验：段 2 → (10 + 3×2)/10 = 1.6 倍。 */
     @Test
     void 段数倍率提升击倒经验() {
         GrowthService growth = new GrowthService(new RecordingPort(), new GrowthProgress());
         growth.setSegmentExpMultiplier(2);
         Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
         Pokemon active = pokemon(mine, 1, SLAM);
-        // baseExp 70 × 7 ÷ 7 = 70 点，段 2 再乘 1.8 → 126 点
+        // baseExp 70 × 7 ÷ 7 = 70 点，段 2 再乘 1.6 → 112 点
         Pokemon foe = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()),
                 7, SLAM);
 
         BattleGrowthPort.Settlement settlement = growth.settle(List.of(active), List.of(foe));
 
-        assertEquals(5, active.getLevel(), "段 2 击倒经验应为 70 × 1.8 = 126（升到 5 级，不足升 6 级）");
-        assertTrue(settlement.log().contains(active.getName() + " 获得了 126 点经验！"),
+        assertEquals(4, active.getLevel(), "段 2 击倒经验应为 70 × 1.6 = 112（升到 4 级，不足升 5 级）");
+        assertTrue(settlement.log().contains(active.getName() + " 获得了 112 点经验！"),
                 "段倍率后的经验日志：" + settlement.log());
     }
 
@@ -617,13 +617,13 @@ class GrowthServiceTest {
         growth.setSegmentExpMultiplier(2);
         Species mine = species("mine_sp", 50, List.of("m_slam"), null, 0, Map.of());
         Pokemon active = pokemon(mine, 1, SLAM);
-        // 捕捉经验 70 × 1.8 = 126，段 2 再乘 1.8 → 226 点
+        // 捕捉经验 70 × 1.8 = 126，段 2 再乘 1.6 → 201 点
         Pokemon caught = pokemon(speciesWithBaseExp("foe_base", 70, List.of("m_slam"), null, 0, Map.of()), 7, SLAM);
 
         BattleGrowthPort.Settlement settlement = growth.settleCapture(List.of(active), caught);
 
-        assertEquals(6, active.getLevel(), "段 2 捕捉经验应为 126 × 1.8 = 226（升到 6 级，不足升 7 级）");
-        assertTrue(settlement.log().contains(active.getName() + " 获得了 226 点经验！"),
+        assertEquals(5, active.getLevel(), "段 2 捕捉经验应为 126 × 1.6 = 201（升到 5 级，不足升 6 级）");
+        assertTrue(settlement.log().contains(active.getName() + " 获得了 201 点经验！"),
                 "段倍率后的捕捉经验日志：" + settlement.log());
     }
 

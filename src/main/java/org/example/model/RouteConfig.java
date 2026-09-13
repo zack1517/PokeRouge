@@ -16,7 +16,7 @@ public final class RouteConfig {
     // 段与行动点（§4.1）
     // ------------------------------------------------------------------
 
-    /** 一条路线的总段数：走完第 N 段后依次进入四天王连打与冠军战（§4.2 必然节点）。 */
+    /** 一条路线的总段数：末段行动点耗尽后直接进入四天王连打，随后是冠军战（§4.2 必然节点）。 */
     public static final int TOTAL_SEGMENTS = 5;
 
     /** 第 1 段的行动点上限。 */
@@ -202,22 +202,22 @@ public final class RouteConfig {
         };
     }
 
-    /** 道馆战相对队伍最高等级的等级加成（仅第 5 段及以后的道馆主使用；1~4 段走 {@link #gymFixedLevel}）。 */
+    /** 道馆战相对队伍最高等级的等级加成（末段已无道馆战，仅旧存档停留在末段道馆阶段时使用；1~4 段走 {@link #gymFixedLevel}）。 */
     public static int gymLevelBonus(int segment) {
         return 2 + Math.max(1, segment) * 2;
     }
 
     /**
-     * 道馆馆主固定等级表（仅 1~4 段）：11 / 17 / 24 / 32。
+     * 道馆馆主固定等级表（仅 1~4 段）：11 / 18 / 25 / 34。
      * 第 5 段道馆主保持相对队伍最高等级的等级加成（见 {@link #gymLevelBonus}），不走本表；
      * {@code default} 仅为非法段号的防御性兑底。
      */
     public static int gymFixedLevel(int segment) {
         return switch (Math.max(1, segment)) {
             case 1 -> 11;
-            case 2 -> 17;
-            case 3 -> 24;
-            default -> 32;
+            case 2 -> 18;
+            case 3 -> 25;
+            default -> 34;
         };
     }
 
@@ -306,7 +306,8 @@ public final class RouteConfig {
 
     /**
      * 火箭队抓捕神兽事件是否可在当前状态下出现：
-     * 第 4 段需行动点消耗过半（当前行动点不超过上限的一半）之后，第 5 段起直接可出现。
+     * 第 4 段需行动点消耗过半（当前行动点不超过上限的一半）之后，第 5 段起直接可出现；
+     * 末段（{@link #ROCKET_BOSS_RESIDENT_SEGMENT} 及以后）该节点改为固定入列，不再走本判定。
      *
      * @param segment 段号（1 起）
      * @param ap      当前剩余行动点
