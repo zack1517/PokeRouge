@@ -196,8 +196,8 @@ public final class GrowthService implements BattleGrowthPort {
      *
      * @return 每级产生的日志行；目标为 {@code null}、{@code levels ≤ 0} 或已满级时返回空列表
      */
-    @Override
-    public List<String> boostLevel(Pokemon pokemon, int levels) {
+     @Override
+     public List<String> boostLevel(Pokemon pokemon, int levels) {
         List<String> log = new ArrayList<>();
         if (pokemon == null || levels <= 0) {
             return log;
@@ -217,7 +217,11 @@ public final class GrowthService implements BattleGrowthPort {
         return log;
     }
 
-    /** 结算一只精灵的经验与成长：先入账经验并输出「获得经验」日志，再逐级追加升级日志并处理到级学招与进化。 */
+    /**
+     * 结算一只精灵的经验与成长：<b>先追加一行「获得了 N 点经验」的可见反馈</b>
+     * （未升级时附带「当前经验 / 升级所需」进度，便于玩家确认经验确实入账），
+     * 再逐级追加升级日志，并处理到级学招与进化。
+     */
     private void grow(Pokemon p, int exp, List<String> log, List<BattleService.LearnChoice> pending) {
         if (p.getLevel() >= Pokemon.MAX_LEVEL) {
             return; // 满级不再累积经验，也不输出日志
@@ -225,10 +229,12 @@ public final class GrowthService implements BattleGrowthPort {
         int before = p.getLevel();
         int gainedLevels = p.addExp(exp);
         // 经验在击倒对手的当次结算即到账：无论是否升级都输出日志，让玩家在战斗中立刻看到经验获得
-        log.add(p.getName() + " 获得了 " + exp + " 点经验！");
         if (gainedLevels <= 0) {
+            log.add(p.getName() + " 获得了 " + exp + " 点经验！（"
+                    + p.getExp() + "/" + p.expToNextLevel() + "）");
             return;
         }
+        log.add(p.getName() + " 获得了 " + exp + " 点经验！");
         for (int lv = before + 1; lv <= p.getLevel(); lv++) {
             log.add(p.getName() + " 升到了 Lv." + lv + "！");
             learnAt(p, lv, log, pending);

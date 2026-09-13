@@ -15,9 +15,11 @@ import org.example.pokemon.domain.ElementType;
 import org.example.pokemon.domain.LearnableMove;
 import org.example.pokemon.domain.Move;
 import org.example.pokemon.domain.MoveCategory;
+import org.example.pokemon.domain.MoveEffect;
 import org.example.pokemon.domain.Nature;
 import org.example.pokemon.domain.Pokemon;
 import org.example.pokemon.domain.Species;
+import org.example.pokemon.domain.StatChange;
 import org.example.pokemon.domain.StatModifier;
 import org.example.pokemon.domain.Stats;
 import org.example.util.LogUtil;
@@ -111,6 +113,10 @@ public class GameData {
 
     /**
      * 从 classpath 加载技能数据。
+     *
+     * <p>列序：0 id / 1 name / 2 type / 3 category / 4 power / 5 accuracy / 6 maxPp / 7 priority /
+     * 8 inflicts / 9 inflictionChance / 10 statChanges / 11 effect。10、11 为可选的招式效果列，
+     * 缺省表示无能力等级变化、无专属效果。</p>
      */
     private void loadMoves() {
         try (InputStream in = openResource(MOVES_CSV);
@@ -124,10 +130,12 @@ public class GameData {
                 String[] f = line.split(",", -1);
                 String inflicts = f.length > 8 ? f[8].trim() : "";
                 int inflictionChance = parseChance(f.length > 9 ? f[9] : "");
+                List<StatChange> statChanges = f.length > 10 ? StatChange.parseAll(f[10]) : List.of();
+                MoveEffect effect = f.length > 11 ? MoveEffect.parse(f[11]) : MoveEffect.NONE;
                 Move move = new Move(f[0], f[1], ElementType.valueOf(f[2]), MoveCategory.valueOf(f[3]),
                         Integer.parseInt(f[4]), Integer.parseInt(f[5]),
                         Integer.parseInt(f[6]), Integer.parseInt(f[7]),
-                        inflicts, inflictionChance);
+                        inflicts, inflictionChance, effect, statChanges);
                 moveMap.put(move.getId(), move);
             }
             LogUtil.info("加载技能数据完成，共 " + moveMap.size() + " 个技能");

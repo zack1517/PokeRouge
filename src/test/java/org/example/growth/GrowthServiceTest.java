@@ -143,7 +143,7 @@ class GrowthServiceTest {
                 new GrowthService(new RecordingPort()).settle(List.of(active), List.of(foe));
 
         assertEquals(30, active.getLevel(), "70 点经验不应让 30 级精灵升级");
-        assertTrue(settlement.log().contains(active.getName() + " 获得了 70 点经验！"),
+        assertTrue(settlement.log().get(0).startsWith(active.getName() + " 获得了 70 点经验！"),
                 "即使未升级也应在击倒结算时输出获得经验日志：" + settlement.log());
         assertTrue(settlement.pendingLearns().isEmpty());
     }
