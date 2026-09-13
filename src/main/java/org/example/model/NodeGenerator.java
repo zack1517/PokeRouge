@@ -57,6 +57,7 @@ public class NodeGenerator {
      *       （玩家可自主选择是否进入）；到了末段该节点改为固定入列，不再占用本槽位；</li>
      *   <li>后期 + 本局尚未遇到过神兽：按 {@link RouteConfig#LEGENDARY_PERCENT} 尝试放入神兽偶遇；</li>
      *   <li>按 {@link RouteConfig#ROCKET_PERCENT} 尝试放入火箭队队员节点（各时期均有概率）；</li>
+     *   <li>按 {@link RouteConfig#TRADE_PERCENT} 尝试放入宝可梦交换节点；</li>
      *   <li>按 {@link RouteConfig#EQUIPMENT_PERCENT} 尝试放入装备补给节点；</li>
      *   <li>按 {@link RouteConfig#CANDY_PERCENT} 尝试放入糖果补给节点；</li>
      *   <li>以上均未命中时本段不含特殊事件节点（返回 {@code null}）。</li>
@@ -137,6 +138,9 @@ public class NodeGenerator {
         if (roll(RouteConfig.ROCKET_PERCENT)) {
             return createRocket();
         }
+        if (roll(RouteConfig.TRADE_PERCENT)) {
+            return createTrade();
+        }
         if (roll(RouteConfig.EQUIPMENT_PERCENT)) {
             return createReward();
         }
@@ -178,6 +182,15 @@ public class NodeGenerator {
     public Option createReward() {
         return new Option("装备补给", OptionType.REWARD, OptionType.REWARD.getApCost(),
                 "拾获一件随机可携带装备；获得后在主菜单的精灵详情页中穿戴");
+    }
+
+    /**
+     * 宝可梦交换：随机节点，低概率出现，行动点 2；系统提供一只「队伍平均等级（向下取整）+1 或 2」
+     * 的宝可梦，玩家可用队伍中的一只与其交换，也可放弃（均不返还行动点）。
+     */
+    public Option createTrade() {
+        return new Option("宝可梦交换", OptionType.TRADE, OptionType.TRADE.getApCost(),
+                "神秘商人带来一只宝可梦：可用队伍中的一只与其交换，也可放弃（均不返还行动点）");
     }
 
     /**

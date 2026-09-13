@@ -157,6 +157,8 @@ class RouteConfigTest {
                 "3 个常驻节点外还要容得下商店、特殊事件槽位与末段固定的火箭队首领节点");
         assertTrue(RouteConfig.STARTING_GOLD > 0, "新远征必须带得动起始金币");
         assertEquals(2, RouteConfig.DEFEAT_RESCUE_AP_COST, "战败全灭救援固定消耗 2 点行动点");
+        assertEquals(30, RouteConfig.TRADE_PERCENT, "宝可梦交换事件出现概率 30%");
+        assertEquals(30, RouteConfig.EQUIPMENT_PERCENT, "装备补给事件出现概率 30%");
     }
 
     @Test

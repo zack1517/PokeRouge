@@ -1,5 +1,6 @@
 package org.example.controller;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
@@ -8,6 +9,7 @@ import java.util.stream.Collectors;
 
 import org.example.GameSession;
 import org.example.battle.BattleDataPort;
+import org.example.battle.BattleGrowthPort;
 import org.example.battle.BattleService;
 import org.example.battle.BattleServices;
 import org.example.config.AppConfig;
@@ -88,19 +90,28 @@ public class MainController {
      * 组装层统一入口：创建野生战引擎并注入数据端口与成长端口。
      *
      * <p>成长端口由外部成长模块实现（经验 / 升级 / 学招 / 进化判定 + 图鉴进度），
-     * 战斗模块自身不承担成长规则。</p>
+     * 战斗模块自身不承担成长规则。所有经本类发起的战斗均按当前段号附加
+     * 1 + 0.4×段数 的经验倍率（见 {@link #rogueGrowthPort}）。</p>
      */
     private BattleService newWildBattle(Player player, Pokemon wild) {
         BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
-        return BattleServices.newBattle(player, wild, dataPort,
-                PokemonBattleAdapter.battleGrowthPort(dataPort, growthProgress()));
+        return BattleServices.newBattle(player, wild, dataPort, rogueGrowthPort(dataPort));
     }
 
     /** 组装层统一入口：创建训练师轮战引擎并注入数据端口与成长端口。 */
     private BattleService newTrainerBattle(Player player, Trainer trainer) {
         BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
-        return BattleServices.newTrainerBattle(player, trainer, dataPort,
-                PokemonBattleAdapter.battleGrowthPort(dataPort, growthProgress()));
+        return BattleServices.newTrainerBattle(player, trainer, dataPort, rogueGrowthPort(dataPort));
+    }
+
+    /**
+     * 组装肉鸽战斗的成长端口：按当前段号给所有经验获取附加 1 + 0.4×段数 倍率。
+     * 独立模式（未开轮，session 为 null）时按段 1 口径（1.4 倍）处理。
+     */
+    private BattleGrowthPort rogueGrowthPort(BattleDataPort dataPort) {
+        GrowthService growth = new GrowthService(dataPort, growthProgress());
+        growth.setSegmentExpMultiplier(session != null ? session.getSegment() : 1);
+        return growth;
     }
 
     /** 本次会话的局外成长进度：捕捉次数 / 对战次数 / 个体值加成（图鉴数据来源）。 */
@@ -537,6 +548,10 @@ public class MainController {
                 resolveRogueEquipmentReward();
                 finishNodeStep(true);
             }
+            case TRADE -> {
+                resolveTradeEvent();
+                finishNodeStep(true);
+            }
             case CANDY -> {
                 resolveRogueCandySupply();
                 finishNodeStep(true);
@@ -573,6 +588,62 @@ public class MainController {
         LogUtil.info("糖果补给：获得 " + candy.getName() + " x" + count);
         infoAlert("糖果补给", "获得神奇糖果 x" + count + "：喂给精灵可直接提升 1 级。"
                 + "\n可在主菜单点击精灵名，在详情页中喂食。");
+    }
+
+    /**
+     * TRADE 事件：宝可梦交换——系统提供一只「队伍平均等级（向下取整）+1 或 2」的宝可梦，
+     * 玩家可用队伍中的一只与其交换，也可放弃（均不返还行动点）。
+     */
+    private void resolveTradeEvent() {
+        if (player == null || player.getParty().isEmpty()) {
+            infoAlert("宝可梦交换", "队伍为空，无法进行交换。");
+            return;
+        }
+        List<Pokemon> party = player.getParty();
+        int avgLevel = party.stream().mapToInt(Pokemon::getLevel).sum() / party.size();
+        int level = avgLevel + 1 + (int) (Math.random() * 2);
+        Optional<Pokemon> offered = PokemonBattleAdapter.createWildPokemonExact(level, session.getSegment(), growthProgress());
+        if (offered.isEmpty()) {
+            infoAlert("数据异常", "宝可梦交换事件无法生成交换对象（数据缺失）。");
+            return;
+        }
+        Pokemon offer = offered.get();
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("宝可梦交换");
+        alert.setHeaderText("神秘商人带来了一只 Lv." + offer.getLevel() + " 的 " + offer.getName() + "！");
+        alert.setContentText("可用队伍中的一只宝可梦与其交换，也可以放弃（无论是否交换都不返还行动点）。");
+        ButtonType trade = new ButtonType("交换", ButtonBar.ButtonData.OK_DONE);
+        ButtonType giveUp = new ButtonType("不交换", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(trade, giveUp);
+        alert.showAndWait().ifPresent(choice -> {
+            if (choice == trade) {
+                askWhichPokemonToTrade(offer);
+            }
+        });
+    }
+
+    /** 交换对象选择：从队伍中选一只被交换离队（交换完成后同步肉鸽队伍快照）。 */
+    private void askWhichPokemonToTrade(Pokemon offered) {
+        List<Pokemon> party = player.getParty();
+        List<String> choices = new ArrayList<>();
+        for (int i = 0; i < party.size(); i++) {
+            Pokemon p = party.get(i);
+            choices.add((i == player.getActiveIndex() ? "▶ " : "   ") + p.getName()
+                    + " Lv." + p.getLevel() + (p.isFainted() ? "（濒死）" : ""));
+        }
+        ChoiceDialog<String> dialog = new ChoiceDialog<>(choices.get(0), choices);
+        dialog.setTitle("选择交换对象");
+        dialog.setHeaderText("用队伍中的哪一只交换 Lv." + offered.getLevel() + " 的 " + offered.getName() + "？");
+        dialog.setContentText("被交换的宝可梦将离开队伍：");
+        dialog.showAndWait().ifPresent(selected -> {
+            int index = choices.indexOf(selected);
+            Pokemon gone = index >= 0 ? player.swapPartyMember(index, offered) : null;
+            if (gone != null) {
+                session.syncRogueTeam();
+                infoAlert("交换完成", gone.getName() + " 离开了队伍，" + offered.getName()
+                        + "（Lv." + offered.getLevel() + "）加入了队伍！");
+            }
+        });
     }
 
     /** 非战斗节点：当场效果（医院治疗全队）结算后走节点收尾。 */
@@ -819,8 +890,20 @@ public class MainController {
         LogUtil.info(reason + "：获得 " + item.getName());
     }
 
-    /** 必然节点战败（§4.3）：道馆 / 四天王可失败一次（重试再败结束），冠军与首领侵略战不可失败。 */
+    /**
+     * 必然节点战败（§4.3）：道馆 / 四天王可失败一次（重试再败结束），冠军与首领侵略战不可失败。
+     * 第一次道馆战全灭时免费恢复全队满状态（不扣金币 / 行动点），消耗本段失败机会后可再次挑战。
+     */
     private void handleMandatoryDefeat(OptionType type) {
+        // 第一次道馆战全灭：免费救援（满状态恢复，不扣金币与行动点），失败机会照常消耗
+        if (type == OptionType.GYM && !session.hasHealthyPokemon() && session.useFreeRogueGymRescue()) {
+            player.healParty();
+            session.leadWithFirstHealthy();
+            infoAlert("道馆救援", "队伍全灭！第一次挑战道馆失败，已免费恢复全队状态，可再次挑战道馆。");
+            autoSave();
+            showRogueFloorScene();
+            return;
+        }
         if (session.resolveRogueMandatoryDefeat()) {
             infoAlert("挑战失败", type.getDisplayName() + "战败，已扣除金币；本段还可再挑战一次。");
             autoSave();
@@ -870,7 +953,7 @@ public class MainController {
             return;
         }
         int level = highestPartyLevel() + RouteConfig.wildLevelBonus(session.getSegment());
-        Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level, growthProgress());
+        Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level, session.getSegment(), growthProgress());
         if (wild.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的野生精灵（数据缺失）。");
             showRogueFloorScene();
@@ -899,7 +982,7 @@ public class MainController {
         int max = RouteConfig.trainerPartyMax(segment);
         int count = min + (int) (Math.random() * (max - min + 1));
         for (int i = 0; i < count; i++) {
-            PokemonBattleAdapter.createWildPokemon(level, growthProgress()).ifPresent(trainer::addPokemon);
+            PokemonBattleAdapter.createWildPokemon(level, segment, growthProgress()).ifPresent(trainer::addPokemon);
         }
         if (trainer.getParty().isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的精灵（数据缺失）。");
@@ -926,7 +1009,7 @@ public class MainController {
         Trainer rocket = new Trainer("火箭队队员");
         rocket.setExpMultiplier(GrowthService.TRAINER_EXP_NUMERATOR, GrowthService.TRAINER_EXP_DENOMINATOR);
         for (int i = 0; i < RouteConfig.rocketPartySize(segment); i++) {
-            PokemonBattleAdapter.createWildPokemon(level, growthProgress()).ifPresent(rocket::addPokemon);
+            PokemonBattleAdapter.createWildPokemon(level, segment, growthProgress()).ifPresent(rocket::addPokemon);
         }
         startRocketNodeBattle(rocket, OptionType.ROCKET);
     }
@@ -944,7 +1027,7 @@ public class MainController {
         Trainer boss = new Trainer("火箭队首领");
         boss.setExpMultiplier(GrowthService.TRAINER_EXP_NUMERATOR, GrowthService.TRAINER_EXP_DENOMINATOR);
         for (int i = 0; i < RouteConfig.rocketBossPartySize(segment); i++) {
-            PokemonBattleAdapter.createWildPokemon(level, growthProgress()).ifPresent(boss::addPokemon);
+            PokemonBattleAdapter.createWildPokemon(level, segment, growthProgress()).ifPresent(boss::addPokemon);
         }
         startRocketNodeBattle(boss, OptionType.ROCKET_CAPTURE);
     }
@@ -1014,8 +1097,8 @@ public class MainController {
         int count = mandatoryPartySize(type, segment);
         for (int i = 0; i < count; i++) {
             Optional<Pokemon> foe = gymFixed
-                    ? PokemonBattleAdapter.createWildPokemonExact(level, growthProgress())
-                    : PokemonBattleAdapter.createWildPokemon(level, growthProgress());
+                    ? PokemonBattleAdapter.createWildPokemonExact(level, segment, growthProgress())
+                    : PokemonBattleAdapter.createWildPokemon(level, segment, growthProgress());
             foe.ifPresent(opponent::addPokemon);
         }
         if (opponent.getParty().isEmpty()) {

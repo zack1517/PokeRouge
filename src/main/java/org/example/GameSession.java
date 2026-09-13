@@ -287,6 +287,15 @@ public class GameSession {
         return rogueTurnManager.resolveMandatoryDefeat();
     }
 
+    /**
+     * 第一次道馆战全灭的免费救援：消耗本段失败机会但不扣金币（全队满状态恢复由控制器执行）。
+     *
+     * @return 符合条件并已消耗机会返回 {@code true}
+     */
+    public boolean useFreeRogueGymRescue() {
+        return rogueTurnManager.useFreeGymRescue();
+    }
+
     /** 标记本轮远征结束（如 UI 接管的真实战斗失败时），供结算流程与视图判定。 */
     public void endRogueRun() {
         rogueTurnManager.getRunData().setGameOver(true);

@@ -46,6 +46,9 @@ public final class RouteConfig {
     /** 装备补给节点出现的概率（百分比，低概率节点；占用与火箭队 / 神兽偶遇共用的特殊事件槽位）。 */
     public static final int EQUIPMENT_PERCENT = 30;
 
+    /** 宝可梦交换事件出现的概率（百分比，低概率节点；与特殊事件共享同一事件槽位）。 */
+    public static final int TRADE_PERCENT = 30;
+
     /**
      * 糖果补给节点出现的概率（百分比，低概率节点；在特殊事件槽位的优先级链里排在装备补给之后）。
      * 命中后按 {@link #candyCountForSegment(int)} 发放神奇糖果。
