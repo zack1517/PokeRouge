@@ -96,10 +96,11 @@ public class RogueTurnManager {
         runData.setAvailableOptions(new ArrayList<>(plan.getRouteOptions()));
     }
 
-    /** 按当前段号与剧情线状态生成本段方案（开段与刷新共用，保证两处规则一致）。 */
+    /** 按当前段号、剧情线状态与行动点生成本段方案（开段与刷新共用，保证两处规则一致）。 */
     private SegmentPlan generatePlan(int segment) {
         return generator.generateSegment(segment, runData.isRocketLineUnlocked(),
-                runData.isRocketBossDefeated(), runData.isLegendaryMet(), runData.isPendingLegendary());
+                runData.isRocketBossDefeated(), runData.isLegendaryMet(), runData.isPendingLegendary(),
+                runData.getAp(), runData.getApMax());
     }
 
     public void setTeam(List<PokemonInstance> team) {

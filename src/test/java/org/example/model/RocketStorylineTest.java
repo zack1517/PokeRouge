@@ -1,13 +1,12 @@
 package org.example.model;
 
-import org.junit.jupiter.api.Test;
-
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 
 /**
  * 火箭队剧情线与神兽偶遇的单元测试（《需求文档》§5.1 / §5.2 / §5.3）。
@@ -229,6 +228,52 @@ class RocketStorylineTest {
                             .noneMatch(option -> option.getType() == OptionType.ROCKET_CAPTURE),
                     "抓捕神兽仅游戏后期出现");
         }
+    }
+
+    /** 抓捕神兽事件的出现窗口：第 4 段行动点消耗过半之后才可出现（§5.3 调整）。 */
+    @Test
+    void testRocketCaptureAppearsOnlyAfterHalfApInSegmentFour() {
+        NodeGenerator generator = new NodeGenerator();
+        // 第 4 段行动点未消耗过半（10/10）不出现
+        for (int i = 0; i < 200; i++) {
+            SegmentPlan plan = generator.generateSegment(4, true, false, false, false, 10, 10);
+            assertTrue(plan.getRouteOptions().stream()
+                            .noneMatch(option -> option.getType() == OptionType.ROCKET_CAPTURE),
+                    "第 4 段行动点未消耗过半时不应出现抓捕神兽事件");
+        }
+        // 第 4 段行动点消耗过半（5/10）后应有概率出现
+        boolean seen = false;
+        for (int i = 0; i < 200 && !seen; i++) {
+            seen = generator.generateSegment(4, true, false, false, false, 5, 10)
+                    .getRouteOptions().stream()
+                    .anyMatch(option -> option.getType() == OptionType.ROCKET_CAPTURE);
+        }
+        assertTrue(seen, "第 4 段行动点消耗过半后应有概率出现抓捕神兽事件");
+    }
+
+    /** 第 3 段不再出现抓捕神兽事件（即便行动点已消耗过半）。 */
+    @Test
+    void testRocketCaptureNotInSegmentThree() {
+        NodeGenerator generator = new NodeGenerator();
+        for (int i = 0; i < 200; i++) {
+            SegmentPlan plan = generator.generateSegment(3, true, false, false, false, 1, 10);
+            assertTrue(plan.getRouteOptions().stream()
+                            .noneMatch(option -> option.getType() == OptionType.ROCKET_CAPTURE),
+                    "第 3 段不应出现抓捕神兽事件（推迟到第 4 段行动点过半之后）");
+        }
+    }
+
+    /** 第 5 段持续出现抓捕神兽事件（不要求行动点过半）。 */
+    @Test
+    void testRocketCaptureAppearsInSegmentFive() {
+        NodeGenerator generator = new NodeGenerator();
+        boolean seen = false;
+        for (int i = 0; i < 200 && !seen; i++) {
+            seen = generator.generateSegment(5, true, false, false, false)
+                    .getRouteOptions().stream()
+                    .anyMatch(option -> option.getType() == OptionType.ROCKET_CAPTURE);
+        }
+        assertTrue(seen, "第 5 段应持续出现抓捕神兽事件");
     }
 
     @Test

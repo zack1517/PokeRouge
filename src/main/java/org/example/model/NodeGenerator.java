@@ -49,7 +49,8 @@ public class NodeGenerator {
      *
      * <ol>
      *   <li>{@code pendingLegendary} 为真：必然放入一次 0 点的神兽偶遇（火箭队线击败首领后）；</li>
-     *   <li>后期 + 已开启火箭队线 + 尚未击败首领：按 {@link RouteConfig#ROCKET_CAPTURE_PERCENT}
+     *   <li>进入出现窗口（第 4 段行动点消耗过半之后，见 {@link RouteConfig#rocketCaptureAvailable}）
+     *        + 已开启火箭队线 + 尚未击败首领：按 {@link RouteConfig#ROCKET_CAPTURE_PERCENT}
      *       尝试放入「火箭队抓捕神兽」（玩家可自主选择是否进入）；</li>
      *   <li>后期 + 本局尚未遇到过神兽：按 {@link RouteConfig#LEGENDARY_PERCENT} 尝试放入神兽偶遇；</li>
      *   <li>按 {@link RouteConfig#ROCKET_PERCENT} 尝试放入火箭队队员节点（各时期均有概率）；</li>
@@ -67,6 +68,20 @@ public class NodeGenerator {
     public SegmentPlan generateSegment(int segment, boolean rocketLineUnlocked, boolean rocketBossDefeated,
                                        boolean legendaryMet, boolean pendingLegendary) {
         int seg = Math.max(1, segment);
+        return generateSegment(seg, rocketLineUnlocked, rocketBossDefeated, legendaryMet, pendingLegendary,
+                RouteConfig.apLimitForSegment(seg), RouteConfig.apLimitForSegment(seg));
+    }
+
+    /**
+     * 同 {@link #generateSegment(int, boolean, boolean, boolean, boolean)}，
+     * 额外接收当前行动点状态用于抓捕神兽事件的出现窗口判定。
+     *
+     * @param ap    当前剩余行动点
+     * @param apMax 本段行动点上限
+     */
+    public SegmentPlan generateSegment(int segment, boolean rocketLineUnlocked, boolean rocketBossDefeated,
+                                       boolean legendaryMet, boolean pendingLegendary, int ap, int apMax) {
+        int seg = Math.max(1, segment);
         List<Option> options = new ArrayList<>();
 
         options.add(createTrainer());
@@ -77,7 +92,7 @@ public class NodeGenerator {
             options.add(createShop());
         }
         Option special = rollSpecialEvent(seg, rocketLineUnlocked, rocketBossDefeated,
-                legendaryMet, pendingLegendary);
+                legendaryMet, pendingLegendary, ap, apMax);
         if (special != null) {
             options.add(special);
         }
@@ -98,10 +113,22 @@ public class NodeGenerator {
     public Option rollSpecialEvent(int segment, boolean rocketLineUnlocked, boolean rocketBossDefeated,
                                    boolean legendaryMet, boolean pendingLegendary) {
         int seg = Math.max(1, segment);
+        return rollSpecialEvent(seg, rocketLineUnlocked, rocketBossDefeated, legendaryMet, pendingLegendary,
+                RouteConfig.apLimitForSegment(seg), RouteConfig.apLimitForSegment(seg));
+    }
+
+    /**
+     * 同 {@link #rollSpecialEvent(int, boolean, boolean, boolean, boolean)}，
+     * 额外接收当前行动点状态用于抓捕神兽事件的出现窗口判定。
+     */
+    public Option rollSpecialEvent(int segment, boolean rocketLineUnlocked, boolean rocketBossDefeated,
+                                   boolean legendaryMet, boolean pendingLegendary, int ap, int apMax) {
+        int seg = Math.max(1, segment);
         if (pendingLegendary) {
             return createLegendary(seg, true);
         }
-        if (RouteConfig.isLateGame(seg) && rocketLineUnlocked && !rocketBossDefeated
+        if (rocketLineUnlocked && !rocketBossDefeated
+                && RouteConfig.rocketCaptureAvailable(seg, ap, apMax)
                 && roll(RouteConfig.ROCKET_CAPTURE_PERCENT)) {
             return createRocketCapture();
         }
