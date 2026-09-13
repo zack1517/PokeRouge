@@ -1,6 +1,6 @@
 # UI 模块接口与界面设计文档（接口文档_UI模块）
 
-> 版本：v0.1.24（草稿） · 日期：2026-09-13 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
+> 版本：v0.1.27（草稿） · 日期：2026-09-13 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
 > 角色：UI 负责人 · 状态：**待组长评审**，评审通过前不进入编码
 > 依据：《需求文档》§7 界面与交互需求、《测试用例草稿》§D、《接口文档_战斗服务.md》v1.14、
 > **本阶段六系统任务分工**（游戏流程系统 / 存档系统 / 宝可梦系统 / 战斗系统 / 肉鸽系统 / JavaFX UI；其中游戏流程与存档由同一人负责）
@@ -23,6 +23,8 @@
 > **v0.1.23 商店装备改为全量上架：§3.6 `ShopView` 段改写 —— 装备分区不再抽签、不再占「格位」，未拥有的装备（最多 77 件）进店即全量列出、想买哪件就买哪件；`RouteConfig#shopStockSize` 更名为 `#shopConsumableStockSize`（只约束随机上架的消耗品），`shopEquipmentStockSize` 及其三个常量删除**；
 > **v0.1.24 消耗品逐段解锁 + 购买后原地刷新：§3.6 `ShopView` 段改写 —— 消耗品恢复「按段解锁」（第 1 段 7 件、每段再放开 2 件，**解锁后常驻、只增不减**），`ShopStock.Consumable` 第四列由 `sold` 改回 `unlockSegment`（`NEVER_UNLOCKED` 表示剧情专属）、随机抽签的 `rollConsumables` 删除；因不再有格位，`RouteConfig#shopConsumableStockSize` 与四个 `SHOP_CONSUMABLE_*` 常量一并删除（装备口径不变，仍不分段、全量上架）。同时修掉「购买后被弹回列表最上面」：`ShopView#refresh` 原地重建卡片并用 `Platform.runLater` 恢复 `ScrollPane` 滚动位置，`MainController` 以 `currentShopView` + `refreshShopScene()` 取代重建 Scene。§3.7 图鉴来源行相应补「第 N 段起解锁后一直有货」**；
 > 文中「[待确认]」项为需与组长 / 对应系统负责人确认后方可定稿的内容。
+> **v0.1.25 ~ v0.1.26 商店消耗品解锁与神奇糖果：消耗品第 1 段 7 件起步、每段再放开 2 件且解锁后常驻（货架件数 7 → 10 → 12 → 14 → 16），新增「神奇糖果」（`i_rare_candy`）与「糖果补给」节点（`OptionType.CANDY`，AP 1 点，逐段 8 / 10 / 12 / 14 / 16 个），精灵详情页新增「道具使用卡」（局外喂食 / 回复 / 解除）**；
+> **v0.1.27 火箭队抓捕神兽在末段固定出现：末段（第 5 段）剧情线已开且首领未败时，`OptionType.ROCKET_CAPTURE` 随常驻节点无条件入列且不占用特殊事件槽位（节点列表上限 5 → 6，末段 4~6 项）；节点仍为一次性，**渲染与交互无需改动**，UI 若需提示可读 `RouteConfig#isRocketBossResidentSegment(int)`**；
 
 ## 1. 概述
 
@@ -309,7 +311,7 @@ FXML 重写，要求：
 | --- | --- |
 | 标题 | `第 N / 5 段 · <阶段名>`，阶段名取 `RoutePhase#getDisplayName()` |
 | 副标题 | `行动点：X / Max　金币：N 🪙` |
-| 节点列表 | 每段 3~5 个路线节点；**已走过的一次性节点**置灰且不可点；**常驻节点（路人 / 野外精灵 / 医院）走过后仍可点**，标题标注「已走过 N 次 · 可再次进入」与再次进入的行动点消耗；行动点不足以进入的节点禁用并给出提示 |
+| 节点列表 | 每段 3~6 个路线节点（末段剧情线未收束时为 4~6 个：3 常驻 + 固定「火箭队抓捕神兽」）；**已走过的一次性节点**置灰且不可点；**常驻节点（路人 / 野外精灵 / 医院）走过后仍可点**，标题标注「已走过 N 次 · 可再次进入」与再次进入的行动点消耗；行动点不足以进入的节点禁用并给出提示 |
 | 必然节点区 | 阶段为道馆 / 四天王 / 冠军 / 首领侵略战时改为展示 `buildMandatoryBox`（必然节点不占行动点） |
 | 兜底按钮 | 本段行动点耗尽或已无节点可走时，显示「挑战道馆」按钮触发必然节点 |
 
@@ -334,6 +336,13 @@ FXML 重写，要求：
 > 发放量逐段递增 **8 / 10 / 12 / 14 / 16** 个「神奇糖果」。它沿用同一张节点卡片渲染
 > （`Option#description()` 已带发放量与用法提示），UI 侧**无需新增分支**；结算与入包由
 > `MainController#resolveRogueCandySupply()` 负责。
+>
+> **v0.1.27**：**「火箭队抓捕神兽」（`OptionType.ROCKET_CAPTURE`）从末段（第 5 段）起固定出现**——
+> 剧情线已开且首领未被击败时，该节点随常驻节点一起无条件入列，并且**不占用特殊事件槽位**
+> （商店 / 神兽偶遇 / 火箭队队员 / 装备补给 / 糖果补给照旧）。因此末段节点列表最多 6 项、
+> 最少 4 项（3 常驻 + 固定抓捕）。节点的**渲染与交互无需改动**：它仍是一次性节点
+> （`ROCKET_CAPTURE.resident = false`），走过后按 v0.1.15 的整批刷新规则自然消失；
+> UI 若想提示玩家，可读 `RouteConfig#isRocketBossResidentSegment(int)` 判断当前段是否为固定段。
 
 **`ShopView`（商店）**
 
@@ -797,3 +806,4 @@ public interface ScreenFactory {
 | v0.1.24 | 2026-09-13 | **消耗品逐段解锁 + 购买后原地刷新**：§3.6 `ShopView` 段改写 —— ①消耗品恢复「按段解锁、解锁后常驻」（第 1 段 7 件 → 第 5 段 15 件，只增不减、不再抽签）：`ShopStock.Consumable` 第四列 `sold` → `unlockSegment`（新增 `NEVER_UNLOCKED` 表示剧情专属，大师球用它）、`rollConsumables` 删除并改为 `unlockedConsumables(int)`、`sellableConsumableIds()` → `sellableConsumableIds(int)`、`consumablePool()` → `consumablePool(int)`、`CatalogEntry.sold` → `unlockSegment`（装备恒 1）、`forSegment(segment, random)` 的 `random` 自此不影响结果；因无格位概念，`RouteConfig#shopConsumableStockSize` 与 `BASE_SHOP_CONSUMABLE_STOCK` / `SHOP_CONSUMABLE_STOCK_PER_SEGMENT` / `MAX_SHOP_CONSUMABLE_STOCK` 一并删除（装备口径不变）；②`ShopView` 去 `final stock`、保存 `header`/`list`/`scroll` 引用、拆分 `createScene()` 与私有 `render()`、新增 `refresh(ShopStock)`（记 `vvalue` → 重建 → `Platform.runLater` 恢复，避免被旧内容高度夹断），`MainController` 新增 `currentShopView` 字段与 `refreshShopScene()`，三处购买路径改走刷新、`leaveShop()` 清空引用；§3.7 图鉴来源行对第 2 段起解锁的消耗品补「第 N 段起解锁后一直有货」 | [待确认：UI 负责人] |
 | v0.1.25 | 2026-09-13 | **删除「神秘事件」占位节点**：路线地图页可能渲染的节点类型少一种 —— `OptionType.SPECIAL` 删除（13 → 12 值），`NodeGenerator#rollSpecialEvent` 的五级优先级链收窄为四级、全部落空返回 `null`（该批只剩 3 个常驻节点 + 概率商店）；`RogueTurnManager#resolveImmediateEffect` 与 `RouteConfig` 的 `SPECIAL_PERCENT` / `SPECIAL_AP_COST` / `specialGold(int)` 一并删除。存档以类型名字符串存 `OPTION` 行，未识别类型丢弃并打日志，故**不升格式版本** | [待确认：UI 负责人] |
 | v0.1.26 | 2026-09-13 | **新增神奇糖果与局外道具使用**：§3.5 精灵详情页增「道具使用卡」（`ItemUsageService`，局外使用回复类 / 解除类 / 升级类消耗品，精灵球不可用；不满足条件不消耗；升级走 `BattleGrowthPort#boostLevel`）；§3.6 `ShopView` 段补「神奇糖果第 2 段起解锁后一直有货」（货架件数 7 → 10 → 12 → 14 → 16）；§3.7 图鉴目录 93 → **94 件**（16 → 17 件消耗品），`describe(Item)` 补 `LEVEL_UP` 分支「提升精灵 N 级（可在精灵详情页喂食）」；路线地图页的特殊事件槽位新增「糖果补给」节点（`OptionType.CANDY`，AP 1 点，发放量逐段 8 / 10 / 12 / 14 / 16） | [待确认：UI 负责人] |
+| v0.1.27 | 2026-09-13 | **火箭队抓捕神兽在末段固定出现**：§3.1 场景图无变化，§3.6 节点列表段补「每段 3~6 个节点；末段剧情线未收束时 3 常驻 + 固定 `ROCKET_CAPTURE`，最多 6 项最少 4 项」；节点渲染与交互**无需改动**（仍为一次性节点，走过后按 v0.1.15 整批刷新消失），UI 若需提示可读 `RouteConfig#isRocketBossResidentSegment(int)` | [待确认：UI 负责人] |

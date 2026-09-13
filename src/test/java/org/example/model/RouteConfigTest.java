@@ -1,6 +1,7 @@
 package org.example.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Random;
@@ -152,8 +153,24 @@ class RouteConfigTest {
     @Test
     void 总段数与节点上限已被配置钉住() {
         assertEquals(5, RouteConfig.TOTAL_SEGMENTS);
-        assertTrue(RouteConfig.MAX_ROUTE_NODES >= 5, "3 个常驻节点外还要容得下商店与特殊事件槽位");
+        assertTrue(RouteConfig.MAX_ROUTE_NODES >= 6,
+                "3 个常驻节点外还要容得下商店、特殊事件槽位与末段固定的火箭队首领节点");
         assertTrue(RouteConfig.STARTING_GOLD > 0, "新远征必须带得动起始金币");
         assertEquals(2, RouteConfig.DEFEAT_RESCUE_AP_COST, "战败全灭救援固定消耗 2 点行动点");
+    }
+
+    @Test
+    void 火箭队首领在末段起固定出现() {
+        assertEquals(RouteConfig.TOTAL_SEGMENTS, RouteConfig.ROCKET_BOSS_RESIDENT_SEGMENT,
+                "固定出现段号即末段");
+        assertFalse(RouteConfig.isRocketBossResidentSegment(1));
+        assertFalse(RouteConfig.isRocketBossResidentSegment(RouteConfig.TOTAL_SEGMENTS - 1));
+        assertTrue(RouteConfig.isRocketBossResidentSegment(RouteConfig.TOTAL_SEGMENTS));
+        assertTrue(RouteConfig.isRocketBossResidentSegment(RouteConfig.TOTAL_SEGMENTS + 1),
+                "越界段号按最靠后的段处理，仍属固定出现区间");
+
+        Option capture = new NodeGenerator(new Random(1)).createRocketCapture();
+        assertEquals(OptionType.ROCKET_CAPTURE, capture.getType());
+        assertEquals(RouteConfig.ROCKET_CAPTURE_AP_COST, capture.getCost(), "抓捕神兽消耗 2 点");
     }
 }

@@ -89,7 +89,8 @@ public class RogueTurnManager {
      * <b>行动点、阶段、金币与剧情线标记都不变</b>——刷新只换节点，不重置本段进度。
      *
      * <p>由于常驻节点（路人 / 野外精灵 / 医院）每次都必然入列，刷新后玩家仍能再次进入
-     * 这三类节点，行动点依旧是唯一的限制资源。</p>
+     * 这三类节点，行动点依旧是唯一的限制资源；末段若剧情线未收束，固定的「火箭队抓捕神兽」
+     * 同样会在刷新后继续出现。</p>
      */
     public void refreshRoute() {
         SegmentPlan plan = generatePlan(runData.getSegment());

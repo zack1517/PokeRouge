@@ -66,9 +66,11 @@ public final class RouteConfig {
 
     /**
      * 每段最多生成的路线节点数（不含必然节点）：
-     * 常驻的路人 / 野外精灵 / 医院必占 3 个，商店再按概率追加，共用的特殊事件槽位最多再占 1 个。
+     * 常驻的路人 / 野外精灵 / 医院必占 3 个，商店再按概率追加，共用的特殊事件槽位最多再占 1 个，
+     * 末段在火箭队剧情线未收束时还会固定多占 1 个「火箭队抓捕神兽」（见
+     * {@link #ROCKET_BOSS_RESIDENT_SEGMENT}），故上限为 6。
      */
-    public static final int MAX_ROUTE_NODES = 5;
+    public static final int MAX_ROUTE_NODES = 6;
 
     // ------------------------------------------------------------------
     // 金币奖惩（§4.2 节点说明 + §4.3 失败与惩罚规则）
@@ -254,8 +256,20 @@ public final class RouteConfig {
     /** 火箭队队员节点出现的概率（百分比）；各时期均可能出现（§5.2）。 */
     public static final int ROCKET_PERCENT = 35;
 
-    /** 火箭队抓捕神兽事件出现的概率（百分比）；需后期且已开启剧情线。 */
+    /** 火箭队抓捕神兽事件出现的概率（百分比）；需后期且已开启剧情线，且尚未到固定出现的末段。 */
     public static final int ROCKET_CAPTURE_PERCENT = 60;
+
+    /**
+     * 火箭队首领（抓捕神兽）固定出现的起始段号：已开启火箭队剧情线且首领未被击败时，
+     * 从该段起该节点不再掷 {@link #ROCKET_CAPTURE_PERCENT}，而是随常驻节点一起固定入列 ——
+     * 玩家在打进冠军战前一定有机会与首领交手、拿到大师球并触发那一次必然的神兽偶遇。
+     */
+    public static final int ROCKET_BOSS_RESIDENT_SEGMENT = TOTAL_SEGMENTS;
+
+    /** 该段是否已到火箭队首领固定出现的段号（剧情线状态由节点生成器另行判定）。 */
+    public static boolean isRocketBossResidentSegment(int segment) {
+        return Math.max(1, segment) >= ROCKET_BOSS_RESIDENT_SEGMENT;
+    }
 
     /** 神兽偶遇出现的概率（百分比）；仅后期且每局至多一次（§5.1）。 */
     public static final int LEGENDARY_PERCENT = 30;
