@@ -18,10 +18,10 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 道具图鉴的数据层：把「商店商品目录」（{@link ShopStock#catalog()}，16 件消耗品 + 77 件装备）
+ * 道具图鉴的数据层：把「商店商品目录」（{@link ShopStock#catalog()}，17 件消耗品 + 77 件装备）
  * 与玩家的持有情况合并成图鉴条目列表，供 {@link ItemDexView} 纯展示。
  *
- * <p>图鉴<b>不做收集解锁</b>：93 件全部列出，只标注「已拥有 / 未拥有」（当前口径与
+ * <p>图鉴<b>不做收集解锁</b>：94 件全部列出，只标注「已拥有 / 未拥有」（当前口径与
  * {@code PokedexView} 一致）。装备额外标注穿戴者，便于在详情页外直接查「这件装备在谁身上」。</p>
  *
  * <p>在售商品还会带一列来源信息：装备从第 1 段起即可购买，消耗品标注「第几段起解锁」
@@ -123,6 +123,7 @@ public final class ItemDexData {
                     : "解除" + item.curedStatuses().stream()
                             .map(StatusCondition::getDisplayName)
                             .collect(Collectors.joining("、"));
+            case LEVEL_UP -> "提升精灵 " + number(item.getEffect()) + " 级（可在精灵详情页喂食）";
         };
     }
 

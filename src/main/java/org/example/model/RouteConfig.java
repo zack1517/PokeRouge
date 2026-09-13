@@ -47,6 +47,24 @@ public final class RouteConfig {
     public static final int EQUIPMENT_PERCENT = 30;
 
     /**
+     * 糖果补给节点出现的概率（百分比，低概率节点；在特殊事件槽位的优先级链里排在装备补给之后）。
+     * 命中后按 {@link #candyCountForSegment(int)} 发放神奇糖果。
+     */
+    public static final int CANDY_PERCENT = 30;
+
+    /**
+     * 糖果补给节点在第 {@code segment} 段发放的神奇糖果数量：首段 8 个，之后每段 +2
+     * （8 / 10 / 12 / 14 / 16）。段号非法时按第 1 段处理。
+     */
+    public static int candyCountForSegment(int segment) {
+        int seg = Math.max(1, segment);
+        return 8 + (seg - 1) * 2;
+    }
+
+    /** 糖果补给发放的道具 id（神奇糖果，见 {@code items.csv}）。 */
+    public static final String CANDY_ITEM_ID = "i_rare_candy";
+
+    /**
      * 每段最多生成的路线节点数（不含必然节点）：
      * 常驻的路人 / 野外精灵 / 医院必占 3 个，商店再按概率追加，共用的特殊事件槽位最多再占 1 个。
      */
@@ -117,7 +135,7 @@ public final class RouteConfig {
     // ------------------------------------------------------------------
     //
     // 两个分区都不再有格位上限：装备全量上架（想买哪件就买哪件），消耗品解锁多少件就上架多少件
-    // （第 1 段 7 件 → 第 5 段 15 件）。旧的「第 1 段 3 件、每段 +1、上限 6 件」那套格位常量
+    // （第 1 段 7 件 → 第 5 段 16 件）。旧的「第 1 段 3 件、每段 +1、上限 6 件」那套格位常量
     // 已随随机抽签一起删除；消耗品的解锁节奏是逐件数据，写在 ShopStock.CONSUMABLES 的解锁段号上。
 
     /** 每推进一段的物价涨幅（百分比）。 */

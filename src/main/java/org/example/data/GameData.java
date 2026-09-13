@@ -331,6 +331,9 @@ public final class GameData {
         putItem("i_ice_heal", "解冻药", "FREEZE");
         putItem("i_awakening", "醒睡药", "SLEEP");
         putItem("i_full_heal", "万灵药", "ALL");
+
+        // ---- 升级道具：提升我方精灵等级（局外使用，见 ItemUsage） ----
+        itemMap.put("i_rare_candy", Item.levelUpItem("i_rare_candy", "神奇糖果", 1));
     }
 
     private void putMove(String id, String name, ElementType type, MoveCategory category,
@@ -678,6 +681,7 @@ public final class GameData {
         ItemCategory category = switch (c[2].trim().toUpperCase(java.util.Locale.ROOT)) {
             case "BALL", "POKE_BALL" -> ItemCategory.POKE_BALL;
             case "CURE" -> ItemCategory.CURE;
+            case "LEVEL_UP" -> ItemCategory.LEVEL_UP;
             default -> ItemCategory.HEAL;
         };
         double effect = parseDouble(c[3]);

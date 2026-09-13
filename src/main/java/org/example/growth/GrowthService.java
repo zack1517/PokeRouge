@@ -190,6 +190,33 @@ public final class GrowthService implements BattleGrowthPort {
     // 成长结算
     // ------------------------------------------------------------------
 
+    /**
+     * 局外直接提升等级（神奇糖果等道具）：逐级结算「升到 Lv.N → 到级学招 → 进化」，
+     * 与 {@link #grow} 走同一条规则，满级时不再生效。
+     *
+     * @return 每级产生的日志行；目标为 {@code null}、{@code levels ≤ 0} 或已满级时返回空列表
+     */
+    @Override
+    public List<String> boostLevel(Pokemon pokemon, int levels) {
+        List<String> log = new ArrayList<>();
+        if (pokemon == null || levels <= 0) {
+            return log;
+        }
+        List<BattleService.LearnChoice> pending = new ArrayList<>();
+        for (int i = 0; i < levels && pokemon.getLevel() < Pokemon.MAX_LEVEL; i++) {
+            int gained = pokemon.addExp(pokemon.expToNextLevel());
+            if (gained <= 0) {
+                break;
+            }
+            for (int lv = pokemon.getLevel() - gained + 1; lv <= pokemon.getLevel(); lv++) {
+                log.add(pokemon.getName() + " 升到了 Lv." + lv + "！");
+                learnAt(pokemon, lv, log, pending);
+                evolve(pokemon, log);
+            }
+        }
+        return log;
+    }
+
     /** 结算一只精灵的经验与成长：先入账经验并输出「获得经验」日志，再逐级追加升级日志并处理到级学招与进化。 */
     private void grow(Pokemon p, int exp, List<String> log, List<BattleService.LearnChoice> pending) {
         if (p.getLevel() >= Pokemon.MAX_LEVEL) {

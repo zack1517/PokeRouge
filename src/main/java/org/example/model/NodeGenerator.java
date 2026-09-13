@@ -54,6 +54,8 @@ public class NodeGenerator {
      *       尝试放入「火箭队抓捕神兽」（玩家可自主选择是否进入）；</li>
      *   <li>后期 + 本局尚未遇到过神兽：按 {@link RouteConfig#LEGENDARY_PERCENT} 尝试放入神兽偶遇；</li>
      *   <li>按 {@link RouteConfig#ROCKET_PERCENT} 尝试放入火箭队队员节点（各时期均有概率）；</li>
+     *   <li>按 {@link RouteConfig#EQUIPMENT_PERCENT} 尝试放入装备补给节点；</li>
+     *   <li>按 {@link RouteConfig#CANDY_PERCENT} 尝试放入糖果补给节点；</li>
      *   <li>以上均未命中时本段不含特殊事件节点（返回 {@code null}）。</li>
      * </ol>
      *
@@ -114,6 +116,9 @@ public class NodeGenerator {
         if (roll(RouteConfig.EQUIPMENT_PERCENT)) {
             return createReward();
         }
+        if (roll(RouteConfig.CANDY_PERCENT)) {
+            return createCandy();
+        }
         return null;
     }
 
@@ -149,6 +154,15 @@ public class NodeGenerator {
     public Option createReward() {
         return new Option("装备补给", OptionType.REWARD, OptionType.REWARD.getApCost(),
                 "拾获一件随机可携带装备；获得后在主菜单的精灵详情页中穿戴");
+    }
+
+    /**
+     * 糖果补给：随机节点，低概率出现；按所在段获得一批神奇糖果（结算由控制器执行）。
+     * 数量随段递增（8 / 10 / 12 / 14 / 16，见 {@link RouteConfig#candyCountForSegment(int)}）。
+     */
+    public Option createCandy() {
+        return new Option("糖果补给", OptionType.CANDY, OptionType.CANDY.getApCost(),
+                "拾获一批神奇糖果；吃下可让一只精灵直接提升 1 级，在主菜单的精灵详情页中喂食");
     }
 
     /**

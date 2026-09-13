@@ -20,7 +20,7 @@ import java.util.Set;
  *   <li><b>装备</b>：玩家尚未拥有的装备<b>全量列出</b>（{@link GameData#allEquipment()} 全 77 件：
  *       47 件对战道具 + 30 种树果），<b>从第 1 段起</b>即可任选购买，不分段解锁；</li>
  *   <li><b>消耗品</b>：列出<b>本段已解锁</b>的那几件（解锁段写在 {@link #CONSUMABLES}），
- *       解锁后<b>永久保留</b>在货架上、只增不减（第 1 段 7 件 → 第 5 段 15 件），
+ *       解锁后<b>永久保留</b>在货架上、只增不减（第 1 段 7 件 → 第 5 段 16 件），
  *       购买后进背包、可重复购买。</li>
  * </ul>
  *
@@ -81,9 +81,9 @@ public final class ShopStock {
      * 消耗品池，基础价为「第 1 段售价」（再按 {@link RouteConfig#shopPrice} 通胀）。
      *
      * <p><b>解锁节奏</b>（需求方 2026-09-13 裁决：逐步增加，加了后就一直都有）——
-     * 第 1 段只有最基础的一套（精灵球 + 伤药 + 5 种状态药），之后每段再放开 2 件，
+     * 第 1 段只有最基础的一套（精灵球 + 伤药 + 5 种状态药），之后每段再放开 2~3 件，
      * 因为解锁条件是「段号 ≥ 解锁段」，所以<b>解锁过的消耗品在任何后续段都仍然在货架上</b>，
-     * 货架只增不减：7 → 9 → 11 → 13 → 15 件。每段各解锁了什么见各条 {@code unlockSegment}。</p>
+     * 货架只增不减：7 → 10 → 12 → 14 → 16 件。每段各解锁了什么见各条 {@code unlockSegment}。</p>
      *
      * <p>球类只收录倍率固定的品种；等级球、月亮球、诱饵球、沉重球等「按对手等级/体重/速度
      * 判定倍率」的球种需要条件倍率模型，暂未上架。纪念球与贵重球在正作中即为基准倍率
@@ -102,9 +102,11 @@ public final class ShopStock {
             new Consumable("i_ice_heal", "解冻药", 45, 1),
             new Consumable("i_awakening", "醒睡药", 45, 1),
             new Consumable("i_paralyze_heal", "麻痹药", 45, 1),
-            // 第 2 段：收藏球 + 好伤药
+            // 第 2 段：收藏球 + 好伤药 + 神奇糖果
             new Consumable("i_premier_ball", "纪念球", 30, 2),
             new Consumable("i_super_potion", "好伤药", 90, 2),
+            // 神奇糖果：首段已由「糖果补给」事件供货，故商店从第 2 段起卖，按树果回复档定价
+            new Consumable("i_rare_candy", "神奇糖果", 100, 2),
             // 第 3 段：超级球 + 狩猎球
             new Consumable("i_great_ball", "超级球", 80, 3),
             new Consumable("i_safari_ball", "狩猎球", 100, 3),
@@ -175,7 +177,7 @@ public final class ShopStock {
     }
 
     /**
-     * 完整商品目录：全部消耗品 + 全部装备（当前 16 + 77 = 93 件），供道具图鉴展示。
+     * 完整商品目录：全部消耗品 + 全部装备（当前 17 + 77 = 94 件），供道具图鉴展示。
      *
      * <p>基础价与解锁段直接复用 {@link #forSegment} 的同一份口径（消耗品读 {@link #CONSUMABLES}，
      * 装备经 {@link #equipmentBasePrice} 推出），因此图鉴与货架永远不会说法不一。

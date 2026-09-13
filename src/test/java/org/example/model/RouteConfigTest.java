@@ -2,6 +2,9 @@ package org.example.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Random;
+
 import org.junit.jupiter.api.Test;
 
 /**
@@ -126,6 +129,24 @@ class RouteConfigTest {
         // 第 5 段保持现状：随机 1~2 只
         assertEquals(1, RouteConfig.trainerPartyMin(5));
         assertEquals(2, RouteConfig.trainerPartyMax(5));
+    }
+
+    @Test
+    void 糖果补给按段递增且节点描述提示用法() {
+        assertEquals(8, RouteConfig.candyCountForSegment(1));
+        assertEquals(10, RouteConfig.candyCountForSegment(2));
+        assertEquals(12, RouteConfig.candyCountForSegment(3));
+        assertEquals(14, RouteConfig.candyCountForSegment(4));
+        assertEquals(16, RouteConfig.candyCountForSegment(5));
+        assertEquals(RouteConfig.candyCountForSegment(1), RouteConfig.candyCountForSegment(0),
+                "非法段号按第 1 段处理");
+        assertEquals(RouteConfig.candyCountForSegment(1), RouteConfig.candyCountForSegment(-3));
+
+        Option candy = new NodeGenerator(new Random(1)).createCandy();
+        assertEquals(OptionType.CANDY, candy.getType());
+        assertEquals(1, candy.getCost(), "§4.1 糖果补给消耗 1 点");
+        assertTrue(candy.getDescription().contains("神奇糖果"),
+                "节点描述应说明发放的道具：" + candy.getDescription());
     }
 
     @Test

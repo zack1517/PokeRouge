@@ -45,7 +45,7 @@ class ItemDexDataTest {
 
         assertEquals(ShopStock.catalog().size(), entries.size(),
                 "图鉴必须列全商店目录的每一件商品");
-        assertEquals(93, entries.size(), "当前目录应为 16 件消耗品 + 77 件装备");
+        assertEquals(94, entries.size(), "当前目录应为 17 件消耗品 + 77 件装备");
 
         Set<String> ids = entries.stream().map(ItemDexData.Entry::id).collect(Collectors.toSet());
         assertEquals(entries.size(), ids.size(), "图鉴条目 id 不应重复");
@@ -84,7 +84,7 @@ class ItemDexDataTest {
                 "装备之前不应混入装备条目");
         assertTrue(entries.subList(firstEquipment, entries.size()).stream()
                 .allMatch(ItemDexData.Entry::equipment), "装备区之后不应再出现消耗品");
-        assertEquals(16, firstEquipment, "消耗品应为 16 件");
+        assertEquals(17, firstEquipment, "消耗品应为 17 件");
     }
 
     @Test
@@ -168,6 +168,8 @@ class ItemDexDataTest {
                 ItemDexData.describe(GameData.instance().item("i_full_heal")));
         assertTrue(ItemDexData.describe(GameData.instance().item("i_antidote")).startsWith("解除"),
                 "单项解除药应列出可解除的异常状态名");
+        assertEquals("提升精灵 1 级（可在精灵详情页喂食）",
+                ItemDexData.describe(GameData.instance().item("i_rare_candy")));
         assertEquals("", ItemDexData.describe(null), "数据缺失时描述为空串");
     }
 

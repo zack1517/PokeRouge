@@ -387,7 +387,7 @@ public class RogueTurnManager {
             case ELITE_FOUR -> RouteConfig.eliteFourWinGold(segment);
             case CHAMPION -> RouteConfig.championWinGold(segment);
             case ROCKET_INVASION -> RouteConfig.bossAggressionWinGold(segment);
-            case HOSPITAL, SHOP, REWARD -> 0;
+            case HOSPITAL, SHOP, REWARD, CANDY -> 0;
         };
     }
 

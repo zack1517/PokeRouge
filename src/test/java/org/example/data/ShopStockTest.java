@@ -46,7 +46,7 @@ class ShopStockTest {
             assertTrue(onShelf > previous, "越靠后的段解锁越多：" + previous + " -> " + onShelf);
             previous = onShelf;
         }
-        assertEquals(15, previous, "末段应解锁全部 15 件可售消耗品");
+        assertEquals(16, previous, "末段应解锁全部 16 件可售消耗品");
     }
 
     @Test
@@ -72,7 +72,7 @@ class ShopStockTest {
             unlocked.put(segment, ShopStock.sellableConsumableIds(segment));
         }
 
-        assertEquals(List.of("i_premier_ball", "i_super_potion"), addedAt(unlocked, 2), "第 2 段");
+        assertEquals(List.of("i_premier_ball", "i_super_potion", "i_rare_candy"), addedAt(unlocked, 2), "第 2 段");
         assertEquals(List.of("i_great_ball", "i_safari_ball"), addedAt(unlocked, 3), "第 3 段");
         assertEquals(List.of("i_sport_ball", "i_ultra_ball"), addedAt(unlocked, 4), "第 4 段");
         assertEquals(List.of("i_full_heal", "i_cherish_ball"), addedAt(unlocked, 5), "第 5 段");
@@ -211,10 +211,10 @@ class ShopStockTest {
     void 消耗品商品池排除不售卖的道具() {
         List<String> pool = ShopStock.sellableConsumableIds(RouteConfig.TOTAL_SEGMENTS);
 
-        assertEquals(15, pool.size(), "可售消耗品应为 15 件（大师球除外）");
+        assertEquals(16, pool.size(), "可售消耗品应为 16 件（大师球除外）");
         assertFalse(pool.contains("i_master_ball"), "大师球不进商店");
         assertTrue(pool.containsAll(List.of("i_potion", "i_poke_ball", "i_antidote",
-                        "i_super_potion", "i_great_ball", "i_safari_ball",
+                        "i_super_potion", "i_great_ball", "i_safari_ball", "i_rare_candy",
                         "i_full_heal", "i_ultra_ball", "i_sport_ball", "i_cherish_ball")),
                 "全部可售消耗品都应在池中，实际：" + pool);
         assertEquals(pool.size(), Set.copyOf(pool).size(), "商品池 id 不应重复");
@@ -239,7 +239,7 @@ class ShopStockTest {
     void 末段解锁全部消耗品且售价被通胀抬高() {
         ShopStock stock = ShopStock.forSegment(RouteConfig.TOTAL_SEGMENTS, new Random(5));
 
-        assertEquals(15, entriesOf(stock, false).size(), "末段应解锁全部 15 件可售消耗品");
+        assertEquals(16, entriesOf(stock, false).size(), "末段应解锁全部 16 件可售消耗品");
         assertEquals(ShopStock.sellableEquipment(Set.of()).size(), entriesOf(stock, true).size(),
                 "装备始终全量上架");
 
@@ -339,8 +339,8 @@ class ShopStockTest {
     void 目录列全消耗品与装备() {
         List<ShopStock.CatalogEntry> catalog = ShopStock.catalog();
 
-        assertEquals(93, catalog.size(), "目录应为 16 件消耗品 + 77 件装备");
-        assertEquals(16, catalog.stream().filter(e -> !e.equipment()).count(), "消耗品 16 件");
+        assertEquals(94, catalog.size(), "目录应为 17 件消耗品 + 77 件装备");
+        assertEquals(17, catalog.stream().filter(e -> !e.equipment()).count(), "消耗品 17 件");
         assertEquals(77, catalog.stream().filter(ShopStock.CatalogEntry::equipment).count(),
                 "装备与树果合计 77 件");
         assertEquals(catalog.size(), catalog.stream().map(ShopStock.CatalogEntry::id).distinct().count(),

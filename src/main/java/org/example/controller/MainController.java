@@ -28,6 +28,7 @@ import org.example.model.Trainer;
 import org.example.save.SaveFormatException;
 import org.example.save.SaveManager;
 import org.example.save.SaveSlot;
+import org.example.service.ItemUsageService;
 import org.example.util.LogUtil;
 import org.example.util.MusicPlayer;
 import org.example.view.CustomBattleSetupView;
@@ -333,16 +334,25 @@ public class MainController {
         stage.setScene(view.createScene());
     }
 
-    /** 精灵详情页：由主菜单点击精灵名进入；左列表切换精灵、右侧属性/技能/装备（穿戴立即生效）；「返回」重建主菜单。 */
+    /** 精灵详情页：由主菜单点击精灵名进入；左列表切换精灵、右侧属性/技能/装备、道具使用；「返回」重建主菜单。 */
     public void showPokemonDetail(int initialIndex) {
-        stage.setScene(new PokemonDetailView(player, initialIndex, session.mapBackgroundPath(), this::showMainMenu)
-                .createScene());
+        stage.setScene(new PokemonDetailView(player, initialIndex, session.mapBackgroundPath(),
+                this::showMainMenu, newItemUsageService()).createScene());
+    }
+
+    /**
+     * 局外道具使用服务：与战斗共用同一份成长端口，因此详情页吃神奇糖果升级时
+     * 同样会到级学招与进化（口径见 {@link ItemUsageService}）。
+     */
+    private ItemUsageService newItemUsageService() {
+        BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
+        return new ItemUsageService(PokemonBattleAdapter.battleGrowthPort(dataPort, growthProgress()));
     }
 
     /**
      * 道具图鉴页：由主菜单「道具图鉴」按钮进入。
      *
-     * <p>全量列出商店商品目录（16 件消耗品 + 77 件装备），标注已拥有 / 未拥有与穿戴者；
+     * <p>全量列出商店商品目录（17 件消耗品 + 77 件装备），标注已拥有 / 未拥有与穿戴者；
      * 已拥有的装备可在本页直接穿戴 / 脱下（写的就是玩家装备库，与详情页共用同一模型方法），
      * 因此这里不做二次校验，也不与金币 / 存档交互。「返回」重建主菜单以同步队伍变化。</p>
      */
@@ -527,6 +537,10 @@ public class MainController {
                 resolveRogueEquipmentReward();
                 finishNodeStep(true);
             }
+            case CANDY -> {
+                resolveRogueCandySupply();
+                finishNodeStep(true);
+            }
             default -> showRogueFloorScene();
         }
     }
@@ -545,6 +559,20 @@ public class MainController {
         }
         infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription()
                 + "\n可在主菜单点击精灵名，在详情页中穿戴。");
+    }
+
+    /** CANDY 事件：按所在段发放一批神奇糖果（8 / 10 / 12 / 14 / 16，逐段递增）。 */
+    private void resolveRogueCandySupply() {
+        Item candy = GameData.instance().item(RouteConfig.CANDY_ITEM_ID);
+        int count = RouteConfig.candyCountForSegment(session.getSegment());
+        if (candy == null) {
+            infoAlert("糖果补给", "道具数据缺失，本次补给落空。");
+            return;
+        }
+        player.getBag().add(candy, count);
+        LogUtil.info("糖果补给：获得 " + candy.getName() + " x" + count);
+        infoAlert("糖果补给", "获得神奇糖果 x" + count + "：喂给精灵可直接提升 1 级。"
+                + "\n可在主菜单点击精灵名，在详情页中喂食。");
     }
 
     /** 非战斗节点：当场效果（医院治疗全队）结算后走节点收尾。 */

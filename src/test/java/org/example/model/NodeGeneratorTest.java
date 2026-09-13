@@ -85,16 +85,33 @@ class NodeGeneratorTest {
         assertEquals(3, miss.size(), "概率落空时只剩 3 个常驻节点");
     }
 
-    /** 特殊事件槽位只有一个：火箭队与装备补给都落空时，本段不再追加任何节点。 */
+    /** 特殊事件槽位只有一个：火箭队、装备补给与糖果补给都落空时，本段不再追加任何节点。 */
     @Test
     void 火箭队与装备补给都落空时本段没有特殊事件节点() {
-        // 段 1 的判定顺序：野外精灵免单 → 商店 → 火箭队 → 装备补给
+        // 段 1 的判定顺序：野外精灵免单 → 商店 → 火箭队 → 装备补给 → 糖果补给
         List<Option> options = new NodeGenerator(scripted(99, 0, 99, 99)).generateSegment(1).getRouteOptions();
 
         assertTrue(hasType(options, OptionType.SHOP), "商店判定命中");
         assertFalse(hasType(options, OptionType.ROCKET), "火箭队判定落空");
         assertFalse(hasType(options, OptionType.REWARD), "装备补给判定落空");
+        assertFalse(hasType(options, OptionType.CANDY), "糖果补给判定落空");
         assertEquals(4, options.size(), "槽位落空时该段只剩 3 个常驻节点 + 商店");
+    }
+
+    /** 糖果补给排在装备补给之后：装备补给命中时轮不到糖果，装备落空时糖果才有机会。 */
+    @Test
+    void 糖果补给在装备补给之后判定() {
+        // 段 1：野外免单落空 → 商店命中 → 火箭队落空 → 装备补给命中 → 糖果判定不再发生
+        List<Option> equipFirst = new NodeGenerator(scripted(99, 0, 99, 0))
+                .generateSegment(1).getRouteOptions();
+        assertTrue(hasType(equipFirst, OptionType.REWARD), "装备补给命中时占用槽位");
+        assertFalse(hasType(equipFirst, OptionType.CANDY), "槽位已被占用，不应再有糖果补给");
+
+        // 段 1：野外免单落空 → 商店命中 → 火箭队落空 → 装备补给落空 → 糖果补给命中（沿用脚本末值 99 之外的显式值）
+        List<Option> candy = new NodeGenerator(scripted(99, 0, 99, 99, 0))
+                .generateSegment(1).getRouteOptions();
+        assertFalse(hasType(candy, OptionType.REWARD), "装备补给落空");
+        assertTrue(hasType(candy, OptionType.CANDY), "装备补给落空后糖果补给应能命中");
     }
 
     @Test
