@@ -25,6 +25,7 @@ import org.example.model.OptionType;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.RouteConfig;
+import org.example.model.RoutePhase;
 import org.example.model.RunData;
 import org.example.model.Trainer;
 import org.example.save.SaveFormatException;
@@ -38,7 +39,6 @@ import org.example.view.CustomBattleView;
 import org.example.view.ItemDexView;
 import org.example.view.MainView;
 import org.example.view.PokedexView;
-import org.example.view.PokemonDetailView;
 import org.example.view.RogueFloorView;
 import org.example.view.SaveSlotView;
 import org.example.view.ShopView;
@@ -134,8 +134,7 @@ public class MainController {
 
     /**
      * 道具图鉴页·启动页入口：此时尚未读档，没有 {@link Player}，因此传 {@code null} 让图鉴
-     * 按「全部未拥有」只读展示（无穿戴 / 脱下操作，仅看效果与售价）。「返回」回到启动页；
-     * 主菜单内的道具图鉴入口（{@link #showItemDex()}）仍带玩家数据，可直接穿脱。
+     * 按「全部未拥有」只读展示（无穿戴 / 脱下操作，仅看效果与售价）。「返回」回到启动页。
      */
     public void showItemDexFromStart() {
         stage.setScene(new ItemDexView(null, null, this::showStartScreen, "返回主界面").createScene());
@@ -227,6 +226,11 @@ public class MainController {
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.NEW_GAME, saveManager.store().statuses(),
                 null,
                 slot -> confirmNewGame(slot, trainerName, starter),
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        chooseSlotForNewGame(trainerName, starter); // 删除后重进选档页（空档立即可用）
+                    }
+                },
                 this::showStartScreen).createScene());
     }
 
@@ -258,6 +262,11 @@ public class MainController {
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.CONTINUE, saveManager.store().statuses(),
                 activeSlot,
                 this::loadFromSlot,
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        showContinueSelection();
+                    }
+                },
                 this::showStartScreen).createScene());
     }
 
@@ -326,49 +335,22 @@ public class MainController {
             }
 
             @Override
-            public void onShowPokemonDetail(int index) {
-                showPokemonDetail(index);
-            }
-
-            @Override
-            public void onShowItemDex() {
-                showItemDex();
-            }
-
-            @Override
             public void onBackToStart() {
                 showStartScreen();
             }
         }, session.mapBackgroundPath(), session.getSegment(),
                 session.getRogueRunData().isNotStarted() ? -1 : session.getRogueRunData().getGold(),
-                activeSlot == null ? null : activeSlot.displayName());
+                activeSlot == null ? null : activeSlot.displayName(), newItemUsageService());
         stage.setScene(view.createScene());
     }
 
-    /** 精灵详情页：由主菜单点击精灵名进入；左列表切换精灵、右侧属性/技能/装备、道具使用；「返回」重建主菜单。 */
-    public void showPokemonDetail(int initialIndex) {
-        stage.setScene(new PokemonDetailView(player, initialIndex, session.mapBackgroundPath(),
-                this::showMainMenu, newItemUsageService()).createScene());
-    }
-
     /**
-     * 局外道具使用服务：与战斗共用同一份成长端口，因此详情页吃神奇糖果升级时
+     * 局外道具使用服务：与战斗共用同一份成长端口，因此主菜单中栏吃神奇糖果升级时
      * 同样会到级学招与进化（口径见 {@link ItemUsageService}）。
      */
     private ItemUsageService newItemUsageService() {
         BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
         return new ItemUsageService(PokemonBattleAdapter.battleGrowthPort(dataPort, growthProgress()));
-    }
-
-    /**
-     * 道具图鉴页：由主菜单「道具图鉴」按钮进入。
-     *
-     * <p>全量列出商店商品目录（17 件消耗品 + 77 件装备），标注已拥有 / 未拥有与穿戴者；
-     * 已拥有的装备可在本页直接穿戴 / 脱下（写的就是玩家装备库，与详情页共用同一模型方法），
-     * 因此这里不做二次校验，也不与金币 / 存档交互。「返回」重建主菜单以同步队伍变化。</p>
-     */
-    public void showItemDex() {
-        stage.setScene(new ItemDexView(player, session.mapBackgroundPath(), this::showMainMenu).createScene());
     }
 
     /**
@@ -409,6 +391,11 @@ public class MainController {
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.CONTINUE, saveManager.store().statuses(),
                 activeSlot,
                 this::loadFromSlot,
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        showLoadSelection();
+                    }
+                },
                 this::showMainMenu).createScene());
     }
 
@@ -454,6 +441,11 @@ public class MainController {
                     infoAlert("保存成功", "进度已保存到 " + slot.displayName()
                             + "，之后的自动存档也会记录到这个档位。");
                 },
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        chooseSlotToSave(); // 删除后重进选档页（空档可写；删的若是当前档也已置空）
+                    }
+                },
                 this::showMainMenu).createScene());
     }
 
@@ -487,6 +479,38 @@ public class MainController {
         ButtonType cancel = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(overwrite, cancel);
         return alert.showAndWait().filter(overwrite::equals).isPresent();
+    }
+
+    /**
+     * 删除指定档位的存档（二次确认后执行）。
+     *
+     * <p>删除的若正是当前档位，会把 {@link #activeSlot} 置空 —— 之后的自动存档自然跳过，
+     * 避免悄悄把刚删掉的档位又写回去；玩家可经由「保存游戏」重新选择档位。</p>
+     *
+     * @return 是否真的执行了删除（取消或失败时为 {@code false}）
+     */
+    private boolean confirmAndDelete(SaveSlot slot) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("删除存档");
+        alert.setHeaderText(null);
+        alert.setContentText("删除会永久清除 " + slot.displayName() + " 的进度与图鉴成长，确定继续吗？");
+        ButtonType delete = new ButtonType("删除", ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancel = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(delete, cancel);
+        if (alert.showAndWait().filter(delete::equals).isEmpty()) {
+            return false;
+        }
+        try {
+            saveManager.store().delete(slot);
+        } catch (RuntimeException ex) {
+            LogUtil.info("[MainController] 删除存档失败：" + slot + "（" + ex.getMessage() + "）");
+            infoAlert("删除失败", "删除 " + slot.displayName() + " 时出错：\n" + ex.getMessage());
+            return false;
+        }
+        if (slot == activeSlot) {
+            activeSlot = null; // 刚删的就是当前档：置空后自动存档跳过，避免又写回来
+        }
+        return true;
     }
 
     // ------------------------------------------------------------------
@@ -572,8 +596,7 @@ public class MainController {
             infoAlert("装备补给", "你已经拥有【" + reward.getName() + "】了，补给落空。");
             return;
         }
-        infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription()
-                + "\n可在主菜单点击精灵名，在详情页中穿戴。");
+        infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription());
     }
 
     /** CANDY 事件：按所在段发放一批神奇糖果（8 / 10 / 12 / 14 / 16，逐段递增）。 */
@@ -669,14 +692,22 @@ public class MainController {
         afterRogueStep();
     }
 
-    /** 一次节点（含战斗）结束后的统一推进：已结束→结算；必然节点→开战；否则落盘并重绘。 */
+    /**
+     * 一次节点（含战斗）结束后的统一推进：已结束→结算；连打衔接→直接续战；
+     * 行动点耗尽/无节点可走→落盘并显示道馆战准备界面，由玩家确认后再开战。
+     */
     private void afterRogueStep() {
         if (session.isRogueRunFinished()) {
             finishRogueRun();
             return;
         }
-        if (session.getRogueRunData().getPhase().isMandatoryBattle()) {
-            startMandatoryBattle(session.getRogueRunData().getPhase().toOptionType()); // 行动点耗尽：必然节点
+        RoutePhase phase = session.getRogueRunData().getPhase();
+        // 四天王 / 冠军 / 首领侵略战：上一战胜利后直接续战（连打节奏不变）。
+        // 道馆战例外（行动点耗尽触发，phase=GYM）：不直接开战，先落盘并显示必然节点准备界面——
+        // 玩家可查看道馆信息、退回主菜单存档 / 调整队伍后再点「开始挑战」进入战斗
+        // （与失败一次后的重试界面同一形态）。
+        if (phase.isMandatoryBattle() && phase != RoutePhase.GYM) {
+            startMandatoryBattle(phase.toOptionType());
             return;
         }
         autoSave(); // 每推进一步就落盘：存档点即「未作战」的节点之间
@@ -794,8 +825,6 @@ public class MainController {
         }
         player.addEquipment(equipment);
         LogUtil.info("商店购买装备: " + equipment.getName() + "，花费 " + entry.price() + " 金币");
-        LogUtil.info("获得装备【" + equipment.getName() + "】：" + equipment.getDescription()
-                + "\n可在主菜单点击精灵名，在详情页中穿戴。");
         currentShopStock = currentShopStock.withoutEntry(entry.itemId());
         refreshShopScene();
     }
@@ -961,7 +990,7 @@ public class MainController {
         }
         try {
             BattleService engine = newWildBattle(player, wild.get());
-            enterBattle(engine, rogueBattleFinished(engine, OptionType.WILD));
+            enterBattle(engine, rogueBattleFinished(engine, OptionType.WILD), OptionType.WILD);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -991,7 +1020,7 @@ public class MainController {
         }
         try {
             BattleService engine = newTrainerBattle(player, trainer);
-            enterBattle(engine, rogueBattleFinished(engine, OptionType.TRAINER));
+            enterBattle(engine, rogueBattleFinished(engine, OptionType.TRAINER), OptionType.TRAINER);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -1047,7 +1076,7 @@ public class MainController {
         }
         try {
             BattleService engine = newWildBattle(player, legendary.get());
-            enterBattle(engine, rogueBattleFinished(engine, OptionType.LEGENDARY));
+            enterBattle(engine, rogueBattleFinished(engine, OptionType.LEGENDARY), OptionType.LEGENDARY);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -1064,7 +1093,7 @@ public class MainController {
         }
         try {
             BattleService engine = newTrainerBattle(player, opponent);
-            enterBattle(engine, rogueBattleFinished(engine, type));
+            enterBattle(engine, rogueBattleFinished(engine, type), type);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -1108,7 +1137,7 @@ public class MainController {
         }
         try {
             BattleService engine = newTrainerBattle(player, opponent);
-            enterBattle(engine, rogueBattleFinished(engine, type));
+            enterBattle(engine, rogueBattleFinished(engine, type), type);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -1149,13 +1178,16 @@ public class MainController {
     /**
      * 进入战斗场景：战斗期间 {@link #battleInProgress} 为真（存档被拒），
      * 战斗结束后回调前先复位，保证「未作战时才可存档」这一约束成立。
+     *
+     * @param type 本次战斗的节点类型，用于按类型取战斗背景（道馆随机不重复 / 路人 / Boss / 其余默认野外图，
+     *             见 {@link GameSession#battleBackgroundFor(OptionType)}）
      */
-    private void enterBattle(BattleService engine, Runnable onFinished) {
+    private void enterBattle(BattleService engine, Runnable onFinished, OptionType type) {
         battleInProgress = true;
         stage.setScene(new BattleController(engine, () -> {
             battleInProgress = false;
             onFinished.run();
-        }, session.getSegment()).createScene());
+        }, session.getSegment(), session.battleBackgroundFor(type)).createScene());
     }
 
     /** 绑定窗口事件：关闭确认与生命周期日志。 */
