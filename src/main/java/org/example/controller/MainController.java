@@ -90,7 +90,7 @@ public class MainController {
      *
      * <p>成长端口由外部成长模块实现（经验 / 升级 / 学招 / 进化判定 + 图鉴进度），
      * 战斗模块自身不承担成长规则。所有经本类发起的战斗均按当前段号附加
-     * 1 + 0.4×段数 的经验倍率（见 {@link #rogueGrowthPort}）。</p>
+     * 1 + 0.3×段数 的经验倍率（见 {@link #rogueGrowthPort}）。</p>
      */
     private BattleService newWildBattle(Player player, Pokemon wild) {
         BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
@@ -104,8 +104,8 @@ public class MainController {
     }
 
     /**
-     * 组装肉鸽战斗的成长端口：按当前段号给所有经验获取附加 1 + 0.4×段数 倍率。
-     * 独立模式（未开轮，session 为 null）时按段 1 口径（1.4 倍）处理。
+     * 组装肉鸽战斗的成长端口：按当前段号给所有经验获取附加 1 + 0.3×段数 倍率。
+     * 独立模式（未开轮，session 为 null）时按段 1 口径（1.3 倍）处理。
      */
     private BattleGrowthPort rogueGrowthPort(BattleDataPort dataPort) {
         GrowthService growth = new GrowthService(dataPort, growthProgress());
@@ -625,7 +625,7 @@ public class MainController {
     }
 
     /**
-     * 节点收尾：自回血 → 刷新本段路线节点 → 可能触发道馆战 → 统一推进。
+     * 节点收尾：自回血 → 刷新本段路线节点 → 可能触发必然节点（末段直接进入四天王连打）→ 统一推进。
      * 战斗节点由战后回调调用。
      *
      * @param refreshRoute 是否刷新本段节点。走完一个<b>路线节点</b>后为 {@code true}；
@@ -1029,9 +1029,9 @@ public class MainController {
 
     /**
      * 必然节点战斗（道馆战 / 四天王连打 / 冠军战 / 首领侵略战）：不消耗行动点。
-     * 1~4 段道馆主为固定配置（2/3/3/4 只、等级 11/17/24/32，精确无浮动）；四天王固定 4 只、
-     * 队伍最高等级 ±2 浮动；冠军固定 5 只、队伍最高等级 +3 ±1；首领侵略战固定 6 只、
-     * 队伍最高等级 +1 ±1；第 5 段道馆主锚定队伍最高等级 ±2 浮动。道馆与四天王战败可再挑战一次，
+     * 1~4 段道馆主为固定配置（2/3/3/4 只、等级 11/17/24/32，精确无浮动）；末段行动点耗尽后
+     * 直接进入四天王连打（固定 4 只、队伍最高等级 ±2 浮动）；冠军固定 5 只、队伍最高等级 +3 ±1；
+     * 首领侵略战固定 6 只、队伍最高等级 +1 ±1。道馆与四天王战败可再挑战一次，
      * 冠军战败本轮结束。
      */
     private void startMandatoryBattle(OptionType type) {

@@ -256,6 +256,22 @@ class RogueTurnManagerTest {
     }
 
     @Test
+    void testAdvanceAfterNode_atLastSegmentGoesStraightToEliteFour() {
+        RogueTurnManager manager = newManager();
+        manager.enterSegment(RouteConfig.TOTAL_SEGMENTS);
+        manager.getRunData().getAvailableOptions().clear();
+        manager.getRunData().setAp(0);
+
+        assertTrue(manager.advanceAfterNode(), "末段行动点耗尽应触发必然节点");
+
+        RunData data = manager.getRunData();
+        assertEquals(RoutePhase.ELITE_FOUR, data.getPhase(), "末段不再有道馆战，直接进入四天王连打");
+        assertNotNull(data.getMandatoryOption(), "应生成四天王连打节点");
+        assertEquals(OptionType.ELITE_FOUR, data.getMandatoryOption().getType());
+        assertEquals(0, data.getMandatoryOption().getCost(), "必然节点不占用行动点");
+    }
+
+    @Test
     void testAdvanceAfterNode_keepsExploringWhileResidentNodeRemainsEnterable() {
         RogueTurnManager manager = newManager();
         Option hospital = addOption(manager, OptionType.HOSPITAL, 1);

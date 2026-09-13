@@ -150,6 +150,13 @@ class NodeGeneratorTest {
         assertEquals(OptionType.CHAMPION,
                 generator.createMandatoryOption(RoutePhase.CHAMPION, 5).getType());
         assertEquals(0, generator.createMandatoryOption(RoutePhase.CHAMPION, 5).getCost());
+
+        assertEquals(OptionType.ELITE_FOUR,
+                generator.generateSegment(RouteConfig.TOTAL_SEGMENTS).getMandatoryOption().getType(),
+                "末段预告的必然节点应为四天王连打（无道馆战）");
+        assertEquals(OptionType.GYM,
+                generator.generateSegment(1).getMandatoryOption().getType(),
+                "常规段预告的必然节点仍为道馆战");
     }
 
     @Test

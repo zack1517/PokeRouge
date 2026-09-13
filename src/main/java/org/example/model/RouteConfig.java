@@ -16,7 +16,7 @@ public final class RouteConfig {
     // 段与行动点（§4.1）
     // ------------------------------------------------------------------
 
-    /** 一条路线的总段数：走完第 N 段后依次进入四天王连打与冠军战（§4.2 必然节点）。 */
+    /** 一条路线的总段数：末段行动点耗尽后直接进入四天王连打，随后是冠军战（§4.2 必然节点）。 */
     public static final int TOTAL_SEGMENTS = 5;
 
     /** 第 1 段的行动点上限。 */
@@ -207,7 +207,7 @@ public final class RouteConfig {
         };
     }
 
-    /** 道馆战相对队伍最高等级的等级加成（仅第 5 段及以后的道馆主使用；1~4 段走 {@link #gymFixedLevel}）。 */
+    /** 道馆战相对队伍最高等级的等级加成（末段已无道馆战，仅旧存档停留在末段道馆阶段时使用；1~4 段走 {@link #gymFixedLevel}）。 */
     public static int gymLevelBonus(int segment) {
         return 2 + Math.max(1, segment) * 2;
     }
