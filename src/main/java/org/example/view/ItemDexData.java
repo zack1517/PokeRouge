@@ -123,7 +123,7 @@ public final class ItemDexData {
                     : "解除" + item.curedStatuses().stream()
                             .map(StatusCondition::getDisplayName)
                             .collect(Collectors.joining("、"));
-            case LEVEL_UP -> "提升精灵 " + number(item.getEffect()) + " 级（可在主菜单选中糖果后喂食）";
+            case LEVEL_UP -> "提升精灵 " + number(item.getEffect()) + " 级（可在主菜单中栏喂食）";
         };
     }
 

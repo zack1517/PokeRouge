@@ -108,6 +108,15 @@ public class MainController {
         return session != null ? session.getGrowthProgress() : GrowthProgress.instance();
     }
 
+    /**
+     * 局外道具使用服务：与战斗共用同一份成长端口，因此主菜单中栏吃神奇糖果升级
+     * 同样会到级学招与进化（口径见 {@link ItemUsageService}）。
+     */
+    private ItemUsageService newItemUsageService() {
+        BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
+        return new ItemUsageService(PokemonBattleAdapter.battleGrowthPort(dataPort, growthProgress()));
+    }
+
     /** 对手等级锚点：队伍中宝可梦的最高等级（空队伍兑底 1）。 */
     private int highestPartyLevel() {
         return player.getParty().stream().mapToInt(Pokemon::getLevel).max().orElse(1);
@@ -330,44 +339,14 @@ public class MainController {
             }
 
             @Override
-            public void onUseItem(Item item, int pokemonIndex) {
-                useItem(item, pokemonIndex);
-            }
-
-            @Override
             public void onBackToStart() {
                 showStartScreen();
             }
         }, session.mapBackgroundPath(), session.getSegment(),
                 session.getRogueRunData().isNotStarted() ? -1 : session.getRogueRunData().getGold(),
-                activeSlot == null ? null : activeSlot.displayName());
+                activeSlot == null ? null : activeSlot.displayName(),
+                newItemUsageService());
         stage.setScene(view.createScene());
-    }
-
-    /**
-     * 局外道具使用服务：与战斗共用同一份成长端口，因此主菜单里吃神奇糖果升级时
-     * 同样会到级学招与进化（口径见 {@link ItemUsageService}）。
-     */
-    private ItemUsageService newItemUsageService() {
-        BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
-        return new ItemUsageService(PokemonBattleAdapter.battleGrowthPort(dataPort, growthProgress()));
-    }
-
-    /**
-     * 主菜单道具使用：来自中栏道具信息里的「使用」按钮（伤药 / 状态药 / 神奇糖果）。
-     *
-     * <p>结算后弹窗反馈（成功文案 / 拒绝原因），并重建主菜单以同步 HP / EXP / 到级学招进化
-     * 与背包数量。</p>
-     */
-    private void useItem(Item item, int pokemonIndex) {
-        List<Pokemon> party = player.getParty();
-        if (item == null || pokemonIndex < 0 || pokemonIndex >= party.size()) {
-            return;
-        }
-        ItemUsageService.Result result = newItemUsageService().use(item, player.getBag(), party.get(pokemonIndex));
-        infoAlert(result.used() ? "使用【" + item.getName() + "】" : "无法使用【" + item.getName() + "】",
-                result.message());
-        showMainMenu();
     }
 
     /**
@@ -380,6 +359,7 @@ public class MainController {
     public void showItemDex() {
         stage.setScene(new ItemDexView(player, session.mapBackgroundPath(), this::showMainMenu).createScene());
     }
+
     /**
      * 离开当前这一局、回到初始主界面（启动页）：先落盘再释放会话，玩家可在启动页
      * 选择「开始游戏」（新游戏）或「继续游戏」（读档）。
@@ -632,8 +612,7 @@ public class MainController {
         }
         player.getBag().add(candy, count);
         LogUtil.info("糖果补给：获得 " + candy.getName() + " x" + count);
-        infoAlert("糖果补给", "获得神奇糖果 x" + count + "：喂给精灵可直接提升 1 级。"
-                + "\n可在主菜单右侧背包选中糖果，点「使用」喂食。");
+        infoAlert("糖果补给", "获得神奇糖果 x" + count + "：喂给精灵可直接提升 1 级（主菜单中栏道具区可喂食）。");
     }
 
     /** 非战斗节点：当场效果（医院治疗全队）结算后走节点收尾。 */
@@ -706,7 +685,7 @@ public class MainController {
     /** 本次商店的商品库存；为 null 表示当前不在商店。 */
     private ShopStock currentShopStock;
 
-    /** 本次商店的界面实例：购买后就地刷新它（不换 Scene），滚动位置与悬停状态才不会被重置。 */
+    /** 本次商店的界面实例：购买后原地刷新它（不换 Scene），滚动位置才不会被重置。 */
     private ShopView currentShopView;
 
     /** 打开商店：按当前段生成库存（装备池排除已拥有的装备）。 */
@@ -792,8 +771,7 @@ public class MainController {
         }
         player.addEquipment(equipment);
         LogUtil.info("商店购买装备: " + equipment.getName() + "，花费 " + entry.price() + " 金币");
-        LogUtil.info("获得装备【" + equipment.getName() + "】：" + equipment.getDescription()
-                + "\n可在主菜单中栏悬停查看精灵时穿戴（装备库随中栏一同展示）。");
+        LogUtil.info("获得装备【" + equipment.getName() + "】：" + equipment.getDescription());
         currentShopStock = currentShopStock.withoutEntry(entry.itemId());
         refreshShopScene();
     }

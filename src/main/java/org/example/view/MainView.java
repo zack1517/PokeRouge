@@ -8,11 +8,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import javafx.animation.Animation;
 import javafx.animation.FadeTransition;
 import javafx.animation.Interpolator;
+import javafx.animation.KeyFrame;
 import javafx.animation.ParallelTransition;
 import javafx.animation.PauseTransition;
 import javafx.animation.SequentialTransition;
+import javafx.animation.Timeline;
 import javafx.animation.TranslateTransition;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -46,6 +49,7 @@ import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.Stats;
 import org.example.model.StatusCondition;
+import org.example.service.ItemUsageService;
 import org.example.util.ImageBackgrounds;
 import org.example.util.SpriteLoader;
 import org.example.util.UiScale;
@@ -63,14 +67,16 @@ import org.example.util.UiScale;
  *     左/右栏按钮上悬停切换内容（精灵：插画/名称/属性/等级与状态同行/图鉴描述/性格/HP/EXP/
  *     六项能力值/出战技能与技能库/装备与装备库，一次展示完整信息；技能库可「换上」，满 4 槽时
  *     在出战技能行「换下」完成互换；装备可「穿戴/换过来/脱下」，操作即时生效并局部刷新中栏；
- *     道具：插图/数量/功能表述，对战外可用道具（伤药/状态药/神奇糖果）附「使用」按钮，作用于
- *     最近查看的精灵——由控制器结算后重建主菜单同步）。中栏保持最后一次悬停内容，方便移开光标阅读。</li>
+ *     道具：插图/数量/功能表述，可在局外使用的道具附「使用」按钮——点击进入选择目标模式，
+ *     左侧适用精灵格金框闪光，点击目标即结算，结果在道具详情框内就地展示）。中栏保持最后一次
+ *     悬停内容，方便移开光标阅读。</li>
  *     <li><b>下</b>：进入层内事件 / 道具图鉴 / 保存游戏 / 读取存档四个按钮居中排列（「返回主界面」已上移至顶部）。</li>
  * </ul>
  *
  * <p>背景由控制器按“段”决定后传入（同段多张图固定，换段才变），本类不做任何背景状态；
  * 每次进入主菜单都由控制器重新构建（队伍可能在对战中变化），因此本类不做整页状态刷新；
- * 中栏内的技能换装与装备穿脱直接作用于模型，操作后仅重建中栏内容即时反映（与原详情页同源逻辑）。</p>
+ * 中栏内的技能换装、装备穿脱与道具使用直接作用于模型（道具结算走 {@link ItemUsageService}，
+ * 结果提示显示在道具详情框内），操作后仅重建中栏内容即时反映，不弹窗。</p>
  *
  * <p>ⓘ 道具插图目录（{@value #ITEM_IMAGE_DIR}）只有部分道具素材，缺图回退为「首字色块」占位，
  * 待美术补齐后自动生效。</p>
@@ -97,8 +103,6 @@ public class MainView {
         /** 打开道具图鉴：全量道具与可携带装备一览，可直接穿戴 / 脱下装备。 */
         void onShowItemDex();
 
-        /** 使用道具（伤药 / 状态药 / 糖果）于 index 对应的队伍精灵；由控制器结算并重建主菜单。 */
-        void onUseItem(Item item, int pokemonIndex);
         /** 返回游戏启动页（第一屏；重新「开始游戏」将重新创建训练家）。 */
         void onBackToStart();
     }
@@ -116,6 +120,9 @@ public class MainView {
     private static final double ENTRANCE_FADE_MS = 620;
     private static final double ENTRANCE_DELAY_BASE_MS = 120;
     private static final double ENTRANCE_DELAY_STEP_MS = 95;
+
+    /** 道具选择模式的目标闪光半周期（毫秒）：金框「亮 → 常 → 亮」的脉冲节奏。 */
+    private static final double GLOW_PULSE_MS = 460;
 
     /** 中栏进度条宽度（设计像素；适配 3:3:2 的中栏宽度）。 */
     private static final double BAR_WIDTH = 170;
@@ -135,6 +142,7 @@ public class MainView {
     private final int segment; // 当前地图段号（仅用于展示）
     private final int gold; // 金币余额（负数表示本轮远征尚未开始，不展示）
     private final String slotName; // 当前存档位名（null = 尚未选档，仅用于展示）
+    private final ItemUsageService itemUsage; // 局外道具使用服务（null = 不提供中栏「道具」使用）
 
     /** 入场动画节点：左栏六格与右栏背包行各自从上到下错峰（每次重建场景时清空重收集）。 */
     private final List<Node> partyEntrance = new ArrayList<>();
@@ -152,6 +160,28 @@ public class MainView {
     /** 待换上的技能（非 null 时处于「选择要换下的槽位」状态，出战技能行右侧临时显示「换下」）。 */
     private Move pendingSwap;
 
+    /** 右栏背包行容器（道具使用后局部重建以同步数量，不重播入场动画）。 */
+    private VBox bagList;
+
+    /** 最近一次道具使用结果（显示在道具详情框内；按 {@link #itemNoticeId} 归属对应道具）。 */
+    private String itemNotice;
+
+    /** {@link #itemNotice} 归属的道具 id（null = 无展示中的结果）。 */
+    private String itemNoticeId;
+
+    /** 待使用的道具（非 null 时处于「选择目标」模式：左侧适用精灵格闪光，点击即结算）。 */
+    private ItemStack pendingUseItem;
+
+    /** 左栏精灵位引用（选择模式的目标闪光与点击结算需要；每次重建场景时重新收集）。 */
+    private final List<PartySlotRef> partySlots = new ArrayList<>();
+
+    /** 目标闪光脉冲（选择模式期间循环；退出模式或切换场景前全部停止）。 */
+    private final List<Timeline> targetGlowPulses = new ArrayList<>();
+
+    /** 左栏精灵位引用：格子按钮 + 对应精灵 + 是否首发（恢复常态样式用）。 */
+    private record PartySlotRef(Button slot, Pokemon pokemon, boolean active) {
+    }
+
     public MainView(Player player, Actions actions, String mapBackground, int segment) {
         this(player, actions, mapBackground, segment, -1, null);
     }
@@ -163,17 +193,24 @@ public class MainView {
 
     public MainView(Player player, Actions actions, String mapBackground, int segment,
                     int gold, String slotName) {
+        this(player, actions, mapBackground, segment, gold, slotName, null);
+    }
+
+    public MainView(Player player, Actions actions, String mapBackground, int segment,
+                    int gold, String slotName, ItemUsageService itemUsage) {
         this.player = player;
         this.actions = actions;
         this.mapBackground = mapBackground;
         this.segment = segment;
         this.gold = gold;
         this.slotName = slotName;
+        this.itemUsage = itemUsage;
     }
 
     public Scene createScene() {
         partyEntrance.clear();
         bagEntrance.clear();
+        partySlots.clear(); // 重新收集队伍位引用（道具选择模式随旧交互状态一并废弃）
         BorderPane root = new BorderPane();
         ImageBackgrounds.apply(root, mapBackground);
         root.setPadding(new Insets(10, 12, 10, 12));
@@ -225,7 +262,7 @@ public class MainView {
         back.setStyle(backPillStyle(false));
         back.setOnMouseEntered(e -> back.setStyle(backPillStyle(true)));
         back.setOnMouseExited(e -> back.setStyle(backPillStyle(false)));
-        back.setOnAction(e -> actions.onExit());
+        back.setOnAction(e -> toMenu(actions::onExit));
 
         Label title = new Label("宝可梦对战 · 训练家 " + player.getName());
         title.getStyleClass().add("menu-title");
@@ -369,10 +406,25 @@ public class MainView {
         slot.setMinHeight(Region.USE_PREF_SIZE);
         slot.setMaxHeight(Double.MAX_VALUE); // 允许随左栏列高拉伸（六格总高与中栏信息框一致）
         slot.setOnMouseEntered(e -> {
+            if (pendingUseItem != null) {
+                return; // 选择目标模式：中栏保持使用指引，样式由闪光脉冲接管
+            }
             slot.setStyle(slotStyle(isActive, true));
             showPokemonDetail(pokemon);
         });
-        slot.setOnMouseExited(e -> slot.setStyle(slotStyle(isActive, false)));
+        slot.setOnMouseExited(e -> {
+            if (pendingUseItem == null) {
+                slot.setStyle(slotStyle(isActive, false));
+            }
+        });
+        // 点击格子：选择目标模式中对目标使用待用道具；普通模式不跳转页面（无操作）
+        slot.setOnAction(e -> {
+            e.consume();
+            if (pendingUseItem != null && canUseOn(pendingUseItem.getItem(), pokemon)) {
+                useItemOn(pokemon);
+            }
+        });
+        partySlots.add(new PartySlotRef(slot, pokemon, isActive));
 
         // 第二行右侧：非首发格为蓝色「设为首发」按钮；首发格为灰色「已设首发」标识
         Region gap = new Region();
@@ -391,10 +443,20 @@ public class MainView {
         fire.setDisable(pokemon.isFainted());
         fire.setOnAction(e -> {
             // 防御性消费：避免 ActionEvent 冒泡到外层格子按钮引发未知动作
-            actions.onSetActive(index);
             e.consume();
+            if (pendingUseItem != null) {
+                // 选择目标模式：按钮区域同样视作目标选择（可用则直接结算）
+                if (canUseOn(pendingUseItem.getItem(), pokemon)) {
+                    useItemOn(pokemon);
+                }
+                return;
+            }
+            actions.onSetActive(index);
         });
         fire.setOnMouseEntered(e -> {
+            if (pendingUseItem != null) {
+                return; // 选择目标模式：冻结悬停联动与样式，避免打断闪光脉冲
+            }
             fire.setStyle(pillStyle(true));
             slot.setStyle(slotStyle(false, true));
             showPokemonDetail(pokemon);
@@ -430,6 +492,16 @@ public class MainView {
                 + (hover ? "#2a75bb" : "#123c63") + ", " + goldGradient(hover) + ";"
                 + " -fx-background-insets: 0, 1.5, 2.5; -fx-background-radius: 999, 997.5, 996.5;"
                 + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 7, 0.05, 0, 2);";
+    }
+
+    /** 「使用」主操作按钮：pillStyle 加大号（12px 字号、较宽内边距、适中的光晕），突出道具详情框内的主动作。 */
+    private static String useCtaStyle(boolean hover) {
+        return YH + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #123c63; -fx-padding: 6 24;"
+                + " -fx-cursor: hand; -fx-focus-color: transparent; -fx-faint-focus-color: transparent;"
+                + " -fx-background-color: rgba(255, 255, 255, " + (hover ? "1.0" : "0.96") + "), "
+                + (hover ? "#2a75bb" : "#123c63") + ", " + goldGradient(hover) + ";"
+                + " -fx-background-insets: 0, 2, 3.5; -fx-background-radius: 999, 997, 995.5;"
+                + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, " + (hover ? "0.48" : "0.38") + "), 8, 0.06, 0, 2.5);";
     }
 
     /** 黄→金渐变芯（悬停亮一档）：启动页 / 事件页胶囊族共用色值。 */
@@ -469,13 +541,21 @@ public class MainView {
 
     /** 队伍位：内层事件页事件卡同族（#1565C0 深蓝描边环 + 白底圆角卡）；悬停环加深一档；首发格金色环。 */
     private static String slotStyle(boolean active, boolean hover) {
-        String ring = active ? "#DAA520" : (hover ? "#0D47A1" : "#1565C0");
-        String fill = hover ? "rgba(255, 255, 255, 0.98)" : "rgba(255, 255, 255, 0.92)";
+        return slotStyle(active, hover, false);
+    }
+
+    /** 队伍位样式（含道具选择模式闪光态）：{@code glow} = true 时亮金环 + 金色光晕（脉冲的半周期）。 */
+    private static String slotStyle(boolean active, boolean hover, boolean glow) {
+        String ring = glow ? "#FFCB05" : (active ? "#DAA520" : (hover ? "#0D47A1" : "#1565C0"));
+        String fill = glow ? "rgba(255, 251, 224, 0.98)"
+                : (hover ? "rgba(255, 255, 255, 0.98)" : "rgba(255, 255, 255, 0.92)");
+        String shadow = glow ? "rgba(240, 176, 0, 0.85), 16, 0.45, 0, 0"
+                : "rgba(21, 101, 192, 0.18), 12, 0, 0, 4";
         return YH + "-fx-font-size: 11px; -fx-text-fill: #222; -fx-cursor: hand;"
                 + " -fx-background-color: " + ring + ", " + fill + ";"
                 + " -fx-background-insets: 0, 1.5; -fx-background-radius: 12, 10.5;"
                 + " -fx-padding: 3 8; -fx-alignment: center-left;"
-                + " -fx-effect: dropshadow(gaussian, rgba(21, 101, 192, 0.18), 12, 0, 0, 4);";
+                + " -fx-effect: dropshadow(gaussian, " + shadow + ");";
     }
 
     /** 空队伍位：灰底虚线框占位，不响应悬停与点击。 */
@@ -504,8 +584,17 @@ public class MainView {
         scroll.getStyleClass().add("detail-pane");
         scroll.setFitToWidth(true);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scroll.setStyle("-fx-background-color: #123c63, rgba(255, 255, 255, 0.92);"
-                + " -fx-background-insets: 0, 1.5; -fx-background-radius: 14, 12.5;"
+        // 照片铺面卡片（2026-09-13）：信息卡背景改用素材照片（/images/ui/bg_info_main.png，816x1092，圆角透明角，
+        // 由 临时/03-素材与图片处理/gen-info-bg.ps1 从 bg_info.png 按卡面比例 cover 裁切生成）；描边环由 -fx-border 绘制
+        // （background-image 与 fills 的 insets 分派各自从序列头取值，故统一 insets 0；border 总叠在背景之上）
+        scroll.setStyle("-fx-background-color: #123c63;"
+                + " -fx-background-image: url(\"/images/ui/bg_info_main.png\");"
+                + " -fx-background-size: 100% 100%;"
+                + " -fx-background-position: center center;"
+                + " -fx-background-repeat: no-repeat;"
+                + " -fx-background-insets: 0;"
+                + " -fx-background-radius: 14;"
+                + " -fx-border-color: #123c63; -fx-border-width: 1.5; -fx-border-radius: 14;"
                 + " -fx-background: transparent;"
                 + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.45), 10, 0.08, 0, 3);");
         scroll.skinProperty().addListener((o, oldSkin, skin) -> {
@@ -527,7 +616,8 @@ public class MainView {
 
     /**
      * 中栏内容：精灵完整信息（插画 → 名称/属性 → 等级与状态同行 → 图鉴/性格/HP·EXP → 能力值 →
-     * 技能库 → 装备）；技能库「换上」与装备「穿戴/换过来/脱下」即时生效，操作后由本方法重建中栏。
+     * 技能库 → 装备）；技能库「换上」与装备「穿戴/换过来/脱下」即时生效，操作后由本方法重建中栏
+     * （局外道具使用入口在道具详情框，见 {@link #showItemDetail}）。
      */
     private void showPokemonDetail(Pokemon pokemon) {
         lastViewedPokemon = pokemon; // 记住最近查看对象：中栏切到道具内容后「使用」按钮仍能定位到它
@@ -847,7 +937,7 @@ public class MainView {
         return row;
     }
 
-    /** 已穿戴行的「脱下」按钮（红底，与原详情页同语义）。 */
+    /** 已穿戴行的「脱下」按钮（红底，与「换下」同语义）。 */
     private Button buildUnequipButton(Pokemon pokemon) {
         Button unequip = new Button("脱下");
         unequip.setMinWidth(Region.USE_PREF_SIZE); // 钉宽：不随行收缩
@@ -864,7 +954,7 @@ public class MainView {
 
     /**
      * 把技能库中的技能装上出战槽：有空槽直接携带；满 4 招时进入「选择要换下的槽位」状态，
-     * 出战技能行临时出现「换下」按钮，点击即与该技能互换（不弹窗；逻辑与原详情页一致）。
+     * 出战技能行临时出现「换下」按钮，点击即与该技能互换（不弹窗，与其他中栏操作一致）。
      */
     private void equipFromPool(Pokemon pokemon, Move move) {
         if (pokemon.hasMove(move)) {
@@ -890,7 +980,7 @@ public class MainView {
         showPokemonDetail(pokemon);
     }
 
-    /** 「换下」「脱下」等破坏性操作按钮样式：红胶囊、悬停变亮（沿用原详情页红色语义）。 */
+    /** 「换下」「脱下」等破坏性操作按钮样式：红胶囊、悬停变亮（沿用「换下」的红色语义）。 */
     private static String dangerPillStyle(boolean hover) {
         return YH + "-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: white; -fx-padding: 2 8;"
                 + " -fx-cursor: hand; -fx-focus-color: transparent; -fx-faint-focus-color: transparent;"
@@ -901,9 +991,12 @@ public class MainView {
                 + " -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 7, 0.05, 0, 2);";
     }
 
-    /** 中栏内容：道具简要信息（插图 → 名称×数量 → 功能表述；对战外可用道具附「使用」按钮）。 */
+    /**
+     * 中栏内容：道具简要信息（插图 → 名称×数量 → 功能表述）；可在局外使用的道具附「使用」按钮：
+     * 点击后进入选择目标模式（左侧适用精灵格闪光，点击即结算），结算结果就地展示在按钮上方。
+     */
     private void showItemDetail(ItemStack stack) {
-        // 切到道具内容：退出精灵上下文，清空待换技能状态
+        // 切到道具内容：退出精灵上下文与待换技能状态（道具选择模式由 pendingUseItem 独立维持）
         shownPokemon = null;
         pendingSwap = null;
         detailBox.getChildren().clear();
@@ -913,7 +1006,9 @@ public class MainView {
         StackPane iconBox = new StackPane(itemIcon(item.getName(), DETAIL_ICON_SIZE));
         iconBox.setMinHeight(DETAIL_ICON_SIZE);
 
-        Label title = new Label(item.getName() + " ×" + stack.getCount());
+        Label title = new Label(stack.getCount() > 0
+                ? item.getName() + " ×" + stack.getCount()
+                : item.getName() + "（已用完）");
         title.setStyle(YH + "-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #123c63;");
 
         Label description = new Label(describeItem(item));
@@ -923,51 +1018,151 @@ public class MainView {
 
         detailBox.getChildren().addAll(iconBox, title, description);
 
-        // 对战外可用道具（伤药 / 状态药 / 神奇糖果）：附「使用」按钮作用于最近查看的精灵（默认先发）
-        if (item.usableOutsideBattle() && !player.getParty().isEmpty()) {
-            Pokemon target = useTarget();
-            Label targetHint = new Label("使用对象：" + target.getName() + "（悬停左侧其他精灵可切换）");
-            targetHint.setWrapText(true);
-            targetHint.setMaxWidth(Double.MAX_VALUE);
-            targetHint.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #666;");
+        if (itemUsage == null || !item.usableOutsideBattle()) {
+            return; // 不可在局外使用（精灵球等）：纯展示
+        }
+        if (pendingUseItem == stack) {
+            // 选择目标模式：提示去左侧点闪光目标 + 「取消」按钮
+            Button cancel = new Button("取消");
+            cancel.setStyle(pillStyle(false));
+            cancel.setOnMouseEntered(e -> cancel.setStyle(pillStyle(true)));
+            cancel.setOnMouseExited(e -> cancel.setStyle(pillStyle(false)));
+            cancel.setOnAction(e -> {
+                exitUseMode();
+                showItemDetail(stack);
+            });
+            detailBox.getChildren().addAll(
+                    hintChip("请点击左侧闪光金框的宝可梦，对它使用【" + item.getName() + "】。"), cancel);
+            return;
+        }
+        if (itemNotice != null && item.getId().equals(itemNoticeId)) {
+            detailBox.getChildren().add(hintChip(itemNotice));
+        }
+        if (stack.getCount() <= 0) {
+            return; // 已用完：不再提供「使用」
+        }
+        Button use = new Button("使用");
+        use.getStyleClass().add("item-use"); // 供截图 / 冒烟测试探针定位
+        use.setStyle(useCtaStyle(false));
+        use.setOnMouseEntered(e -> use.setStyle(useCtaStyle(true)));
+        use.setOnMouseExited(e -> use.setStyle(useCtaStyle(false)));
+        use.setOnAction(e -> enterUseMode(stack));
+        detailBox.getChildren().add(use);
+    }
 
-            Button use = new Button("使用");
-            use.getStyleClass().add("item-use");
-            use.setStyle(pillStyle(false));
-            use.setOnMouseEntered(e -> use.setStyle(pillStyle(true)));
-            use.setOnMouseExited(e -> use.setStyle(pillStyle(false)));
-            use.setOnAction(e -> actions.onUseItem(item, player.getParty().indexOf(target)));
+    /** 道具详情框内的黄色提示条（选择指引与结算结果共用；多行居中）。 */
+    private static Label hintChip(String text) {
+        Label chip = new Label(text);
+        chip.setWrapText(true);
+        chip.setMaxWidth(Double.MAX_VALUE);
+        chip.setAlignment(Pos.CENTER);
+        chip.setStyle(YH + "-fx-font-size: 10px; -fx-text-fill: #123c63;"
+                + " -fx-background-color: rgba(255, 203, 5, 0.35); -fx-background-radius: 6; -fx-padding: 3 6;");
+        return chip;
+    }
 
-            detailBox.getChildren().addAll(targetHint, use);
+    // ------------------------------------------------------------------
+    // 局外道具使用：道具详情框「使用」→ 左侧选目标（闪光提示）→ 就地结算
+    // ------------------------------------------------------------------
+
+    /**
+     * 进入选择目标模式：左侧队伍中适用该道具的精灵格进入闪光脉冲，点击目标即结算。
+     * 全队都没有适用目标时不进入模式，直接以提示条说明原因。
+     */
+    private void enterUseMode(ItemStack stack) {
+        boolean anyTarget = player.getParty().stream()
+                .anyMatch(target -> canUseOn(stack.getItem(), target));
+        if (!anyTarget) {
+            itemNotice = "当前没有适合使用【" + stack.getItem().getName() + "】的宝可梦。";
+            itemNoticeId = stack.getItem().getId();
+            showItemDetail(stack);
+            return;
+        }
+        pendingUseItem = stack;
+        itemNotice = null;
+        itemNoticeId = null;
+        startTargetGlow();
+        showItemDetail(stack);
+    }
+
+    /** 退出选择目标模式：停止闪光脉冲并恢复格子常态样式（未处于模式时无操作）。 */
+    private void exitUseMode() {
+        if (pendingUseItem == null) {
+            return;
+        }
+        pendingUseItem = null;
+        stopTargetGlow();
+    }
+
+    /** 对目标精灵使用待用道具：结算 → 提示结果 → 同步背包数量 → 退出模式并在道具详情框内展示结果。 */
+    private void useItemOn(Pokemon target) {
+        ItemStack stack = pendingUseItem;
+        if (stack == null || itemUsage == null) {
+            return;
+        }
+        ItemUsageService.Result result = itemUsage.use(stack.getItem(), player.getBag(), target);
+        itemNotice = result.message();
+        itemNoticeId = stack.getItem().getId();
+        exitUseMode();
+        fillBagRows(false); // 数量可能减少 / 耗尽：同步右栏背包列表
+        showItemDetail(stack);
+    }
+
+    /**
+     * 可用性预判：决定选择模式下哪些队伍格闪光可选（镜像 {@link ItemUsageService} 的结算口径，
+     * 服务仍是唯一的规则源；此处只为不可达的格子不亮灯，避免点空）。
+     */
+    private static boolean canUseOn(Item item, Pokemon target) {
+        if (item == null || target == null) {
+            return false;
+        }
+        return switch (item.getCategory()) {
+            case HEAL -> !target.isFainted() && target.getCurrentHp() < target.getMaxHp();
+            case CURE -> item.canCure(target.getStatus());
+            case LEVEL_UP -> target.getLevel() < Pokemon.MAX_LEVEL;
+            default -> false; // 精灵球等只能在对战中投出
+        };
+    }
+
+    /** 启动目标闪光：适用格子金框脉冲（亮 → 常 → 亮循环），不适用格子保持原样。 */
+    private void startTargetGlow() {
+        stopTargetGlow();
+        for (PartySlotRef ref : partySlots) {
+            if (!canUseOn(pendingUseItem.getItem(), ref.pokemon())) {
+                continue;
+            }
+            Timeline pulse = new Timeline(
+                    new KeyFrame(Duration.ZERO, e -> glowSlot(ref, true)),
+                    new KeyFrame(Duration.millis(GLOW_PULSE_MS), e -> glowSlot(ref, false)),
+                    new KeyFrame(Duration.millis(GLOW_PULSE_MS * 2), e -> glowSlot(ref, true)));
+            pulse.setCycleCount(Animation.INDEFINITE);
+            pulse.play();
+            targetGlowPulses.add(pulse);
         }
     }
 
-    /** 道具使用的作用对象：最近在中栏查看过的精灵；从未查看过时默认先发（队伍至少一只）。 */
-    private Pokemon useTarget() {
-        List<Pokemon> party = player.getParty();
-        if (lastViewedPokemon != null && party.contains(lastViewedPokemon)) {
-            return lastViewedPokemon;
+    /** 停止目标闪光：停掉全部脉冲并把队伍格样式恢复为常态。 */
+    private void stopTargetGlow() {
+        for (Timeline pulse : targetGlowPulses) {
+            pulse.stop();
         }
-        return player.getActive() != null ? player.getActive() : party.get(0);
+        targetGlowPulses.clear();
+        for (PartySlotRef ref : partySlots) {
+            ref.slot().setStyle(slotStyle(ref.active(), false));
+        }
+    }
+
+    /** 单个队伍格切到闪光的亮/常态。 */
+    private static void glowSlot(PartySlotRef ref, boolean on) {
+        ref.slot().setStyle(slotStyle(ref.active(), false, on));
     }
 
     /** 右栏：背包列表（精灵球恒置顶并按捕捉强度降序，其余保持原顺序）。 */
     private ScrollPane buildBagColumn() {
-        VBox list = new VBox(4);
-        list.setPadding(new Insets(2));
-        List<ItemStack> stacks = sortedBagStacks();
-        if (stacks.isEmpty()) {
-            Label empty = new Label("背包空空如也……");
-            empty.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
-            list.getChildren().add(empty);
-        } else {
-            for (ItemStack stack : stacks) {
-                HBox row = buildBagRow(stack);
-                bagEntrance.add(row); // 入场动画：序号即从上到下的出现顺序
-                list.getChildren().add(row);
-            }
-        }
-        ScrollPane scroll = new ScrollPane(list);
+        bagList = new VBox(4);
+        bagList.setPadding(new Insets(2));
+        fillBagRows(true);
+        ScrollPane scroll = new ScrollPane(bagList);
         scroll.setFitToWidth(true);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         scroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
@@ -975,6 +1170,25 @@ public class MainView {
             if (skin != null) makeViewportTransparent(scroll);
         });
         return scroll;
+    }
+
+    /** 填充背包行；{@code entrance} 为 true 时登记入场动画（仅整页重建时），局部刷新不重复登记。 */
+    private void fillBagRows(boolean entrance) {
+        bagList.getChildren().clear();
+        List<ItemStack> stacks = sortedBagStacks();
+        if (stacks.isEmpty()) {
+            Label empty = new Label("背包空空如也……");
+            empty.setStyle(YH + "-fx-font-size: 11px; -fx-text-fill: #333;");
+            bagList.getChildren().add(empty);
+            return;
+        }
+        for (ItemStack stack : stacks) {
+            HBox row = buildBagRow(stack);
+            if (entrance) {
+                bagEntrance.add(row); // 入场动画：序号即从上到下的出现顺序
+            }
+            bagList.getChildren().add(row);
+        }
     }
 
     /** 精灵球恒置顶、按捕捉强度（效果值）降序；其余道具保持背包原顺序。 */
@@ -1013,7 +1227,9 @@ public class MainView {
         row.setMaxWidth(Double.MAX_VALUE);
         row.setOnMouseEntered(e -> {
             row.setStyle(bagRowStyle(true));
-            showItemDetail(stack);
+            if (pendingUseItem == null) {
+                showItemDetail(stack); // 选择目标模式：中栏保持使用指引，不切换内容
+            }
         });
         row.setOnMouseExited(e -> row.setStyle(bagRowStyle(false)));
         return row;
@@ -1030,7 +1246,7 @@ public class MainView {
     }
 
     // ------------------------------------------------------------------
-    // 下部分：三个入口按钮
+    // 下部分：四个入口按钮
     // ------------------------------------------------------------------
 
     private HBox buildActionBar() {
@@ -1039,30 +1255,39 @@ public class MainView {
         rogue.setStyle(barPillStyle("15px", "10 18", false));
         rogue.setOnMouseEntered(e -> rogue.setStyle(barPillStyle("15px", "10 18", true)));
         rogue.setOnMouseExited(e -> rogue.setStyle(barPillStyle("15px", "10 18", false)));
-        rogue.setOnAction(e -> actions.onStartRogueFloor());
+        rogue.setOnAction(e -> toMenu(actions::onStartRogueFloor));
 
         Button dex = new Button("道具图鉴");
         dex.setStyle(barPillStyle("13px", "8 14", false));
         dex.setOnMouseEntered(e -> dex.setStyle(barPillStyle("13px", "8 14", true)));
         dex.setOnMouseExited(e -> dex.setStyle(barPillStyle("13px", "8 14", false)));
-        dex.setOnAction(e -> actions.onShowItemDex());
+        dex.setOnAction(e -> toMenu(actions::onShowItemDex));
 
         Button save = new Button("保存游戏");
         save.setStyle(barPillStyle("13px", "8 14", false));
         save.setOnMouseEntered(e -> save.setStyle(barPillStyle("13px", "8 14", true)));
         save.setOnMouseExited(e -> save.setStyle(barPillStyle("13px", "8 14", false)));
-        save.setOnAction(e -> actions.onSaveGame());
+        save.setOnAction(e -> toMenu(actions::onSaveGame));
 
         Button load = new Button("读取存档");
         load.setStyle(barPillStyle("13px", "8 14", false));
         load.setOnMouseEntered(e -> load.setStyle(barPillStyle("13px", "8 14", true)));
         load.setOnMouseExited(e -> load.setStyle(barPillStyle("13px", "8 14", false)));
-        load.setOnAction(e -> actions.onLoadGame());
+        load.setOnAction(e -> toMenu(actions::onLoadGame));
 
         HBox bar = new HBox(12, rogue, dex, save, load);
         bar.setAlignment(Pos.CENTER);
         bar.setPadding(new Insets(10, 0, 0, 0));
         return bar;
+    }
+
+    /**
+     * 切场景类动作的统一入口：先退出「选择目标」模式，停掉闪光脉冲并恢复格子样式，
+     * 避免动画残留在被替换的旧场景节点上。
+     */
+    private void toMenu(Runnable action) {
+        exitUseMode();
+        action.run();
     }
 
     // ------------------------------------------------------------------
@@ -1109,7 +1334,7 @@ public class MainView {
         }
     }
 
-    /** 道具功能表述（与战斗背包口径一致）：回复量 / 解除范围 / 捕捉率。 */
+    /** 道具功能表述（与战斗背包口径一致）：回复量 / 解除范围 / 捕捉率；升级类为「等级 +N」。 */
     private static String describeItem(Item item) {
         if (item.getCategory() == ItemCategory.HEAL) {
             return "回复 " + (int) item.getEffect() + " HP";
@@ -1119,6 +1344,9 @@ public class MainView {
         }
         if (item.getCategory() == ItemCategory.POKE_BALL) {
             return item.isAlwaysCatch() ? "必定捕捉" : "捕捉率 ×" + effectText(item.getEffect());
+        }
+        if (item.getCategory() == ItemCategory.LEVEL_UP) {
+            return "等级 +" + (int) item.getEffect();
         }
         return "";
     }
@@ -1222,6 +1450,4 @@ public class MainView {
             if (child instanceof Parent p) makeViewportTransparent(p);
         }
     }
-
-
 }
