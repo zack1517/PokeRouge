@@ -609,6 +609,9 @@ public class MainController {
     /** 本次商店的商品库存；为 null 表示当前不在商店。 */
     private ShopStock currentShopStock;
 
+    /** 本次商店的界面实例：购买后原地刷新它（不换 Scene），滚动位置才不会被重置。 */
+    private ShopView currentShopView;
+
     /** 打开商店：按当前段生成库存（装备池排除已拥有的装备）。 */
     private void openShop() {
         currentShopStock = ShopStock.forSegment(session.getSegment(), new Random(), ownedEquipmentIds());
@@ -623,12 +626,28 @@ public class MainController {
         return player.getEquipment().stream().map(HeldItem::getId).collect(Collectors.toSet());
     }
 
+    /** 进入商店：为本次库存新建界面（一次进店只建一次 Scene）。 */
     private void showShopScene() {
         if (currentShopStock == null) {
             showRogueFloorScene();
             return;
         }
-        stage.setScene(new ShopView(session, currentShopStock, this::buyFromShop, this::leaveShop).createScene());
+        currentShopView = new ShopView(session, currentShopStock, this::buyFromShop, this::leaveShop);
+        stage.setScene(currentShopView.createScene());
+    }
+
+    /**
+     * 购买后刷新货架：原地更新金币与各条目的可购状态，并保住滚动位置。
+     *
+     * <p>不能像以前那样重建整个 Scene —— 新建 Scene 会让 ScrollPane 回到顶部，玩家在长货架
+     * 中段买一件东西就被弹回最上面。视图缺失（尚未进店）时才退化为整页重建。</p>
+     */
+    private void refreshShopScene() {
+        if (currentShopView == null) {
+            showShopScene();
+            return;
+        }
+        currentShopView.refresh(currentShopStock);
     }
 
     /** 购买：校验金币 → 扣款 → 消耗品入背包 / 装备入库 → 刷新货架。 */
@@ -651,7 +670,7 @@ public class MainController {
         }
         player.getBag().add(item, 1);
         LogUtil.info("商店购买: " + entry.itemName() + " x1，花费 " + entry.price() + " 金币");
-        showShopScene();
+        refreshShopScene();
     }
 
     /**
@@ -667,7 +686,7 @@ public class MainController {
         if (player.getEquipment().contains(equipment)) {
             infoAlert("已拥有", "你已经拥有【" + equipment.getName() + "】了，本次不上架该装备。");
             currentShopStock = currentShopStock.withoutEntry(entry.itemId());
-            showShopScene();
+            refreshShopScene();
             return;
         }
         if (!session.getRogueRunData().spendGold(entry.price())) {
@@ -679,12 +698,13 @@ public class MainController {
         LogUtil.info("获得装备【" + equipment.getName() + "】：" + equipment.getDescription()
                 + "\n可在主菜单点击精灵名，在详情页中穿戴。");
         currentShopStock = currentShopStock.withoutEntry(entry.itemId());
-        showShopScene();
+        refreshShopScene();
     }
 
     /** 离开商店：视为完成该商店节点，走节点收尾。 */
     private void leaveShop() {
         currentShopStock = null;
+        currentShopView = null;
         finishNodeStep(true);
     }
 
