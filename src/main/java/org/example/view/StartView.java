@@ -26,14 +26,14 @@ import org.example.util.UiScale;
  * 游戏启动页（第一屏）：无卡片悬浮式主菜单。
  *
  * <p>样式改编自「临时/主界面设计代码」（Web/React 版主界面）：背景插画铺满整页，
- * 彩色 Logo 与七个胶囊入口按钮直接悬浮其上（不再使用半透明中央卡片），
+ * 彩色 Logo 与六个胶囊入口按钮直接悬浮其上（不再使用半透明中央卡片），
  * 可读性由元素自身的描边、投影与底色承担；样式集中在
  * {@code /css/start-menu.css}，本类只负责结构与动效。</p>
  *
  * <p>功能接线与 dev 版一致（不受样式改编影响）：「开始游戏」进入初始宝可梦选择流程、
  * 「继续游戏」进入存档位选择页（无存档时置灰）、「宝可梦图鉴」进入图鉴页、
  * 「道具图鉴」进入全量道具一览、「自定义战斗」进入模式选择页（均由 {@code MainController} 接线）；
- * 「成就系统」「设置选项」为预留入口，当前仅打印日志占位。</p>
+ * 「设置选项」为预留入口，当前仅打印日志占位。</p>
  *
  * <p>交互细节：鼠标悬停与方向键 ↑/↓ 切换选中项（黄描边蓝底胶囊 + 放大 1.05），
  * Enter 触发选中项、Esc 取消选中、M 切换主界面 BGM 静音；
@@ -50,10 +50,10 @@ public final class StartView {
     /** 启动页样式表（classpath）。 */
     private static final String STYLE_SHEET = "/css/start-menu.css";
 
-    /** Logo 显示宽度（设计画布 px；原图 2784×1632 等比缩放；七个入口的版面平衡值）。 */
+    /** Logo 显示宽度（设计画布 px；原图 2784×1632 等比缩放；六个入口的版面平衡值）。 */
     private static final double LOGO_WIDTH = 235;
 
-    /** 整列（Logo+菜单）垂直偏移量：底栏移除且扩充至七个入口后的构图校准（设计画布 px，负值上移）。 */
+    /** 整列（Logo+菜单）垂直偏移量：底栏移除且扩充至六个入口后的构图校准（设计画布 px，负值上移）。 */
     private static final double COLUMN_OFFSET_Y = 0;
 
     /** Logo 入场起始位移（从上方落下）。 */
@@ -65,7 +65,7 @@ public final class StartView {
     /** 主界面 BGM 音量（与 MusicPlayer 默认一致，M 键静音后按此恢复）。 */
     private static final double VOLUME = 0.5;
 
-    /** 七个入口的 24 单位视口单色描边图标（lucide 风格手绘简化版）。 */
+    /** 六个入口的 24 单位视口单色描边图标（lucide 风格手绘简化版）。 */
     private static final String ICON_PLAY = "M7 4 L20 12 L7 20 Z";
     private static final String ICON_BOOK = "M12 6.5 C9.6 4.8 6.6 4.2 4.2 4.2 L4.2 18.2 C6.6 18.2 9.6 18.8 12 20.5"
             + " C14.4 18.8 17.4 18.2 19.8 18.2 L19.8 4.2 C17.4 4.2 14.4 4.8 12 6.5 Z M12 6.5 L12 20.5";
@@ -74,9 +74,6 @@ public final class StartView {
     private static final String ICON_BAG = "M6.5 8.5 L17.5 8.5 L18.5 20 L5.5 20 Z"
             + " M9.5 8.5 L9.5 6 A2.5 2.5 0 0 1 14.5 6 L14.5 8.5 M6 13 L18 13";
     private static final String ICON_SWORDS = "M4 20.5 L16 8.5 M12.3 9.8 L14.7 12.2 M20 20.5 L8 8.5 M11.7 9.8 L9.3 12.2";
-    private static final String ICON_TROPHY = "M8 4 L16 4 L16 9 C16 11.2 14.2 13 12 13 C9.8 13 8 11.2 8 9 Z"
-            + " M8 5.5 L5.5 5.5 L5.5 7.5 C5.5 9 6.5 10 8 10 M16 5.5 L18.5 5.5 L18.5 7.5 C18.5 9 17.5 10 16 10"
-            + " M12 13 L12 16.5 M8.5 16.5 L15.5 16.5 L15.5 19 L8.5 19 Z";
     private static final String ICON_SETTINGS = "M20 7 L11 7 M14 17 L5 17"
             + " M17 20 A3 3 0 1 0 17 14 A3 3 0 1 0 17 20 M7 10 A3 3 0 1 0 7 4 A3 3 0 1 0 7 10";
 
@@ -192,12 +189,10 @@ public final class StartView {
             }
         });
         menu.addPill("crimson", "自定义战斗", "CUSTOM RUN", ICON_SWORDS, onCustomBattle);
-        menu.addPill("violet", "成就系统", "ACHIEVEMENTS", ICON_TROPHY,
-                () -> LogUtil.info("[StartView] 成就系统：成就展示与管理功能待实现（预留入口）"));
         menu.addPill("slate", "设置选项", "SETTINGS", ICON_SETTINGS,
                 () -> LogUtil.info("[StartView] 设置选项：音效、画面等配置功能待实现（预留入口）"));
 
-        VBox column = new VBox(10, logoEntrance, menu.node()); // Logo 与菜单间距（七入口版收紧为 10）
+        VBox column = new VBox(10, logoEntrance, menu.node()); // Logo 与菜单间距（六入口版收紧为 10）
         column.setAlignment(Pos.CENTER);
         // 关键：BorderPane 会把 center 子节点拉满可用高度，不设上限时整列会被垂直撑开；
         // maxHeight 用内容首选高封顶后，整列按内容收拢并垂直居中。
@@ -256,6 +251,6 @@ public final class StartView {
         floating.setAutoReverse(true);
         floating.play();
 
-        menu.playEntrance(); // 七个入口的错峰上浮淡入（共享动效，与启动页一致）
+        menu.playEntrance(); // 六个入口的错峰上浮淡入（共享动效，与启动页一致）
     }
 }
