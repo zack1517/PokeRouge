@@ -1,13 +1,7 @@
 package org.example.view;
 
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.Scene;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
+import java.util.function.Consumer;
+
 import org.example.GameSession;
 import org.example.model.Option;
 import org.example.model.RouteConfig;
@@ -16,7 +10,14 @@ import org.example.model.RunData;
 import org.example.util.ImageBackgrounds;
 import org.example.util.UiScale;
 
-import java.util.function.Consumer;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
 
 /**
  * 路线节点页：显示当前段、行动点与金币，并按《需求文档》§4.2 列出本段节点供玩家消耗行动点进入。
