@@ -1078,7 +1078,7 @@ public class MainController {
 
     /**
      * 必然节点战斗（道馆战 / 四天王连打 / 冠军战 / 首领侵略战）：不消耗行动点。
-     * 1~4 段道馆主为固定配置（2/3/3/4 只、等级 11/17/24/32，精确无浮动）；末段行动点耗尽后
+     * 1~4 段道馆主为固定配置（2/3/3/4 只、等级 11/18/25/34，精确无浮动）；末段行动点耗尽后
      * 直接进入四天王连打（固定 4 只、队伍最高等级 ±2 浮动）；冠军固定 5 只、队伍最高等级 +3 ±1；
      * 首领侵略战固定 6 只、队伍最高等级 +1 ±1。道馆与四天王战败可再挑战一次，
      * 冠军战败本轮结束。
@@ -1088,7 +1088,7 @@ public class MainController {
             return;
         }
         int segment = session.getSegment();
-        // 1~4 段道馆主：固定等级（11/17/24/32）且精确无浮动；其余必然节点锚定队伍最高等级
+        // 1~4 段道馆主：固定等级（11/18/25/34）且精确无浮动；其余必然节点锚定队伍最高等级
         boolean gymFixed = type == OptionType.GYM && segment <= 4;
         // 冠军战与首领侵略战：精确等级再 ±1 窄浮动（其余必然节点走 ±2 宽浮动）
         boolean narrowSpread = type == OptionType.CHAMPION || type == OptionType.ROCKET_INVASION;
