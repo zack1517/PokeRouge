@@ -12,13 +12,15 @@ import org.example.data.ShopStock;
 import org.example.util.ImageBackgrounds;
 import org.example.util.UiScale;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
  * 商店界面（《需求文档》§4.2 商店 + §七 界面需求）：用金币购买消耗品与可携带装备。
  *
- * <p>只负责展示 {@link ShopStock} 与收集购买意图；金币校验与扣款、入包 / 入库由控制器完成 ——
- * 购买成功或失败后控制器重建本页以刷新金币与可购状态。</p>
+ * <p>货架按分区展示：<b>消耗品</b>为本次随机上架（数量随段增长），<b>装备</b>为未拥有装备的全量
+ * 列表（可任选购买）。只负责展示 {@link ShopStock} 与收集购买意图；金币校验与扣款、入包 / 入库
+ * 由控制器完成 —— 购买成功或失败后控制器重建本页以刷新金币与可购状态。</p>
  */
 public class ShopView {
 
@@ -46,7 +48,8 @@ public class ShopView {
         Label title = new Label("商店 · 第 " + stock.segment() + " 段");
         title.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #222;");
 
-        Label summary = new Label("持有金币：" + gold + "  🪙　　（段数越靠后，货架格数越多、售价越高）");
+        Label summary = new Label("持有金币：" + gold + "  🪙　　（装备全量上架，想买哪件就买哪件；"
+                + "消耗品每段随机上架，越靠后格位越多、售价越高）");
         summary.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 13px; -fx-text-fill: #555;");
 
         VBox header = new VBox(2, title, summary);
@@ -68,8 +71,25 @@ public class ShopView {
         }
 
         VBox list = new VBox(12);
-        for (ShopStock.Entry entry : stock.entries()) {
-            list.getChildren().add(buildEntry(entry, gold));
+        List<ShopStock.Entry> consumables = stock.entries().stream()
+                .filter(entry -> !entry.isEquipment())
+                .toList();
+        List<ShopStock.Entry> equipment = stock.entries().stream()
+                .filter(ShopStock.Entry::isEquipment)
+                .toList();
+
+        if (!consumables.isEmpty()) {
+            list.getChildren().add(buildSectionLabel("消耗品 · 本次上架 " + consumables.size() + " 件"));
+            for (ShopStock.Entry entry : consumables) {
+                list.getChildren().add(buildEntry(entry, gold));
+            }
+        }
+        if (!equipment.isEmpty()) {
+            list.getChildren().add(buildSectionLabel("装备 · 全部 " + equipment.size()
+                    + " 件（已拥有的不再列出，可任选购买）"));
+            for (ShopStock.Entry entry : equipment) {
+                list.getChildren().add(buildEntry(entry, gold));
+            }
         }
 
         ScrollPane scroll = new ScrollPane(list);
@@ -77,6 +97,15 @@ public class ShopView {
         scroll.setStyle("-fx-background: transparent; -fx-background-color: transparent;");
         root.getChildren().addAll(scroll, buildLeaveButton());
         return UiScale.scene(root);
+    }
+
+    /** 分区标题：把随机上架的消耗品与全量上架的装备分开，便于在长列表里定位。 */
+    private Label buildSectionLabel(String text) {
+        Label section = new Label(text);
+        section.setStyle("-fx-font-family: 'Microsoft YaHei'; -fx-font-size: 15px; -fx-font-weight: bold;"
+                + "-fx-text-fill: #333; -fx-background-color: rgba(255,255,255,0.6);"
+                + "-fx-background-radius: 6; -fx-padding: 6 10;");
+        return section;
     }
 
     private VBox buildEntry(ShopStock.Entry entry, int gold) {

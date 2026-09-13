@@ -32,11 +32,12 @@ class RouteConfigTest {
     }
 
     @Test
-    void 商店商品数量随段增长但有上限() {
-        assertEquals(RouteConfig.BASE_SHOP_STOCK, RouteConfig.shopStockSize(1));
-        assertTrue(RouteConfig.shopStockSize(3) > RouteConfig.shopStockSize(1));
-        assertEquals(RouteConfig.MAX_SHOP_STOCK, RouteConfig.shopStockSize(99));
-        assertEquals(RouteConfig.BASE_SHOP_STOCK, RouteConfig.shopStockSize(0), "非法段号按第 1 段处理");
+    void 商店消耗品格位随段增长但有上限() {
+        assertEquals(RouteConfig.BASE_SHOP_CONSUMABLE_STOCK, RouteConfig.shopConsumableStockSize(1));
+        assertTrue(RouteConfig.shopConsumableStockSize(3) > RouteConfig.shopConsumableStockSize(1));
+        assertEquals(RouteConfig.MAX_SHOP_CONSUMABLE_STOCK, RouteConfig.shopConsumableStockSize(99));
+        assertEquals(RouteConfig.BASE_SHOP_CONSUMABLE_STOCK, RouteConfig.shopConsumableStockSize(0),
+                "非法段号按第 1 段处理");
     }
 
     @Test

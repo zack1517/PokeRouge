@@ -20,6 +20,7 @@
 > **v0.1.20 新增道具图鉴页：§3.2 页面总表增「道具图鉴」行并把主菜单行补上入口，新增 §3.7 `ItemDexView`（93 件全量目录 + 四档筛选 + 已拥有 / 穿戴标注 + 装备直接穿脱）；目录口径复用 `ShopStock#catalog()`，与货架的定价 / 解锁段位同源**；
 > **v0.1.21 取消商店分段解锁：§3.6 `ShopView` 段改写 —— 消耗品与装备不再按段解锁，第 1 段起全部可能上架，「越往后越多」只由货架格位（`RouteConfig#shopStockSize`）与售价通胀体现；大师球改为剧情专属道具（不进商店，击败火箭队首领必得），§3.7 图鉴把「第 N 段起可在商店购买」改为「商店出售 / 不售卖」标识**；
 > **v0.1.22 道具图鉴补启动页入口：启动页在「宝可梦图鉴」下新增「道具图鉴」胶囊（第七个入口），`StartView` 构造多收一个 `onItemDex` 回调、`MainController#showItemDexFromStart()` 以 `player = null` 打开同一页（无存档 → 只读展示，无穿戴操作）；`ItemDexView` 构造新增 4 参重载（可自定义返回按钮文案），§3.1 场景图、§3.2 页面总表与 §3.7 相应更新**；
+> **v0.1.23 商店装备改为全量上架：§3.6 `ShopView` 段改写 —— 装备分区不再抽签、不再占「格位」，未拥有的装备（最多 77 件）进店即全量列出、想买哪件就买哪件；`RouteConfig#shopStockSize` 更名为 `#shopConsumableStockSize`（只约束随机上架的消耗品），`shopEquipmentStockSize` 及其三个常量删除**；
 > 文中「[待确认]」项为需与组长 / 对应系统负责人确认后方可定稿的内容。
 
 ## 1. 概述
@@ -323,11 +324,17 @@ FXML 重写，要求：
 
 **`ShopView`（商店）**
 
-- 构造参数 `ShopView(session, stock, onBuy, onLeave)`，展示本次上架的 `ShopStock.Entry` 列表
+- 构造参数 `ShopView(session, stock, onBuy, onLeave)`，展示 `ShopStock.Entry` 列表
   （类型标签 + 名称 + 效果说明 + 售价）、当前金币余额；买不起的条目禁用；购买成功后即时刷新余额；
-- 商品**不再按段解锁**（v0.1.21）—— 第 1 段起全部消耗品与全部装备都可能上架，
-  「越往后商品越多」只体现为**货架格位变多**（`RouteConfig#shopStockSize`）与**售价通胀**
-  （`RouteConfig#shopPrice`），两者均为 `RouteConfig` 中的可调数值（见需求文档 §4.5）。
+- **货架分两个分区**（v0.1.23）：先渲染「消耗品 · 本次上架 N 件」（随机抽签，可重复购买），
+  再渲染「装备 · 全部 N 件」的全量列表（已拥有的不再列出，购买后入库并从货架下架）；
+- 商品**不再按段解锁**（v0.1.21）—— 第 1 段起全部消耗品与全部装备都可买；
+- **装备全量上架**（v0.1.23）—— 装备分区不再抽签、**不占格位**，`ShopStock` 直接列出
+  未拥有的全部装备（按「基础价升序 → id」排列，与图鉴同口径）；因此玩家进店即可任选一件，
+  不需要反复刷新货架去「刷」心仪的装备；
+- 「越往后越多」只体现为**随机上架的消耗品变多**（`RouteConfig#shopConsumableStockSize`，
+  3 → 6 件）与**售价通胀**（`RouteConfig#shopPrice`，每段 +15%），两者均为 `RouteConfig`
+  中的可调数值（见需求文档 §4.5）。
 - **大师球不上架**：`i_master_ball` 是剧情专属道具（击败火箭队首领必得，见需求文档 §4.4），
   `ShopStock` 的商品池把它标为「不售卖」，只出现在道具图鉴里并标注「不售卖」。
 - **展示名不在商店侧自存**：`ShopStock` 通过 `GameData.instance().item(id).getName()` 取消耗品名、
@@ -356,6 +363,15 @@ FXML 重写，要求：
 > 常量集合。因此 `ShopStock#unlockedConsumableIds` / `#unlockedEquipment` 更名为
 > `#sellableConsumableIds` / `#sellableEquipment`（去掉 `segment` 参数），
 > `CatalogEntry` 的 `unlockSegment` 字段也换成 `sold`。**段号对货架的影响只剩格位与售价两处**。
+>
+> **v0.1.23（装备全量上架）**：v0.1.21 只取消了「解锁段位」，装备仍是**每段抽签 1~2 格**，玩家想买
+> 某件装备还得反复刷商店。需求方明确「商店是直接所有装备就可购买」，故把装备分区改为**全量列出**：
+> `ShopStock#forSegment` 不再给装备抽签，直接把 `sellableEquipment(ownedIds)` 全量转成条目
+> （仍按段通胀计价、仍剔除已拥有者），排列顺序为「基础价升序 → id」；装备也因此**不再占用格位**，
+> `RouteConfig#shopStockSize` 更名为 `#shopConsumableStockSize`（只管随机上架的消耗品，
+> 3 → 6 件），`shopEquipmentStockSize` 与 `BASE_SHOP_EQUIPMENT_STOCK` /
+> `SHOP_EQUIPMENT_STOCK_PER_SEGMENT` / `MAX_SHOP_EQUIPMENT_STOCK` 一并删除。
+> 界面上货架加两行分区标题，长列表仍走原有 `ScrollPane`；购买 / 下架 / 已拥有拦截逻辑不变。
 
 **`MainView` 标题栏**
 
@@ -724,3 +740,4 @@ public interface ScreenFactory {
 | v0.1.20 | 2026-09-12 | **新增道具图鉴页**：§3.2 页面总表增「道具图鉴」行、主菜单行补入口（五个按钮）；**新增 §3.7 `ItemDexView`**（`ItemDexData#build(player)` 全量列出 `ShopStock#catalog()` 的 93 件 = 16 消耗品 + 77 装备，四档筛选 `Filter`，卡片给出效果说明 / 来源（第 N 段起可买 + 基础价）/ 已拥有·未拥有·某队员持有标注；已拥有装备经 `Player#equip` / `#unequip` 直接穿脱，消耗品只读；`describe(Item)` 按类别现推消耗品说明）；`ShopStock` 新增 `CatalogEntry` 与 `catalog()`，与 `forSegment` 共用同一份消耗品池与定价 / 解锁函数 | [待确认：UI 负责人] |
 | v0.1.21 | 2026-09-12 | **取消商店分段解锁**：§3.6 `ShopView` 段改写 —— 消耗品与装备的「解锁段位」一维整个删除，第 1 段起全部商品都可能上架，段号对货架的影响只剩**格位数量**（`RouteConfig#shopStockSize` / `shopEquipmentStockSize`）与**售价通胀**（`shopPrice`）；**大师球 `i_master_ball` 改为剧情专属道具**（`Consumable.sold = false`，不进商店抽签池，仍由火箭队首领战必得，图鉴照常列出并标注「不售卖」）；`Consumable` 第四列 `unlockSegment` → `sold`，`equipmentUnlockSegment(...)` 删除，`ShopStock#unlockedConsumableIds` / `#unlockedEquipment` 更名为 `#sellableConsumableIds` / `#sellableEquipment`（去掉 `segment` 参数），`CatalogEntry.unlockSegment` → `sold`；§3.7 图鉴卡片来源行与排序口径同步改写（排序改为「消耗品在前 → 基础价 → 名称」） | [待确认：UI 负责人] |
 | v0.1.22 | 2026-09-13 | **道具图鉴补启动页入口**：启动页在「宝可梦图鉴」下新增第七个胶囊「道具图鉴」（`ITEM DEX`，行囊图标 `ICON_BAG`，色调 `teal` —— `start-menu.css` 的 tone 选择器补 `.menu-tone-teal`），`StartView` 构造新增 `onItemDex` 回调（5 参 → 6 参）、类文档与「六个入口」措辞改为七个；`MainController#showItemDexFromStart()` 以 `player = null` 打开 `ItemDexView`（无存档 → 全部条目按「未拥有」只读、摘要行省去「已拥有 N 件」、不展示穿脱操作），返回回启动页；`ItemDexView` 构造新增 4 参重载 `(player, background, onBack, backLabel)` 以复用「返回主界面」文案，3 参构造保留默认「返回主菜单」；§3.1 场景图、§3.2 页面总表、§3.7 相应更新 | [待确认：UI 负责人] |
+| v0.1.23 | 2026-09-13 | **商店装备改为全量上架**：§3.6 `ShopView` 段改写 —— 装备分区不再抽签（`ShopStock` 删除 `rollEquipment`，改为 `allEquipmentEntries` 把 `sellableEquipment(ownedIds)` 全量列成条目并按「基础价升序 → id」排序），装备**不再占格位**；`RouteConfig#shopStockSize` → `#shopConsumableStockSize`（常量同步更名 `BASE_SHOP_CONSUMABLE_STOCK` / `SHOP_CONSUMABLE_STOCK_PER_SEGMENT` / `MAX_SHOP_CONSUMABLE_STOCK`），`shopEquipmentStockSize` 与 `BASE_SHOP_EQUIPMENT_STOCK` / `SHOP_EQUIPMENT_STOCK_PER_SEGMENT` / `MAX_SHOP_EQUIPMENT_STOCK` 删除；货架增「消耗品 · 本次上架 N 件」/「装备 · 全部 N 件」两行分区标题，头部摘要文案改写；购买分流、已拥有拦截、售出下架、定价与通胀口径均不变 | [待确认：UI 负责人] |
