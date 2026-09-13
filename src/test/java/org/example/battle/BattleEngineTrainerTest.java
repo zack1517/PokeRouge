@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
+import org.example.growth.GrowthProgress;
+import org.example.growth.GrowthService;
 import org.example.model.ElementType;
 import org.example.model.Item;
 import org.example.model.ItemCategory;
@@ -162,7 +164,7 @@ class BattleEngineTrainerTest {
     // ------------------------------------------------------------------
 
     @Test
-    void 己方单只倒下时自动换宠且战斗继续() {
+    void 己方单只倒下时挂起等待玩家选择替补() {
         Pokemon first = weak("mine_a", 20);
         Pokemon second = weak("mine_b", 20);
         Player player = playerWith(first, second);
@@ -174,8 +176,15 @@ class BattleEngineTrainerTest {
         assertEquals(BattleService.Status.ONGOING, battle.getStatus(), "队伍仍有健康精灵时不应战败");
         assertTrue(first.isFainted());
         assertFalse(second.isFainted());
+        assertTrue(battle.isAwaitingReplacement(), "倒下后应等待玩家选择替补，而不是自动换宠");
+        assertEquals(first, battle.playerActive(), "未选择前出战精灵不下场");
+
+        List<String> logs = battle.chooseReplacement(1);
+
+        assertFalse(battle.isAwaitingReplacement(), "选完替补后应恢复行动");
         assertEquals(second, player.getActive());
         assertEquals(second, battle.playerActive());
+        assertTrue(logs.stream().anyMatch(line -> line.contains("派出了")), "应有派出提示: " + logs);
     }
 
     @Test
@@ -186,10 +195,12 @@ class BattleEngineTrainerTest {
         Trainer trainer = trainerWith("强敌", strong("boss", 20));
         BattleService battle = BattleServices.newTrainerBattle(player, trainer);
 
-        battle.useMove(player.getActive().getMoveSlots().get(0)); // 己方首只倒下，自动换成第二只
+        battle.useMove(player.getActive().getMoveSlots().get(0)); // 己方首只倒下，等待玩家补位
+        battle.chooseReplacement(1);                              // 玩家选出第二只
         battle.useMove(player.getActive().getMoveSlots().get(0)); // 第二只（最后一只）倒下
 
         assertEquals(BattleService.Status.PLAYER_LOSE, battle.getStatus());
+        assertFalse(battle.isAwaitingReplacement(), "没有健康精灵时直接判负，不应等待补位");
         assertTrue(player.isPartyAllFainted());
         assertFalse(trainer.getActive().isFainted(), "对方仍有存活精灵，应是战败而非获胜");
     }
@@ -252,6 +263,27 @@ class BattleEngineTrainerTest {
         assertTrue(growth.defeated.get(0).isFainted(), "申报的对手确实已倒下");
     }
 
+    /**
+     * 击倒路人训练家的一只精灵后，战斗日志必须出现「获得了 N 点经验」的可见反馈，
+     * 且经验确实写回己方精灵 —— 这是「击倒一只也能看到经验入账」的直接保障。
+     */
+    @Test
+    void 击倒一只对手后日志出现获得经验反馈且经验入账() {
+        Player player = playerWith(strong("mine", 20));
+        Trainer trainer = trainerWith("路人训练家", weak("foe_a", 20), weak("foe_b", 20));
+        BattleService battle = BattleServices.newTrainerBattle(player, trainer, new Random(7),
+                BattleDataPorts.none(),
+                new GrowthService(BattleDataPorts.none(), new GrowthProgress()));
+        Pokemon mine = player.getActive();
+
+        battle.useMove(mine.getMoveSlots().get(0));
+
+        assertEquals(BattleService.Status.ONGOING, battle.getStatus(), "对方还有健康精灵，战斗应继续");
+        assertTrue(mine.getExp() > 0 || mine.getLevel() > 20, "击倒一只对手后经验应已写回己方精灵");
+        assertTrue(battle.getLog().stream().anyMatch(line -> line.startsWith(mine.getName() + " 获得了 ")),
+                "击倒一只对手后应能看到获得经验的日志：" + battle.getLog());
+    }
+
     /** 训练师配置 1.5 倍率后，击倒申报随附倍率（3/2）；未配置的训练师仍为 1 倍。 */
     @Test
     void 训练师倍率随击倒申报传递() {
@@ -312,7 +344,8 @@ class BattleEngineTrainerTest {
         assertEquals(1, growth.defeated.size(), "击倒即申报，不需要等到整场结束");
         assertEquals(trainer.getParty().get(0), growth.defeated.get(0));
 
-        battle.useMove(player.getActive().getMoveSlots().get(0)); // 对方强敌先手击败己方首只
+        battle.useMove(player.getActive().getMoveSlots().get(0)); // 对方强敌先手击败己方首只（v1.14 起挂起等待补位）
+        battle.chooseReplacement(1);                              // 玩家选出第二只（补位不消耗回合）
         battle.useMove(player.getActive().getMoveSlots().get(0)); // 己方最后一只倒下 → 战败
 
         assertEquals(BattleService.Status.PLAYER_LOSE, battle.getStatus());

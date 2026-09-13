@@ -225,7 +225,7 @@ class BattleEventTest {
     }
 
     @Test
-    void 己方倒下后自动换宠产生放出事件() {
+    void 己方倒下后由玩家补位并产生放出事件() {
         Pokemon player = Pokemon.create(species("mine_sp", 40, 10, 10), 20, List.of(TAP));
         Trainer trainer = new Trainer("强敌");
         trainer.addPokemon(Pokemon.create(species("boss_sp", 300, 200, 300), 20, List.of(BLAST)));
@@ -234,12 +234,17 @@ class BattleEventTest {
         battle.drainEvents();
 
         battle.useMove(owner.getActive().getMoveSlots().get(0));
+        battle.drainEvents();
+        assertTrue(battle.isAwaitingReplacement(), "倒下后应等待玩家选择替补");
+
+        battle.chooseReplacement(1);
 
         List<BattleEvent> events = battle.drainEvents();
-        BattleEvent last = events.get(events.size() - 1);
-        assertEquals(BattleEvent.Kind.SEND_OUT, last.kind(), "倒下后应自动放出下一只");
-        assertEquals(BattleEvent.Side.PLAYER, last.side());
-        assertEquals("backup_sp", last.actor());
+        assertEquals(1, events.size(), "补位只产生放出事件: " + events);
+        BattleEvent out = events.get(0);
+        assertEquals(BattleEvent.Kind.SEND_OUT, out.kind(), "补位后应放出玩家选中的精灵");
+        assertEquals(BattleEvent.Side.PLAYER, out.side());
+        assertEquals("backup_sp", out.actor());
     }
 
     // ------------------------------------------------------------------

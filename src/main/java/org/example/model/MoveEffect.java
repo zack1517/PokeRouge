@@ -4,8 +4,13 @@ import java.util.Locale;
 
 /**
  * 技能附带效果（数据驱动：由技能数据/技能效果列指定）。
- * <p>当前仅支持天气与场地类效果：使用该效果的变化类技能会开启对应天气/场地
- * （持续回合见 {@link Weather}/{@link Terrain}）。后续新增状态类效果时在此扩展。</p>
+ * <p>分为两类：</p>
+ * <ul>
+ *     <li><b>天气/场地</b>：使用该效果的变化类技能会开启对应天气/场地（持续回合见
+ *     {@link Weather}/{@link Terrain}）。</li>
+ *     <li><b>专属效果</b>：守住、寄生种子、睡觉等只有一个招式具备的特殊效果，由战斗引擎
+ *     单独结算（见 {@code BattleEngine#applyMoveEffect}）。</li>
+ * </ul>
  */
 public enum MoveEffect {
 
@@ -26,7 +31,13 @@ public enum MoveEffect {
     /** 开启薄雾场地。 */
     MISTY_TERRAIN,
     /** 开启精神场地。 */
-    PSYCHIC_TERRAIN;
+    PSYCHIC_TERRAIN,
+    /** 守住：本回合挡下对方的一切招式，连续使用成功率递减。 */
+    PROTECT,
+    /** 寄生种子：每回合末吸取目标最大 HP 的 1/8 转给施加者，草系免疫。 */
+    LEECH_SEED,
+    /** 睡觉：回复全部 HP 并陷入 2 回合睡眠，HP 全满或已有主要异常时失败。 */
+    REST;
 
     /**
      * 解析技能效果名（大小写不敏感、忽略首尾空白）；空串/未知返回 {@link #NONE}。
@@ -66,5 +77,10 @@ public enum MoveEffect {
             case PSYCHIC_TERRAIN -> Terrain.PSYCHIC;
             default -> null;
         };
+    }
+
+    /** 是否为天气/场地类效果（由战斗引擎开启对应天气或场地）。 */
+    public boolean isFieldEffect() {
+        return toWeather() != null || toTerrain() != null;
     }
 }

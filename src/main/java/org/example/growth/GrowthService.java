@@ -33,6 +33,10 @@ import org.example.model.Stats;
  * 每一只都会单独结算），结果发给当次参战且未倒下的己方精灵。种族未提供 baseExp 时退化为
  * 「六维种族值总和 × 等级 / 5」，保证自定义数据仍能结算。</p>
  *
+ * <p><b>可见反馈</b>：每次结算都会为每只获得经验的精灵追加一行
+ * 「{@code 名字 获得了 N 点经验！}」日志，升级时再逐行追加「{@code 名字 升到了 Lv.N！}」。
+ * 因此即便一次击倒不足以升级，玩家也能从战斗日志中确认经验已经入账。</p>
+ *
  * <p><b>图鉴进度</b>：本模块同时维护局外成长进度 {@link GrowthProgress} —— 玩家获胜时按
  * 参战精灵累计「对战次数」（{@link #onBattleWon(List)}，每场一次），野生遭遇被捕捉时
  * （{@link #onCaptured(String)}）累计「捕捉次数」；捕捉次数经 {@link IvGrowthRule} 换算为
@@ -67,6 +71,13 @@ public final class GrowthService implements BattleGrowthPort {
 
     /**
      * 创建成长模块，使用进程级共享成长进度（{@link GrowthProgress#instance()}）。
+     *
+     * <p><b>注意</b>：该共享实例绑定的是<b>用户主目录</b>下的真实存档
+     * （{@code <用户目录>/.pokerouge/growth-progress.txt}），一旦发生
+     * {@link #settle} / {@link #onBattleWon} / 捕捉申报等写入就会<b>直接落盘到玩家存档</b>。
+     * 因此<b>测试与临时实例必须改用 {@link #GrowthService(BattleDataPort, GrowthProgress)}
+     * 注入一份纯内存的 {@code new GrowthProgress()}</b>，否则会污染开发机上的真实进度
+     * （症状：主目录存档里出现测试用的假物种 id）。</p>
      *
      * @param dataPort 只读数据端口（技能 / 种族查询），不可为 {@code null}
      */
