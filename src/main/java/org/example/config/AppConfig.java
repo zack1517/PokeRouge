@@ -36,6 +36,15 @@ public final class AppConfig {
      */
     public static final String BGM_START = "/audio/bgm_start.mp3";
 
+    /** 战斗场景背景音乐（野怪 / 训练家 / 道馆 / 四天王 / 自定义战斗通用；classpath 路径）。 */
+    public static final String BGM_BATTLE = "/audio/battle.mp3";
+
+    /**
+     * 游戏内非战斗界面背景音乐（初始宝可梦选择 / 选档 / 主菜单 / 冒险流程共用；classpath 路径）。
+     * <p>资源由 home.flac 转码而来：JavaFX Media 不支持 FLAC（实测无法解码），统一用 MP3。</p>
+     */
+    public static final String BGM_HOME = "/audio/home.mp3";
+
     /** 退出确认弹窗文案。 */
     public static final String EXIT_CONFIRM_TITLE = "退出程序";
     public static final String EXIT_CONFIRM_HEADER = null;
