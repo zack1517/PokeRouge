@@ -36,6 +36,7 @@ import org.example.util.LogUtil;
 import org.example.util.MusicPlayer;
 import org.example.view.CustomBattleSetupView;
 import org.example.view.CustomBattleView;
+import org.example.view.GameDialogs;
 import org.example.view.ItemDexView;
 import org.example.view.MainView;
 import org.example.view.PokedexView;
@@ -46,10 +47,6 @@ import org.example.view.StartView;
 import org.example.view.StarterSelectionView;
 
 import javafx.application.Platform;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.ChoiceDialog;
 import javafx.stage.Stage;
 
 /**
@@ -70,6 +67,9 @@ import javafx.stage.Stage;
  * 真正退出仍只由窗口关闭按钮的二次确认负责。</p>
  */
 public class MainController {
+
+    /** 启动页系页面统一背景：与启动页同款 bg_startpage（选初始宝可梦 / 选档 / 启动页入口道具图鉴共用）。 */
+    private static final String BG_START_PAGE = "/images/background/bg_startpage.jpg";
 
     private final Stage stage;
     private GameSession session;
@@ -143,10 +143,11 @@ public class MainController {
 
     /**
      * 道具图鉴页·启动页入口：此时尚未读档，没有 {@link Player}，因此传 {@code null} 让图鉴
-     * 按「全部未拥有」只读展示（无穿戴 / 脱下操作，仅看效果与售价）。「返回」回到启动页。
+     * 按「全部未拥有」只读展示（无穿戴 / 脱下操作，仅看效果与售价）；背景沿用启动页同款
+     * {@code bg_startpage}（与起始主界面的观感一致）。「返回」回到启动页。
      */
     public void showItemDexFromStart() {
-        stage.setScene(new ItemDexView(null, null, this::showStartScreen, "返回主界面").createScene());
+        stage.setScene(new ItemDexView(null, BG_START_PAGE, this::showStartScreen, "返回主界面").createScene());
     }
 
     /**
@@ -192,11 +193,9 @@ public class MainController {
 
     /** 「自定义数量」：先选择双方出战数量（1~6），再进入队伍配置页；取消则留在模式选择页。 */
     private void askCustomBattleCount() {
-        ChoiceDialog<Integer> dialog = new ChoiceDialog<>(3, 1, 2, 3, 4, 5, 6);
-        dialog.setTitle("自定义数量战斗");
-        dialog.setHeaderText(null);
-        dialog.setContentText("选择双方出战数量（1~6 只）：");
-        dialog.showAndWait().ifPresent(count -> showCustomBattleSetup("自定义数量（" + count + "）", count));
+        GameDialogs.choose("自定义数量战斗", null, "选择双方出战数量（1~6 只）：",
+                List.of(1, 2, 3, 4, 5, 6), 3)
+                .ifPresent(count -> showCustomBattleSetup("自定义数量（" + count + "）", count));
     }
 
     /**
@@ -487,16 +486,11 @@ public class MainController {
         saveManager.autoSave(activeSlot, player, session);
     }
 
-    /** 覆盖确认：两个选项分别是「覆盖」与「取消」，默认取消。 */
+    /** 覆盖确认：「覆盖」为破坏性确认（红色胶囊），「取消」为次要按钮，直接关窗视同取消。 */
     private boolean confirmOverwrite(SaveSlot slot) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("覆盖存档");
-        alert.setHeaderText(null);
-        alert.setContentText("覆盖会永久删除 " + slot.displayName() + " 的旧进度与图鉴成长，确定继续吗？");
-        ButtonType overwrite = new ButtonType("覆盖", ButtonBar.ButtonData.OK_DONE);
-        ButtonType cancel = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(overwrite, cancel);
-        return alert.showAndWait().filter(overwrite::equals).isPresent();
+        return GameDialogs.confirm("覆盖存档", null,
+                "覆盖会永久删除 " + slot.displayName() + " 的旧进度与图鉴成长，确定继续吗？",
+                "覆盖", "取消", true);
     }
 
     /**
@@ -508,14 +502,9 @@ public class MainController {
      * @return 是否真的执行了删除（取消或失败时为 {@code false}）
      */
     private boolean confirmAndDelete(SaveSlot slot) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("删除存档");
-        alert.setHeaderText(null);
-        alert.setContentText("删除会永久清除 " + slot.displayName() + " 的进度与图鉴成长，确定继续吗？");
-        ButtonType delete = new ButtonType("删除", ButtonBar.ButtonData.OK_DONE);
-        ButtonType cancel = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(delete, cancel);
-        if (alert.showAndWait().filter(delete::equals).isEmpty()) {
+        if (!GameDialogs.confirm("删除存档", null,
+                "删除会永久清除 " + slot.displayName() + " 的进度与图鉴成长，确定继续吗？",
+                "删除", "取消", true)) {
             return false;
         }
         try {
@@ -649,18 +638,13 @@ public class MainController {
             return;
         }
         Pokemon offer = offered.get();
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("宝可梦交换");
-        alert.setHeaderText("神秘商人带来了一只 Lv." + offer.getLevel() + " 的 " + offer.getName() + "！");
-        alert.setContentText("可用队伍中的一只宝可梦与其交换，也可以放弃（无论是否交换都不返还行动点）。");
-        ButtonType trade = new ButtonType("交换", ButtonBar.ButtonData.OK_DONE);
-        ButtonType giveUp = new ButtonType("不交换", ButtonBar.ButtonData.CANCEL_CLOSE);
-        alert.getButtonTypes().setAll(trade, giveUp);
-        alert.showAndWait().ifPresent(choice -> {
-            if (choice == trade) {
-                askWhichPokemonToTrade(offer);
-            }
-        });
+        boolean wantsTrade = GameDialogs.confirm("宝可梦交换",
+                "神秘商人带来了一只 Lv." + offer.getLevel() + " 的 " + offer.getName() + "！",
+                "可用队伍中的一只宝可梦与其交换，也可以放弃（无论是否交换都不返还行动点）。",
+                "交换", "不交换", false);
+        if (wantsTrade) {
+            askWhichPokemonToTrade(offer);
+        }
     }
 
     /** 交换对象选择：从队伍中选一只被交换离队（交换完成后同步肉鸽队伍快照）。 */
@@ -672,19 +656,18 @@ public class MainController {
             choices.add((i == player.getActiveIndex() ? "▶ " : "   ") + p.getName()
                     + " Lv." + p.getLevel() + (p.isFainted() ? "（濒死）" : ""));
         }
-        ChoiceDialog<String> dialog = new ChoiceDialog<>(choices.get(0), choices);
-        dialog.setTitle("选择交换对象");
-        dialog.setHeaderText("用队伍中的哪一只交换 Lv." + offered.getLevel() + " 的 " + offered.getName() + "？");
-        dialog.setContentText("被交换的宝可梦将离开队伍：");
-        dialog.showAndWait().ifPresent(selected -> {
-            int index = choices.indexOf(selected);
-            Pokemon gone = index >= 0 ? player.swapPartyMember(index, offered) : null;
-            if (gone != null) {
-                session.syncRogueTeam();
-                infoAlert("交换完成", gone.getName() + " 离开了队伍，" + offered.getName()
-                        + "（Lv." + offered.getLevel() + "）加入了队伍！");
-            }
-        });
+        GameDialogs.choose("选择交换对象",
+                "用队伍中的哪一只交换 Lv." + offered.getLevel() + " 的 " + offered.getName() + "？",
+                "被交换的宝可梦将离开队伍：", choices, choices.get(0))
+                .ifPresent(selected -> {
+                    int index = choices.indexOf(selected);
+                    Pokemon gone = index >= 0 ? player.swapPartyMember(index, offered) : null;
+                    if (gone != null) {
+                        session.syncRogueTeam();
+                        infoAlert("交换完成", gone.getName() + " 离开了队伍，" + offered.getName()
+                                + "（Lv." + offered.getLevel() + "）加入了队伍！");
+                    }
+                });
     }
 
     /** 非战斗节点：当场效果（医院治疗全队）结算后走节点收尾。 */
@@ -1241,20 +1224,14 @@ public class MainController {
         stage.setOnShown(e -> LogUtil.info("setOnShown....."));
     }
 
+    /** 退出确认（文案取 {@link AppConfig}）：「退出」为金色胶囊，「取消」为次要按钮。 */
     private boolean confirmExit() {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle(AppConfig.EXIT_CONFIRM_TITLE);
-        alert.setHeaderText(null);
-        alert.setContentText(AppConfig.EXIT_CONFIRM_CONTENT);
-        Optional<ButtonType> result = alert.showAndWait();
-        return result.isPresent() && result.get() == ButtonType.OK;
+        return GameDialogs.confirm(AppConfig.EXIT_CONFIRM_TITLE, AppConfig.EXIT_CONFIRM_HEADER,
+                AppConfig.EXIT_CONFIRM_CONTENT, "退出", "取消", false);
     }
 
+    /** 信息提示（统一样式：白卡 + 金色胶囊「确定」；换皮细节见 {@link GameDialogs}）。 */
     private void infoAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message);
-        alert.showAndWait();
+        GameDialogs.info(title, message);
     }
 }

@@ -10,6 +10,7 @@ import org.example.model.Move;
 import org.example.model.MoveSlot;
 import org.example.model.Pokemon;
 import org.example.model.StatusCondition;
+import org.example.model.Trainer;
 import org.example.view.BattleView;
 
 import java.util.ArrayList;
@@ -196,12 +197,25 @@ public class BattleController implements BattleView.Actions {
         render();
     }
 
+    /**
+     * 敌卡左侧剩余精灵球数：训练师轮战 = 敌方未倒下精灵数（含当前出战，每战胜一只减一）；
+     * 野生遭遇 / 单只敌方队伍返回 0（不显示）。
+     */
+    private int foeRemaining() {
+        Trainer trainer = engine.getTrainer();
+        if (trainer == null || trainer.getParty().size() <= 1) {
+            return 0;
+        }
+        return trainer.getHealthyPokemon().size();
+    }
+
     // ------------------------------------------------------------------
     // 界面编排
     // ------------------------------------------------------------------
 
     private void render() {
         view.refreshPokemon(engine.playerActive(), engine.foeActive());
+        view.setFoeBalls(foeRemaining()); // 敌卡左侧剩余精灵球：训练师多只敌方显示，野生/单只隐藏
         view.refreshFieldStatus(engine.getWeather(), engine.getTerrain());
         view.showLog(engine.getLog());
         if (!engine.pendingLearnChoices().isEmpty()) {

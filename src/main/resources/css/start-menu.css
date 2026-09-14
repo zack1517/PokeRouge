@@ -582,3 +582,157 @@
     -fx-background-color: #0D47A1, rgba(255, 255, 255, 0.98);
     -fx-effect: dropshadow(gaussian, rgba(21, 101, 192, 0.30), 13, 0.0, 0, 5);
 }
+
+/* ---------- 统一小弹窗（GameDialogs，2026-09-14）：白卡 + 深蓝描边环 + 金色胶囊按钮 ---------- */
+/* 换皮对象为原生 Alert / ChoiceDialog 的 DialogPane（追加 .game-dialog 样式类与样式表）：
+   内容结构（header / content / 按钮栏）与布局骨架不动，仅改配色与按钮皮肤，弹窗尺寸基本不变。
+   按钮语义：主操作 = 金色渐变胶囊（game-pill-primary，与 .slot-action 同族）/ 次要操作 = 白底
+   深蓝描边胶囊（game-pill-secondary）/ 破坏性操作 = 红渐变胶囊 + 白字（game-pill-danger，与
+   .slot-delete 同语义）。 */
+
+/* 卡体：白卡 + 深蓝描边环（insets 双层）：外层保持矩形铺满窗口（四角露深蓝，
+   不依赖窗口 Scene 底色），内层白卡圆角（与 .starter-combo 同定式） */
+.game-dialog {
+    -fx-background-color: #123c63, rgba(250, 250, 250, 0.98);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 0, 8.5;
+}
+
+/* 标题区：去除 modena 灰底横条；标题深蓝加粗（.page-title 字族）；warn 变体转橙金 */
+.game-dialog > .header-panel {
+    -fx-background-color: transparent;
+}
+
+.game-dialog > .header-panel .label {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 13.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+}
+
+.game-dialog-warn > .header-panel .label {
+    -fx-text-fill: #C77C00;
+}
+
+/* 正文：深灰微软雅黑（与主 UI 行文字同族） */
+.game-dialog > .content.label,
+.game-dialog > .content .label {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 13px;
+    -fx-text-fill: #333333;
+}
+
+/* 按钮基座：微软雅黑加粗、无聚焦环（各态配色由下方语义类接管） */
+.game-dialog > .button-bar > .container > .button {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 5 16;
+    -fx-cursor: hand;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+/* 次要按钮（取消 / 不交换）：白底 + 深蓝描边环（.slot-delete 同定式的蓝版），悬停环转亮蓝 */
+.game-dialog > .button-bar > .container > .button.game-pill-secondary {
+    -fx-text-fill: #123c63;
+    -fx-background-color: #123c63, rgba(255, 255, 255, 0.96);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 999, 997.5;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.28), 6, 0.05, 0, 2);
+}
+
+.game-dialog > .button-bar > .container > .button.game-pill-secondary:hover {
+    -fx-background-color: #2a75bb, rgba(255, 255, 255, 1.0);
+}
+
+.game-dialog > .button-bar > .container > .button.game-pill-secondary:pressed {
+    -fx-background-insets: 1, 2.2;
+}
+
+/* 主按钮（确定 / 交换）：金色胶囊（.slot-action 定式） */
+.game-dialog > .button-bar > .container > .button.game-pill-primary {
+    -fx-text-fill: #123c63;
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #123c63,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.92) 0%,
+            #ffcb05 18%,
+            #eea800 78%,
+            #ffcb05 100%);
+    -fx-background-insets: 0, 2, 4;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 7, 0.05, 0, 2);
+}
+
+.game-dialog > .button-bar > .container > .button.game-pill-primary:hover {
+    -fx-background-color:
+        rgba(255, 255, 255, 1.0),
+        #2a75bb,
+        linear-gradient(to bottom,
+            rgba(255, 255, 255, 0.95) 0%,
+            #ffd83d 18%,
+            #f0b000 78%,
+            #ffd83d 100%);
+}
+
+.game-dialog > .button-bar > .container > .button.game-pill-primary:pressed {
+    -fx-background-insets: 1, 2.6, 5;
+}
+
+/* 危险按钮（删除 / 覆盖）：红渐变芯 + 白字（.slot-delete 语义的实心强化版） */
+.game-dialog > .button-bar > .container > .button.game-pill-danger {
+    -fx-text-fill: #ffffff;
+    -fx-background-color:
+        rgba(255, 255, 255, 0.96),
+        #7f1d1d,
+        linear-gradient(to bottom, #e05a5a 0%, #b23c3c 78%, #ca5050 100%);
+    -fx-background-insets: 0, 2, 4;
+    -fx-background-radius: 999, 996.5, 994;
+    -fx-effect: dropshadow(gaussian, rgba(143, 47, 47, 0.40), 8, 0.06, 0, 2);
+}
+
+.game-dialog > .button-bar > .container > .button.game-pill-danger:hover {
+    -fx-background-color:
+        rgba(255, 255, 255, 1.0),
+        #8f2f2f,
+        linear-gradient(to bottom, #ec6c6c 0%, #c04545 78%, #d75f5f 100%);
+}
+
+.game-dialog > .button-bar > .container > .button.game-pill-danger:pressed {
+    -fx-background-insets: 1, 2.6, 5;
+}
+
+/* 下拉单选（ChoiceDialog）：白底深蓝描边胶囊（.starter-combo 定式升为弹窗字号）；
+   聚焦 / 展开时描边环转亮蓝（与 .starter-combo 反馈一致） */
+.game-dialog .combo-box {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 12px;
+    -fx-background-color: #123c63, rgba(255, 255, 255, 0.94);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 999, 997.5;
+    -fx-padding: 1 4;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.game-dialog .combo-box:focused,
+.game-dialog .combo-box:showing {
+    -fx-background-color: #2a75bb, rgba(255, 255, 255, 0.98);
+}
+
+.game-dialog .combo-box > .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #123c63;
+    -fx-padding: 5 6;
+}
+
+.game-dialog .combo-box > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0 8 0 4;
+}
+
+.game-dialog .combo-box > .arrow-button > .arrow {
+    -fx-background-color: #123c63;
+}
