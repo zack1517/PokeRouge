@@ -108,9 +108,9 @@ class RouteConfigTest {
         assertEquals(3, RouteConfig.gymPartySize(3));
         assertEquals(4, RouteConfig.gymPartySize(4));
         assertEquals(11, RouteConfig.gymFixedLevel(1));
-        assertEquals(18, RouteConfig.gymFixedLevel(2));
-        assertEquals(25, RouteConfig.gymFixedLevel(3));
-        assertEquals(34, RouteConfig.gymFixedLevel(4));
+        assertEquals(17, RouteConfig.gymFixedLevel(2));
+        assertEquals(24, RouteConfig.gymFixedLevel(3));
+        assertEquals(32, RouteConfig.gymFixedLevel(4));
         // 第 5 段道馆主保持旧行为：数量 3 只，等级走相对队伍最高等级的加成公式
         assertEquals(3, RouteConfig.gymPartySize(5));
         assertEquals(12, RouteConfig.gymLevelBonus(5));

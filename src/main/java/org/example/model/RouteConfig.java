@@ -208,16 +208,16 @@ public final class RouteConfig {
     }
 
     /**
-     * 道馆馆主固定等级表（仅 1~4 段）：11 / 18 / 25 / 34。
+     * 道馆馆主固定等级表（仅 1~4 段）：11 / 17 / 24 / 32。
      * 第 5 段道馆主保持相对队伍最高等级的等级加成（见 {@link #gymLevelBonus}），不走本表；
      * {@code default} 仅为非法段号的防御性兑底。
      */
     public static int gymFixedLevel(int segment) {
         return switch (Math.max(1, segment)) {
             case 1 -> 11;
-            case 2 -> 18;
-            case 3 -> 25;
-            default -> 34;
+            case 2 -> 17;
+            case 3 -> 24;
+            default -> 32;
         };
     }
 
