@@ -71,8 +71,10 @@ public class ShopView {
     private static final String TITLE_OUTLINE =
             " -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 2.0, 1.0, 0, 0);";
 
-    /** 道具插图目录与缓存（与主菜单同一套素材：有图用图，缺图回退首字色块）。 */
+    /** 道具插图目录与缓存（与主菜单同一套素材：有图用图，缺图回退首字色块）。
+     *  消耗品查 /images/tool/，装备（携带道具）再回退查 /images/portable Items/。 */
     private static final String ITEM_IMAGE_DIR = "/images/tool/";
+    private static final String EQUIPMENT_IMAGE_DIR = "/images/portable Items/";
     private static final Map<String, Image> ITEM_ICON_CACHE = new HashMap<>();
 
     /** 信息框留白与图片区内边距（图片自适应图片区大小，避免溢出半区）。 */
@@ -592,21 +594,23 @@ public class ShopView {
                 : "linear-gradient(to bottom, rgba(255, 255, 255, 0.92) 0%, #ffcb05 18%, #eea800 78%, #ffcb05 100%)";
     }
 
-    private static Image loadItemIcon(String itemName) {
+        /** 按名字加载插图：先查消耗品素材目录，再查装备（携带道具）素材目录；缺图返回 {@code null}（回退首字色块）。 */
+private static Image loadItemIcon(String itemName) {
         if (ITEM_ICON_CACHE.containsKey(itemName)) {
             return ITEM_ICON_CACHE.get(itemName);
         }
-        String path = ITEM_IMAGE_DIR + itemName + ".png";
+        Image image = tryLoadImage(ITEM_IMAGE_DIR + itemName + ".png");
+        if (image == null) {
+            image = tryLoadImage(EQUIPMENT_IMAGE_DIR + itemName + ".png");
+        }
+        ITEM_ICON_CACHE.put(itemName, image);
+        return image;
+    }
+
+    private static Image tryLoadImage(String path) {
         try (InputStream in = ShopView.class.getResourceAsStream(path)) {
-            if (in == null) {
-                ITEM_ICON_CACHE.put(itemName, null);
-                return null;
-            }
-            Image image = new Image(in);
-            ITEM_ICON_CACHE.put(itemName, image);
-            return image;
+            return in == null ? null : new Image(in);
         } catch (Exception e) {
-            ITEM_ICON_CACHE.put(itemName, null);
             return null;
         }
     }

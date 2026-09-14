@@ -79,8 +79,8 @@ import org.example.util.UiScale;
  * 中栏内的技能换装、装备穿脱与道具使用直接作用于模型（道具结算走 {@link ItemUsageService}，
  * 结果提示显示在道具详情框内），操作后仅重建中栏内容即时反映，不弹窗。</p>
  *
- * <p>ⓘ 道具插图目录（{@value #ITEM_IMAGE_DIR}）只有部分道具素材，缺图回退为「首字色块」占位，
- * 待美术补齐后自动生效。</p>
+ * <p>ⓘ 道具插图按名字自动查两套目录：消耗品素材（{@value #ITEM_IMAGE_DIR}）与携带道具素材
+ * （{@value #EQUIPMENT_IMAGE_DIR}），缺图回退为「首字色块」占位，待美术补齐后自动生效。</p>
  */
 public class MainView {
 
@@ -133,6 +133,9 @@ public class MainView {
 
     /** 道具插图目录（classpath；文件名与道具名一致，如「精灵球.png」）。 */
     private static final String ITEM_IMAGE_DIR = "/images/tool/";
+
+    /** 携带道具（装备）插图目录：道具目录缺图时回退查此处。 */
+    private static final String EQUIPMENT_IMAGE_DIR = "/images/portable Items/";
 
     /** 道具插图缓存：道具名 → 图片；value 为 null 表示已确认无图。 */
     private static final Map<String, Image> ITEM_ICON_CACHE = new HashMap<>();
@@ -1409,21 +1412,23 @@ public class MainView {
         return fallback;
     }
 
+        /** 按名字加载插图：先查消耗品素材目录，再查装备（携带道具）素材目录；缺图返回 {@code null}（回退首字色块）。 */
     private static Image loadItemIcon(String itemName) {
         if (ITEM_ICON_CACHE.containsKey(itemName)) {
             return ITEM_ICON_CACHE.get(itemName);
         }
-        String path = ITEM_IMAGE_DIR + itemName + ".png";
+        Image image = tryLoadImage(ITEM_IMAGE_DIR + itemName + ".png");
+        if (image == null) {
+            image = tryLoadImage(EQUIPMENT_IMAGE_DIR + itemName + ".png");
+        }
+        ITEM_ICON_CACHE.put(itemName, image);
+        return image;
+    }
+
+    private static Image tryLoadImage(String path) {
         try (InputStream in = MainView.class.getResourceAsStream(path)) {
-            if (in == null) {
-                ITEM_ICON_CACHE.put(itemName, null);
-                return null;
-            }
-            Image image = new Image(in);
-            ITEM_ICON_CACHE.put(itemName, image);
-            return image;
+            return in == null ? null : new Image(in);
         } catch (Exception e) {
-            ITEM_ICON_CACHE.put(itemName, null);
             return null;
         }
     }
