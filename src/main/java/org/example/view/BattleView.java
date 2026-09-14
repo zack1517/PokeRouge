@@ -143,6 +143,17 @@ public class BattleView {
     private final Label wildStatus = new Label(); // 异常状态徽章（无异常时隐藏）
     private final Label wildStages = new Label(); // 能力等级徽章（全部中立时隐藏）
 
+    /**
+     * 敌卡右侧的剩余精灵球横排（2026-09-14 改版：由左侧竖排改为左右横排、10px 放大到 12px；
+     * 训练师轮战多只敌方时显示）：球数 = 敌方剩余精灵数（含当前出战），每倒下一只去掉一个
+     * （见 {@link #setFoeBalls}）。野生遭遇 / 单只敌方整排隐藏，不占布局。
+     */
+    private final HBox foeBallRow = new HBox(2);
+    /** 剩余精灵球小图标边长（设计 px；2026-09-14 由 10 放大到 12）。 */
+    private static final double FOE_BALL_SIZE = 12;
+    /** 精灵球图标素材（道具图鉴同款 64×64 RGBA）。 */
+    private static final String FOE_BALL_ICON = "/images/tool/精灵球.png";
+
     // ---- 己方信息（右下卡片，样式与敌方卡一致） ----
     private final Label playerName = new Label("--");
     private final HBox playerTypeBox = new HBox(TYPE_BADGE_GAP);
@@ -255,9 +266,13 @@ public class BattleView {
     // 构建
     // ------------------------------------------------------------------
 
-    /** 上部区域：敌信息卡 + 阶段/金币块（左上堆叠；敌立绘已移至主背景区右上角，见 {@link #buildSpriteLayer()}）。 */
+    /** 上部区域：敌信息卡（右侧挂剩余精灵球横排）+ 阶段/金币块（左上堆叠；敌立绘已移至主背景区右上角，见 {@link #buildSpriteLayer()}）。 */
     private Parent buildTop() {
-        VBox topLeft = new VBox(4, buildEnemyCard(), buildHud());
+        HBox enemyRow = new HBox(6, buildEnemyCard(), foeBallRow); // 敌卡右侧剩余精灵球横排（空时整排隐藏不占位）
+        enemyRow.setAlignment(Pos.CENTER_LEFT); // 球排与敌卡垂直居中
+        foeBallRow.setAlignment(Pos.CENTER);
+        setFoeBalls(0); // 初始隐藏：野生遭遇/单只敌方不显示，左上区域与旧版一致
+        VBox topLeft = new VBox(4, enemyRow, buildHud());
         topLeft.setAlignment(Pos.TOP_LEFT);
         HBox top = new HBox(10, topLeft, spacer());
         top.setPadding(new Insets(0, 0, 6, 0));
@@ -653,6 +668,41 @@ public class BattleView {
     // ------------------------------------------------------------------
     // 更新
     // ------------------------------------------------------------------
+
+    /**
+     * 刷新敌卡右侧的剩余精灵球横排：数量 = 敌方剩余精灵数（含当前出战，每战胜一只少一个）。
+     * 训练师轮战（多只敌方）由控制器在每回合渲染时调用；野生遭遇 / 单只敌方传 0：
+     * 整排隐藏且不参与布局，左上区域与旧版完全一致。
+     */
+    public void setFoeBalls(int count) {
+        boolean show = count > 0;
+        foeBallRow.setVisible(show);
+        foeBallRow.setManaged(show);
+        foeBallRow.getChildren().clear();
+        for (int i = 0; i < count; i++) {
+            foeBallRow.getChildren().add(foeBallIcon());
+        }
+    }
+
+    /** 剩余精灵球小图标：道具图鉴同款素材（{@link #FOE_BALL_ICON}）；缺图回退为深蓝圆点占位。 */
+    private static Node foeBallIcon() {
+        Image image = ImageBackgrounds.load(FOE_BALL_ICON);
+        if (image != null && !image.isError()) {
+            ImageView view = new ImageView(image);
+            view.setFitWidth(FOE_BALL_SIZE);
+            view.setFitHeight(FOE_BALL_SIZE);
+            view.setPreserveRatio(true);
+            view.setSmooth(true);
+            return view;
+        }
+        Label fallback = new Label("●");
+        fallback.setMinSize(FOE_BALL_SIZE, FOE_BALL_SIZE);
+        fallback.setPrefSize(FOE_BALL_SIZE, FOE_BALL_SIZE);
+        fallback.setMaxSize(FOE_BALL_SIZE, FOE_BALL_SIZE);
+        fallback.setAlignment(Pos.CENTER);
+        fallback.setStyle(YH + "-fx-font-size: 8px; -fx-text-fill: #2f5d9e;");
+        return fallback;
+    }
 
     /** 刷新双方状态卡片（含属性徽章组与异常状态徽章）与双方立绘。 */
     public void refreshPokemon(Pokemon player, Pokemon wild) {

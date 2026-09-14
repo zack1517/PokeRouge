@@ -22,7 +22,6 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
@@ -52,6 +51,7 @@ import org.example.model.Stats;
 import org.example.model.StatusCondition;
 import org.example.service.ItemUsageService;
 import org.example.util.ImageBackgrounds;
+import org.example.util.RoundClip;
 import org.example.util.SpriteLoader;
 import org.example.util.UiScale;
 
@@ -607,6 +607,9 @@ public class MainView {
         scroll.skinProperty().addListener((o, oldSkin, skin) -> {
             if (skin != null) makeViewportTransparent(scroll);
         });
+        // 圆角几何裁切（2026-09-14 修复四角贴图超出描边环）：贴图不随背景圆角裁切、素材烘焙圆角
+        // 又会被非等比拉伸变形；改用随尺寸的圆角 clip，与 14px 描边环在任意窗口尺寸下精确贴合
+        RoundClip.install(scroll, 14);
         return scroll;
     }
 
@@ -840,11 +843,12 @@ public class MainView {
         use.setOnMouseExited(e -> use.setStyle(pillStyle(false)));
         use.setOnAction(e -> {
             ItemUsageService.Result result = itemUsage.use(item, player.getBag(), pokemon);
-            Alert alert = new Alert(result.used() ? Alert.AlertType.INFORMATION : Alert.AlertType.WARNING);
-            alert.setTitle("使用道具");
-            alert.setHeaderText(item.getName() + " → " + pokemon.getName());
-            alert.setContentText(result.message());
-            alert.showAndWait();
+            String usageHeader = item.getName() + " → " + pokemon.getName();
+            if (result.used()) {
+                GameDialogs.info("使用道具", usageHeader, result.message());
+            } else {
+                GameDialogs.warn("使用道具", usageHeader, result.message());
+            }
             showPokemonDetail(pokemon); // 道具数量 / HP / 异常 / 等级都可能在这次使用后变化
         });
         HBox row = new HBox(6, info, use);

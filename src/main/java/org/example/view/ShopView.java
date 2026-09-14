@@ -29,6 +29,7 @@ import org.example.model.ItemStack;
 import org.example.model.RouteConfig;
 import org.example.model.RunData;
 import org.example.util.ImageBackgrounds;
+import org.example.util.RoundClip;
 import org.example.util.UiScale;
 
 import java.io.InputStream;
@@ -218,6 +219,7 @@ public class ShopView {
         detailBox.setPadding(new Insets(INFO_PADDING));
         detailBox.setStyle(infoBoxStyle());
         detailBox.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE); // 随栏位拉伸（VBox 默认只包内容高）
+        RoundClip.install(detailBox, 14); // 圆角几何裁切：与 infoBoxStyle 的 14px 描边环精确贴合（同主菜单中栏卡）
 
         if (stock.isEmpty()) {
             detailBox.getChildren().setAll(buildEmptyDetailLabel());

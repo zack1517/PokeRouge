@@ -35,6 +35,7 @@ import org.example.model.HeldItem;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.util.ImageBackgrounds;
+import org.example.util.RoundClip;
 import org.example.util.UiScale;
 
 import java.io.InputStream;
@@ -444,6 +445,7 @@ public final class ItemDexView {
         detailBox.setPadding(new Insets(INFO_PADDING));
         detailBox.setStyle(infoBoxStyle());
         detailBox.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE); // 随栏位拉伸（VBox 默认只包内容高）
+        RoundClip.install(detailBox, 14); // 圆角几何裁切：与 14px 描边环精确贴合（同主菜单 / 商店信息框）
         cardEntrance.add(detailBox); // 左栏与首批行卡一同错峰上浮入场
         return detailBox;
     }
