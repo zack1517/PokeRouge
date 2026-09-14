@@ -16,7 +16,7 @@ public final class RouteConfig {
     // 段与行动点（§4.1）
     // ------------------------------------------------------------------
 
-    /** 一条路线的总段数：走完第 N 段后依次进入四天王连打与冠军战（§4.2 必然节点）。 */
+    /** 一条路线的总段数：末段行动点耗尽后直接进入四天王连打，随后是冠军战（§4.2 必然节点）。 */
     public static final int TOTAL_SEGMENTS = 5;
 
     /** 第 1 段的行动点上限。 */
@@ -43,20 +43,37 @@ public final class RouteConfig {
     /** 商店节点出现的概率（百分比，随机节点）。 */
     public static final int SHOP_PERCENT = 55;
 
-    /** 特殊事件节点出现的概率（百分比，低概率节点）。 */
-    public static final int SPECIAL_PERCENT = 30;
-
-    /** 装备补给节点出现的概率（百分比，低概率节点；与特殊事件共享同一事件槽位）。 */
+    /** 装备补给节点出现的概率（百分比，低概率节点；占用与火箭队 / 神兽偶遇共用的特殊事件槽位）。 */
     public static final int EQUIPMENT_PERCENT = 30;
 
-    /** 特殊事件节点的默认行动点消耗（神兽偶遇 1 点；火箭队线与火箭队节点在第二步接入）。 */
-    public static final int SPECIAL_AP_COST = 1;
+    /** 宝可梦交换事件出现的概率（百分比，低概率节点；与特殊事件共享同一事件槽位）。 */
+    public static final int TRADE_PERCENT = 30;
+
+    /**
+     * 糖果补给节点出现的概率（百分比，低概率节点；在特殊事件槽位的优先级链里排在装备补给之后）。
+     * 命中后按 {@link #candyCountForSegment(int)} 发放神奇糖果。
+     */
+    public static final int CANDY_PERCENT = 30;
+
+    /**
+     * 糖果补给节点在第 {@code segment} 段发放的神奇糖果数量：首段 8 个，之后每段 +2
+     * （8 / 10 / 12 / 14 / 16）。段号非法时按第 1 段处理。
+     */
+    public static int candyCountForSegment(int segment) {
+        int seg = Math.max(1, segment);
+        return 8 + (seg - 1) * 2;
+    }
+
+    /** 糖果补给发放的道具 id（神奇糖果，见 {@code items.csv}）。 */
+    public static final String CANDY_ITEM_ID = "i_rare_candy";
 
     /**
      * 每段最多生成的路线节点数（不含必然节点）：
-     * 常驻的路人 / 野外精灵 / 医院必占 3 个，商店与特殊事件再按概率追加。
+     * 常驻的路人 / 野外精灵 / 医院必占 3 个，商店再按概率追加，共用的特殊事件槽位最多再占 1 个，
+     * 末段在火箭队剧情线未收束时还会固定多占 1 个「火箭队抓捕神兽」（见
+     * {@link #ROCKET_BOSS_RESIDENT_SEGMENT}），故上限为 6。
      */
-    public static final int MAX_ROUTE_NODES = 5;
+    public static final int MAX_ROUTE_NODES = 6;
 
     // ------------------------------------------------------------------
     // 金币奖惩（§4.2 节点说明 + §4.3 失败与惩罚规则）
@@ -70,11 +87,6 @@ public final class RouteConfig {
     /** 野外精灵战胜利的金币奖励。 */
     public static int wildWinGold(int segment) {
         return 20 + Math.max(1, segment) * 8;
-    }
-
-    /** 特殊事件的金币奖励。 */
-    public static int specialGold(int segment) {
-        return 30 + Math.max(1, segment) * 10;
     }
 
     /** 道馆战胜利的金币奖励。 */
@@ -124,23 +136,20 @@ public final class RouteConfig {
     }
 
     // ------------------------------------------------------------------
-    // 商店（§4.2 商店：随机出现，随游戏进展商品种类与数量越多）
+    // 商店（§4.2 商店：随机出现；消耗品按段解锁后全量上架，装备每次进店随机上架）
     // ------------------------------------------------------------------
+    //
+    // 消耗品没有格位上限：解锁多少件就上架多少件（第 1 段 7 件 → 第 5 段 16 件），
+    // 解锁节奏是逐件数据，写在 ShopStock.CONSUMABLES 的解锁段号上，旧的消耗品格位常量已删除。
+    // 装备（2026-09-13 裁决）恢复随机上架：每次进店从未拥有的装备池里随机抽
+    // SHOP_EQUIPMENT_STOCK_SIZE 件，买走即下架、不补货。
 
-    /** 第 1 段上架的商品数量。 */
-    public static final int BASE_SHOP_STOCK = 3;
-
-    /** 每推进一段额外增加的商品数量。 */
-    public static final int SHOP_STOCK_PER_SEGMENT = 1;
-
-    /** 单次商店的商品数量上限。 */
-    public static final int MAX_SHOP_STOCK = 6;
-
-    /** 某一段商店的商品数量（数量随进展增加）。 */
-    public static int shopStockSize(int segment) {
-        int size = BASE_SHOP_STOCK + (Math.max(1, segment) - 1) * SHOP_STOCK_PER_SEGMENT;
-        return Math.min(MAX_SHOP_STOCK, size);
-    }
+    /**
+     * 每次进店上架的装备件数（从未拥有的装备池中随机抽取；池不足该件数时全部上架）。
+     *
+     * <p>2026-09-13 需求方裁决「装备每次只刷出来三个」，此前「全量上架」的口径作废。</p>
+     */
+    public static final int SHOP_EQUIPMENT_STOCK_SIZE = 3;
 
     /** 每推进一段的物价涨幅（百分比）。 */
     public static final int SHOP_PRICE_INFLATION_PERCENT = 15;
@@ -149,28 +158,6 @@ public final class RouteConfig {
     public static int shopPrice(int basePrice, int segment) {
         int steps = Math.max(1, segment) - 1;
         return (int) Math.round(basePrice * (1.0 + SHOP_PRICE_INFLATION_PERCENT * steps / 100.0));
-    }
-
-    /** 第 1 段上架的装备数量（商店固定给装备留位，避免货架被消耗品占满）。 */
-    public static final int BASE_SHOP_EQUIPMENT_STOCK = 1;
-
-    /** 每推进多少段额外增加一件上架装备（装备比消耗品稀有，故按两段递增）。 */
-    public static final int SHOP_EQUIPMENT_STOCK_PER_SEGMENT = 2;
-
-    /** 单次商店的上架装备数量上限。 */
-    public static final int MAX_SHOP_EQUIPMENT_STOCK = 2;
-
-    /**
-     * 某一段商店的上架装备数量（装备比消耗品稀有，两段才多给一格）。
-     *
-     * <p>剩余格位卖给消耗品，见 {@link #shopStockSize(int)}：第 1 段共 3 格 = 1 装备 + 2 消耗品，
-     * 末段共 6 格 = 2 装备 + 4 消耗品。</p>
-     */
-    public static int shopEquipmentStockSize(int segment) {
-        int seg = Math.max(1, segment);
-        int size = BASE_SHOP_EQUIPMENT_STOCK
-                + (seg - 1) / Math.max(1, SHOP_EQUIPMENT_STOCK_PER_SEGMENT);
-        return Math.min(MAX_SHOP_EQUIPMENT_STOCK, size);
     }
 
     // ------------------------------------------------------------------
@@ -189,7 +176,7 @@ public final class RouteConfig {
 
     /**
      * 路人训练家队伍数量下限（按段）：1 段 1 只、2 段 1 只、3 段 2 只、4 段 3 只；
-     * 第 5 段保持随机 1~2 只。
+     * 第 5 段保持随机 3~4 只。
      */
     public static int trainerPartyMin(int segment) {
         int seg = Math.max(1, segment);
@@ -197,13 +184,13 @@ public final class RouteConfig {
             case 1, 2 -> 1;
             case 3 -> 2;
             case 4 -> 3;
-            default -> 1; // 第 5 段保持随机 1~2
+            default -> 3; // 第 5 段保持随机 3~4
         };
     }
 
     /**
      * 路人训练家队伍数量上限（按段）：1 段 1 只、2 段 2 只、3 段 2 只、4 段 3 只；
-     * 第 5 段保持随机 1~2 只。
+     * 第 5 段保持随机 3~4 只。
      */
     public static int trainerPartyMax(int segment) {
         int seg = Math.max(1, segment);
@@ -211,26 +198,26 @@ public final class RouteConfig {
             case 1 -> 1;
             case 2, 3 -> 2;
             case 4 -> 3;
-            default -> 2; // 第 5 段保持随机 1~2
+            default -> 4; // 第 5 段保持随机 3~4
         };
     }
 
-    /** 道馆战相对队伍最高等级的等级加成（仅第 5 段及以后的道馆主使用；1~4 段走 {@link #gymFixedLevel}）。 */
+    /** 道馆战相对队伍最高等级的等级加成（末段已无道馆战，仅旧存档停留在末段道馆阶段时使用；1~4 段走 {@link #gymFixedLevel}）。 */
     public static int gymLevelBonus(int segment) {
         return 2 + Math.max(1, segment) * 2;
     }
 
     /**
-     * 道馆馆主固定等级表（仅 1~4 段）：11 / 17 / 24 / 32。
+     * 道馆馆主固定等级表（仅 1~4 段）：11 / 18 / 25 / 34。
      * 第 5 段道馆主保持相对队伍最高等级的等级加成（见 {@link #gymLevelBonus}），不走本表；
      * {@code default} 仅为非法段号的防御性兑底。
      */
     public static int gymFixedLevel(int segment) {
         return switch (Math.max(1, segment)) {
             case 1 -> 11;
-            case 2 -> 17;
-            case 3 -> 24;
-            default -> 32;
+            case 2 -> 18;
+            case 3 -> 25;
+            default -> 34;
         };
     }
 
@@ -245,24 +232,40 @@ public final class RouteConfig {
         };
     }
 
-    /** 四天王连打相对队伍最高等级的等级加成。 */
+    /**
+     * 四天王连打相对队伍最高等级的等级加成：固定 0（即队伍最高等级 ±2，无额外加成）。
+     *
+     * <p>保留段号参数以兼容既有调用口径，当前不再随段数增强。</p>
+     */
     public static int eliteFourLevelBonus(int segment) {
-        return 4 + Math.max(1, segment) * 2;
+        return 0;
     }
 
-    /** 冠军战相对队伍最高等级的等级加成。 */
+    /**
+     * 冠军战相对队伍最高等级的等级加成：固定 +3（实际等级再 ±1 浮动，见控制器）。
+     *
+     * <p>保留段号参数以兼容既有调用口径，当前不再随段数增强。</p>
+     */
     public static int championLevelBonus(int segment) {
-        return 6 + Math.max(1, segment) * 3;
+        return 3;
     }
 
-    /** 四天王连打的对手宝可梦数量。 */
+    /**
+     * 四天王连打的对手宝可梦数量：固定 4 只。
+     *
+     * <p>保留段号参数以兼容既有调用口径。</p>
+     */
     public static int eliteFourPartySize(int segment) {
-        return Math.min(4, 2 + Math.max(1, segment) / 2);
+        return 4;
     }
 
-    /** 冠军战的对手宝可梦数量。 */
+    /**
+     * 冠军战的对手宝可梦数量：固定 5 只。
+     *
+     * <p>保留段号参数以兼容既有调用口径。</p>
+     */
     public static int championPartySize(int segment) {
-        return Math.min(6, 3 + Math.max(1, segment) / 2);
+        return 5;
     }
 
     // ------------------------------------------------------------------
@@ -280,8 +283,43 @@ public final class RouteConfig {
     /** 火箭队队员节点出现的概率（百分比）；各时期均可能出现（§5.2）。 */
     public static final int ROCKET_PERCENT = 35;
 
-    /** 火箭队抓捕神兽事件出现的概率（百分比）；需后期且已开启剧情线。 */
+    /**
+     * 火箭队抓捕神兽事件出现的概率（百分比）；需进入出现窗口
+     * （第 4 段行动点消耗过半之后，见 {@link #rocketCaptureAvailable}），且尚未到固定出现的末段。
+     */
     public static final int ROCKET_CAPTURE_PERCENT = 60;
+
+    /**
+     * 火箭队首领（抓捕神兽）固定出现的起始段号：已开启火箭队剧情线且首领未被击败时，
+     * 从该段起该节点不再掷 {@link #ROCKET_CAPTURE_PERCENT}，而是随常驻节点一起固定入列 ——
+     * 玩家在打进冠军战前一定有机会与首领交手、拿到大师球并触发那一次必然的神兽偶遇。
+     */
+    public static final int ROCKET_BOSS_RESIDENT_SEGMENT = TOTAL_SEGMENTS;
+
+    /** 该段是否已到火箭队首领固定出现的段号（剧情线状态由节点生成器另行判定）。 */
+    public static boolean isRocketBossResidentSegment(int segment) {
+        return Math.max(1, segment) >= ROCKET_BOSS_RESIDENT_SEGMENT;
+    }
+
+    /** 火箭队抓捕神兽事件的起始段号：第 4 段行动点消耗过半后才出现（§5.3）。 */
+    public static final int ROCKET_CAPTURE_SEGMENT = 4;
+
+    /**
+     * 火箭队抓捕神兽事件是否可在当前状态下出现：
+     * 第 4 段需行动点消耗过半（当前行动点不超过上限的一半）之后，第 5 段起直接可出现；
+     * 末段（{@link #ROCKET_BOSS_RESIDENT_SEGMENT} 及以后）该节点改为固定入列，不再走本判定。
+     *
+     * @param segment 段号（1 起）
+     * @param ap      当前剩余行动点
+     * @param apMax   本段行动点上限
+     */
+    public static boolean rocketCaptureAvailable(int segment, int ap, int apMax) {
+        int seg = Math.max(1, segment);
+        if (seg > ROCKET_CAPTURE_SEGMENT) {
+            return true;
+        }
+        return seg == ROCKET_CAPTURE_SEGMENT && apMax > 0 && ap * 2 <= apMax;
+    }
 
     /** 神兽偶遇出现的概率（百分比）；仅后期且每局至多一次（§5.1）。 */
     public static final int LEGENDARY_PERCENT = 30;
@@ -329,33 +367,49 @@ public final class RouteConfig {
         return Math.max(1, segment) - 1;
     }
 
-    /** 火箭队首领战相对队伍最高等级的等级加成。 */
-    public static int rocketBossLevelBonus(int segment) {
-        return 5 + Math.max(1, segment) * 3;
-    }
+    /** 火箭队首领战相对队伍最高等级的等级加成：固定 +4（实际等级再 ±1 浮动，见控制器）。 */
+    public static final int ROCKET_BOSS_LEVEL_BONUS = 4;
 
-    /** 神兽偶遇相对队伍最高等级的等级加成（神兽强度高于普通野生精灵）。 */
+    /** 火箭队首领战的对手宝可梦数量：固定 4 只。 */
+    public static final int ROCKET_BOSS_PARTY_SIZE = 4;
+
+    /**
+     * 神兽偶遇相对队伍最高等级的等级加成：固定 +6（实际等级再 ±2 浮动，见控制器）。
+     *
+     * <p>保留段号参数以兼容既有调用口径，当前不再随段数增强。</p>
+     */
     public static int legendaryLevelBonus(int segment) {
-        return 4 + Math.max(1, segment) * 3;
+        return 6;
     }
 
-    /** 首领侵略战相对队伍最高等级的等级加成。 */
+    /**
+     * 首领侵略战相对队伍最高等级的等级加成：固定 +1（实际等级再 ±1 浮动，见控制器）。
+     *
+     * <p>保留段号参数以兼容既有调用口径，当前不再随段数增强。</p>
+     */
     public static int bossAggressionLevelBonus(int segment) {
-        return 7 + Math.max(1, segment) * 3;
+        return 1;
     }
 
-    /** 火箭队队员战的对手宝可梦数量。 */
+    /**
+     * 火箭队队员战的对手宝可梦数量：1~5 段固定为 2 / 3 / 3 / 4 / 4。
+     * {@code default} 为非法段号的防御性兑底。
+     */
     public static int rocketPartySize(int segment) {
-        return Math.min(4, 1 + Math.max(1, segment) / 2);
+        int seg = Math.max(1, segment);
+        return switch (seg) {
+            case 1 -> 2;
+            case 2, 3 -> 3;
+            default -> 4;
+        };
     }
 
-    /** 火箭队首领战的对手宝可梦数量。 */
-    public static int rocketBossPartySize(int segment) {
-        return Math.min(6, 2 + Math.max(1, segment) / 2);
-    }
-
-    /** 首领侵略战的对手宝可梦数量。 */
+    /**
+     * 首领侵略战的对手宝可梦数量：固定 6 只。
+     *
+     * <p>保留段号参数以兼容既有调用口径。</p>
+     */
     public static int bossAggressionPartySize(int segment) {
-        return Math.min(6, 3 + Math.max(1, segment) / 2);
+        return 6;
     }
 }

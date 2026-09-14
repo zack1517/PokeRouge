@@ -34,12 +34,12 @@ public class SegmentPlan {
         return apLimit;
     }
 
-    /** 可以自由选择进入的路线节点（常驻节点必出，商店 / 特殊事件按概率出现）。 */
+    /** 可以自由选择进入的路线节点（常驻节点必出，商店 / 装备补给等按概率出现）。 */
     public List<Option> getRouteOptions() {
         return Collections.unmodifiableList(routeOptions);
     }
 
-    /** 本段行动点耗尽后必然触发的节点（道馆战）；仅用于界面预告，不参与行动点选择。 */
+    /** 本段行动点耗尽后必然触发的节点（常规段为道馆战，末段为四天王连打）；仅用于界面预告，不参与行动点选择。 */
     public Option getMandatoryOption() {
         return mandatoryOption;
     }

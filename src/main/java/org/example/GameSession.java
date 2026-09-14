@@ -1,6 +1,9 @@
 package org.example;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.example.growth.GrowthProgress;
 import org.example.model.Option;
@@ -17,18 +20,39 @@ import org.example.model.RunData;
  * 真正的数据/规则实现仍由子包提供。</p>
  * <p>地图段与地图背景属“对局进度”：段号的唯一来源是 {@link RunData#getSegment()}，
  * 当前段背景与段号绑定 —— 同段内多次返回主菜单（多次重建视图）保持同一张图，
- * 只有换段才重抽（见 {@link #enterRogueSegment(int)} / {@link #enterNextSegment()}）。</p>
+ * 只有换段才重抽，且一轮内不重复抽已用过的图（5 段对 5 张，见 {@link #nextMapBackground()}）。</p>
+ * <p>战斗背景不缓存：战斗发起时经 {@link #battleBackgroundFor(OptionType)} 按类型即时派发 ——
+ * 道馆从 5 张中随机不重复取，路人 / 野生 / Boss 各映射固定图，未特别列出的类型一律默认野外图。</p>
  * <p>肉鸽路线接口（{@link #startRogueRun()} 等）由 {@link RogueTurnManager} 承载段号 / 节点 /
  * 行动点 / 金币逻辑，已接入主流程：主菜单「进入路线节点」→ {@link org.example.view.RogueFloorView}
  * 节点页 → 真实战斗（战斗节点先经 {@link #enterRogueNode(Option)} 扣行动点，再由控制器接管战斗）。</p>
  */
 public class GameSession {
 
-    /** 地图背景候选（classpath；换段时随机取一）。 */
+    /** 地图背景候选（classpath；换段时随机取一，一轮内不重复用已抽过的图，见 {@link #nextMapBackground()}）。 */
     private static final String[] MAP_BACKGROUNDS = {
             "/images/background/bg_map1.jpeg",
             "/images/background/bg_map2.jpeg",
-            "/images/background/bg_map3.jpeg"};
+            "/images/background/bg_map3.jpeg",
+            "/images/background/bg_map4.jpeg",
+            "/images/background/bg_map5.jpeg"};
+
+    /** 战斗背景：野生遭遇（同时是未特别列出的战斗类型的兜底图，见 {@link #battleBackgroundFor(OptionType)}）。 */
+    private static final String BATTLE_BG_WILD = "/images/background/bg_battle_wild.jpeg";
+
+    /** 战斗背景：路人训练家（{@link OptionType#TRAINER}）。 */
+    private static final String BATTLE_BG_PASSER = "/images/background/bg_battle_passer.jpeg";
+
+    /** 战斗背景：Boss 级战斗（四天王 / 冠军 / 火箭队首领战 / 首领侵略战）。 */
+    private static final String BATTLE_BG_BOSS = "/images/background/bg_boss.jpeg";
+
+    /** 道馆战背景候选（classpath；一轮 5 段对 5 张，随机不重复，见 {@link #nextGymBackground()}）。 */
+    private static final String[] GYM_BACKGROUNDS = {
+            "/images/background/bg_gym1.jpeg",
+            "/images/background/bg_gym2.jpeg",
+            "/images/background/bg_gym3.jpeg",
+            "/images/background/bg_gym4.jpeg",
+            "/images/background/bg_gym5.jpeg"};
 
     private final Player player;
 
@@ -40,6 +64,12 @@ public class GameSession {
 
     /** 当前段已确定的地图背景（null = 尚未抽取）；与段号同步变化。 */
     private String mapBackground;
+
+    /** 本轮远征已抽过的地图背景（一轮 5 段对 5 张图，保证各段不重图；用尽后自动清空兜底，见 {@link #nextMapBackground()}）。 */
+    private final Set<String> usedMapBackgrounds = new LinkedHashSet<>();
+
+    /** 本轮远征已抽过的道馆背景（一轮 5 个道馆对 5 张图；用尽后自动清空兜底，见 {@link #nextGymBackground()}）。 */
+    private final Set<String> usedGymBackgrounds = new LinkedHashSet<>();
 
     public GameSession(Player player) {
         this(player, GrowthProgress.instance());
@@ -96,9 +126,12 @@ public class GameSession {
         return mapBackground;
     }
 
-    /** 直接设置当前段地图背景（读档还原用），{@code null} 表示回到「尚未抽取」状态。 */
+    /** 直接设置当前段地图背景（读档还原用），{@code null} 表示回到「尚未抽取」状态；非空时计入已用集合。 */
     public void setMapBackground(String mapBackground) {
         this.mapBackground = mapBackground;
+        if (mapBackground != null) {
+            usedMapBackgrounds.add(mapBackground);
+        }
     }
 
     /**
@@ -124,12 +157,62 @@ public class GameSession {
         return mapBackground;
     }
 
-    /** 从候选图随机取一；已有当前图时避开（避免换段后与上一段同图，3 张候选足够重抽）。 */
+    /**
+     * 按战斗类型取背景 classpath（战斗页入口每次开战时取一次）：
+     * <ul>
+     *   <li>道馆战：从 {@link #GYM_BACKGROUNDS} 随机取一张，一轮内不重复（5 段 5 道馆恰好一一对应）；</li>
+     *   <li>路人：固定路人图；四天王 / 冠军 / 火箭队首领（抓捕神兽）/ 首领侵略战：固定 Boss 图；</li>
+     *   <li>其余一切（野生 / 火箭队队员 / 神兽偶遇及以后新增未分类的战斗）：一律默认野外图。</li>
+     * </ul>
+     */
+    public String battleBackgroundFor(OptionType type) {
+        if (type == OptionType.GYM) {
+            return nextGymBackground();
+        }
+        if (type == OptionType.TRAINER) {
+            return BATTLE_BG_PASSER;
+        }
+        if (type == OptionType.ELITE_FOUR || type == OptionType.CHAMPION
+                || type == OptionType.ROCKET_CAPTURE || type == OptionType.ROCKET_INVASION) {
+            return BATTLE_BG_BOSS;
+        }
+        return BATTLE_BG_WILD;
+    }
+
+    /** 从道馆背景候选随机取一（一轮不重复；用尽清空兜底，与 {@link #nextMapBackground()} 同策）。 */
+    private String nextGymBackground() {
+        return pickUnused(GYM_BACKGROUNDS, usedGymBackgrounds, null);
+    }
+
+    /**
+     * 从候选图随机取一：只从「本轮尚未用过」的图中抽（各段不重图，5 段对 5 图恰好一一对应）；
+     * 候选用尽（异常长局）时清空历史兜底重来，并始终避开当前段图（读档恢复的图可能不在历史集合中）。
+     */
     private String nextMapBackground() {
-        String pick;
-        do {
-            pick = MAP_BACKGROUNDS[(int) (Math.random() * MAP_BACKGROUNDS.length)];
-        } while (MAP_BACKGROUNDS.length > 1 && pick.equals(mapBackground));
+        return pickUnused(MAP_BACKGROUNDS, usedMapBackgrounds, mapBackground);
+    }
+
+    /**
+     * 从候选池随机取一：只从 {@code used} 中尚未出现的图里抽，用尽则清空历史兜底重来。
+     *
+     * @param avoid 非空时额外避开（读档恢复的当前段图可能不在历史集合中），保证结果与其不同图
+     */
+    private static String pickUnused(String[] candidates, Set<String> used, String avoid) {
+        List<String> pool = new ArrayList<>();
+        for (String candidate : candidates) {
+            if (!used.contains(candidate)) {
+                pool.add(candidate);
+            }
+        }
+        if (pool.isEmpty()) {
+            used.clear();
+            pool.addAll(List.of(candidates));
+        }
+        if (pool.size() > 1 && avoid != null) {
+            pool.remove(avoid);
+        }
+        String pick = pool.get((int) (Math.random() * pool.size()));
+        used.add(pick);
         return pick;
     }
 
@@ -167,6 +250,8 @@ public class GameSession {
                 .map(PokemonInstance::new)
                 .toList();
         rogueTurnManager.startRun(team);
+        usedMapBackgrounds.clear(); // 新一轮远征：5 张地图图重新分配
+        usedGymBackgrounds.clear(); // 道馆 5 张同理
         mapBackground = nextMapBackground();
     }
 
@@ -210,7 +295,7 @@ public class GameSession {
         return rogueTurnManager.consumeNode(option);
     }
 
-    /** 结算节点中不需战斗的当场效果（医院治疗全队、特殊事件发放金币）。 */
+    /** 结算节点中不需战斗的当场效果（医院治疗全队）。 */
     public void resolveRogueOptionEffect(Option option) {
         syncRogueTeam();
         rogueTurnManager.resolveImmediateEffect(option);
@@ -223,9 +308,9 @@ public class GameSession {
     }
 
     /**
-     * 节点结束后检查是否该进入本段必然节点（道馆战）。
+     * 节点结束后检查是否该进入本段必然节点（常规段为道馆战，末段直接进入四天王连打）。
      *
-     * @return 触发了道馆战返回 {@code true}
+     * @return 触发了必然节点返回 {@code true}
      */
     public boolean advanceRogueNode() {
         return rogueTurnManager.advanceAfterNode();
@@ -285,6 +370,15 @@ public class GameSession {
      */
     public boolean resolveRogueMandatoryDefeat() {
         return rogueTurnManager.resolveMandatoryDefeat();
+    }
+
+    /**
+     * 第一次道馆战全灭的免费救援：消耗本段失败机会但不扣金币（全队满状态恢复由控制器执行）。
+     *
+     * @return 符合条件并已消耗机会返回 {@code true}
+     */
+    public boolean useFreeRogueGymRescue() {
+        return rogueTurnManager.useFreeGymRescue();
     }
 
     /** 标记本轮远征结束（如 UI 接管的真实战斗失败时），供结算流程与视图判定。 */

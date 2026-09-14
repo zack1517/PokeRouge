@@ -3,11 +3,13 @@ package org.example.battle;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
+import java.util.Set;
 
 import org.example.model.ElementType;
 import org.example.model.HeldItem;
@@ -86,6 +88,11 @@ public class BattleEngine implements BattleService {
     /** 守住首次使用的成功百分比；连续使用每多一次右移一位（50%、25%、12%……），最低 1%。 */
     private static final int PROTECT_BASE_CHANCE = 100;
 
+    /** 野生对战中敌方上次使用变化类招式后，伤害类招式的选择权重（变化类权重固定为 1）。 */
+    private static final double WILD_DAMAGING_WEIGHT = 2.0;
+    /** 训练师对战中敌方使用过变化类招式后，变化类招式的选择权重（伤害类权重固定为 1）。 */
+    private static final double TRAINER_STATUS_WEIGHT = 0.5;
+
     private final Player player;
     /** 野生战斗中的敌方野生精灵；训练师轮战（{@code trainer} 非空）时为 {@code null}。 */
     private final Pokemon wild;
@@ -126,6 +133,10 @@ public class BattleEngine implements BattleService {
     private final Map<String, String> lastMoves = new HashMap<>();
     /** 节拍器连续使用次数表：精灵 uuid → 连续使用同一招式的次数（换招即归 1）。 */
     private final Map<String, Integer> consecutiveUses = new HashMap<>();
+    /** 敌方出战精灵上一次使用的招式是否为变化类（精灵 uuid → 布尔；用于选招倾向，仅本场战斗内有效）。 */
+    private final Map<String, Boolean> foeLastMoveStatus = new HashMap<>();
+    /** 本场战斗中曾使用过变化类招式的敌方精灵 uuid（训练师对战中用于持续降低变化类招式权重）。 */
+    private final Set<String> foeEverUsedStatus = new HashSet<>();
     /** 满队时挂起的已捕捉精灵（队伍已满暂未入队，待玩家放生腾位或放弃；非满队捕捉为 {@code null}）。 */
     private Pokemon pendingCaptured;
 
@@ -795,17 +806,27 @@ public class BattleEngine implements BattleService {
                 events.add(BattleEvent.faint(BattleEvent.Side.PLAYER, playerActive().getName(),
                         BattleEvent.hpOf(playerActive())));
             }
+            foeLastMoveStatus.put(foe.getUuid(), false);
         } else {
             usable.use();
             append(foe.getName() + " 使用了【" + usable.getMove().getName() + "】！");
             events.add(BattleEvent.move(BattleEvent.Side.FOE, foe.getName(), usable.getMove()));
             lockChoiceMove(foe, usable.getMove());
             executeMove(foe, playerActive(), usable.getMove());
+            boolean statusMove = usable.getMove().isStatus();
+            foeLastMoveStatus.put(foe.getUuid(), statusMove);
+            if (statusMove) {
+                foeEverUsedStatus.add(foe.getUuid());
+            }
         }
     }
 
     /**
-     * 敌方自动选择技能：讲究系装备锁定的招式仍有 PP 时优先使用，否则从仍有 PP 的技能中随机挑一个。
+     * 敌方自动选择技能：讲究系装备锁定的招式仍有 PP 时优先使用，否则按 AI 倾向加权随机。
+     *
+     * <p><b>野生对战</b>：上次使用变化类招式后，伤害类招式的选择权重提升（更倾向进攻）。
+     * <b>训练师对战</b>：使用过一次变化类招式后，下一次<b>必定</b>使用伤害类招式（无伤害类
+     * 可用时回退），此后变化类招式的选择权重持续降低。</p>
      */
     private MoveSlot pickFoeMove() {
         Pokemon foe = foeActive();
@@ -829,7 +850,41 @@ public class BattleEngine implements BattleService {
                 }
             }
         }
+        boolean lastStatus = foeLastMoveStatus.getOrDefault(foe.getUuid(), false);
+        List<MoveSlot> damaging = usable.stream().filter(s -> !s.getMove().isStatus()).toList();
+        List<MoveSlot> statusMoves = usable.stream().filter(s -> s.getMove().isStatus()).toList();
+        if (trainer != null) {
+            // 训练家 / 火箭队 / 道馆主：上次用了变化类 → 本次必定伤害类；用过后变化类权重持续降低
+            if (lastStatus && !damaging.isEmpty()) {
+                return damaging.get(random.nextInt(damaging.size()));
+            }
+            if (foeEverUsedStatus.contains(foe.getUuid())) {
+                return weightedPick(damaging, statusMoves, 1.0, TRAINER_STATUS_WEIGHT);
+            }
+        } else if (lastStatus) {
+            // 野生对战：上次用了变化类 → 提升伤害类招式概率
+            return weightedPick(damaging, statusMoves, WILD_DAMAGING_WEIGHT, 1.0);
+        }
         return usable.get(random.nextInt(usable.size()));
+    }
+
+    /**
+     * 加权随机选招：先按「类总权重」随机选出伤害类或变化类，再在选中类内等概率取一个招式。
+     * 某一类为空时回退为另一类内等概率（两类都空由调用方保证不会发生）。
+     */
+    private MoveSlot weightedPick(List<MoveSlot> damaging, List<MoveSlot> statusMoves,
+                                  double damagingWeight, double statusWeight) {
+        if (damaging.isEmpty()) {
+            return statusMoves.get(random.nextInt(statusMoves.size()));
+        }
+        if (statusMoves.isEmpty()) {
+            return damaging.get(random.nextInt(damaging.size()));
+        }
+        double total = damaging.size() * damagingWeight + statusMoves.size() * statusWeight;
+        if (random.nextDouble() * total < damaging.size() * damagingWeight) {
+            return damaging.get(random.nextInt(damaging.size()));
+        }
+        return statusMoves.get(random.nextInt(statusMoves.size()));
     }
 
     private MoveSlot usableSlot(Pokemon pokemon, MoveSlot preferred) {

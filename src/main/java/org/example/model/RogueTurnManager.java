@@ -18,9 +18,9 @@ import java.util.List;
  *   loop:
  *     consumeNode(option)              // 校验并扣 AP、把节点标记为已走
  *     （战斗节点：控制器战斗 → awardWinGold / applyDefeatPenalty）
- *     resolveImmediateEffect(option)   // 医院治疗 / 特殊事件结算
+ *     resolveImmediateEffect(option)   // 医院治疗等当场效果结算
  *     applyNodeHeal()                  // 节点自回血：未濒死宝可梦回复最大 HP 的 1/5
- *     advanceAfterNode()               // AP 耗尽或无节点可走 → 触发道馆战
+ *     advanceAfterNode()               // AP 耗尽或无节点可走 → 触发必然节点（末段直接进入四天王连打）
  *   mandatory:
  *     resolveMandatoryVictory()        // 道馆胜利 → 下一段；四天王 → 冠军；冠军 → 通关
  *     resolveMandatoryDefeat()         // 可失败一次；重试再败则 Run 结束
@@ -67,7 +67,7 @@ public class RogueTurnManager {
     }
 
     /**
-     * 进入某一段：重新生成路线节点（按剧情线状态决定特殊事件），行动点重置为该段上限，
+     * 进入某一段：重新生成路线节点（按剧情线状态决定特殊事件槽位），行动点重置为该段上限，
      * 阶段回到路线探索，「失败一次」的机会也一并重置（§4.1：每段路线开始时重置行动点至该段上限）。
      */
     public void enterSegment(int segment) {
@@ -89,17 +89,19 @@ public class RogueTurnManager {
      * <b>行动点、阶段、金币与剧情线标记都不变</b>——刷新只换节点，不重置本段进度。
      *
      * <p>由于常驻节点（路人 / 野外精灵 / 医院）每次都必然入列，刷新后玩家仍能再次进入
-     * 这三类节点，行动点依旧是唯一的限制资源。</p>
+     * 这三类节点，行动点依旧是唯一的限制资源；末段若剧情线未收束，固定的「火箭队抓捕神兽」
+     * 同样会在刷新后继续出现。</p>
      */
     public void refreshRoute() {
         SegmentPlan plan = generatePlan(runData.getSegment());
         runData.setAvailableOptions(new ArrayList<>(plan.getRouteOptions()));
     }
 
-    /** 按当前段号与剧情线状态生成本段方案（开段与刷新共用，保证两处规则一致）。 */
+    /** 按当前段号、剧情线状态与行动点生成本段方案（开段与刷新共用，保证两处规则一致）。 */
     private SegmentPlan generatePlan(int segment) {
         return generator.generateSegment(segment, runData.isRocketLineUnlocked(),
-                runData.isRocketBossDefeated(), runData.isLegendaryMet(), runData.isPendingLegendary());
+                runData.isRocketBossDefeated(), runData.isLegendaryMet(), runData.isPendingLegendary(),
+                runData.getAp(), runData.getApMax());
     }
 
     public void setTeam(List<PokemonInstance> team) {
@@ -185,7 +187,7 @@ public class RogueTurnManager {
 
     /**
      * 结算节点的当场效果（不需战斗的部分）：
-     * 医院治疗全队、特殊事件发放金币；商店由控制器打开购买界面，战斗节点由控制器拉起战斗。
+     * 医院治疗全队；商店由控制器打开购买界面，战斗节点由控制器拉起战斗。
      */
     public void resolveImmediateEffect(Option option) {
         if (option == null || option.getType() == null) {
@@ -193,7 +195,6 @@ public class RogueTurnManager {
         }
         switch (option.getType()) {
             case HOSPITAL -> healPartyFully();
-            case SPECIAL -> runData.addGold(goldRewardFor(OptionType.SPECIAL));
             default -> {
                 // 战斗节点由控制器接管；商店由控制器打开购买界面
             }
@@ -245,8 +246,9 @@ public class RogueTurnManager {
 
     /**
      * 节点结束后检查是否该进入必然节点：本段已无节点可走（行动点不足且没有 0 点节点，
-     * 例如火箭队线必然触发的神兽偶遇）时触发道馆战（§4.1：行动点耗尽后无法再进入本段
-     * 随机节点，直接触发道馆战）。
+     * 例如火箭队线必然触发的神兽偶遇）时触发必然节点（§4.1：行动点耗尽后无法再进入本段
+     * 随机节点）——常规段为道馆战，末段直接进入四天王连打
+     * （见 {@link #triggerMandatoryNode()}）。
      *
      * @return 触发了必然节点返回 true
      */
@@ -268,10 +270,16 @@ public class RogueTurnManager {
     // 必然节点
     // ------------------------------------------------------------------
 
-    /** 触发当前段应到的必然节点：路线探索阶段 → 道馆战。 */
+    /**
+     * 触发当前段应到的必然节点：路线探索阶段 → 道馆战；
+     * 末段（第 {@link RouteConfig#TOTAL_SEGMENTS} 段）不再有道馆战，行动点耗尽后直接进入四天王连打。
+     */
     public Option triggerMandatoryNode() {
         if (runData.getPhase() != RoutePhase.EXPLORING) {
             return runData.getMandatoryOption();
+        }
+        if (runData.getSegment() >= RouteConfig.TOTAL_SEGMENTS) {
+            return enterPhase(RoutePhase.ELITE_FOUR);
         }
         return enterPhase(RoutePhase.GYM);
     }
@@ -300,6 +308,8 @@ public class RogueTurnManager {
                 if (runData.getSegment() < RouteConfig.TOTAL_SEGMENTS) {
                     enterSegment(runData.getSegment() + 1);
                 } else {
+                    // 末段道馆战胜利 → 四天王连打；仅旧存档停留在末段道馆阶段时才会走到这里
+                    // （新规则：末段行动点耗尽已直接进入四天王连打，见 triggerMandatoryNode）
                     enterPhase(RoutePhase.ELITE_FOUR);
                 }
             }
@@ -368,6 +378,20 @@ public class RogueTurnManager {
         return false;
     }
 
+    /**
+     * 第一次道馆战全灭的免费救援（§4.3 补充规则）：消耗本段失败机会但<b>不扣金币</b>，
+     * 全队满状态恢复由控制器执行（本类不持有队伍状态）。
+     *
+     * @return 符合免费救援条件（道馆阶段、本段未用过失败机会）并已消耗机会返回 {@code true}
+     */
+    public boolean useFreeGymRescue() {
+        if (runData.getPhase() != RoutePhase.GYM || !runData.canRetry()) {
+            return false;
+        }
+        runData.useRetry();
+        return true;
+    }
+
     // ------------------------------------------------------------------
     // 金币
     // ------------------------------------------------------------------
@@ -381,7 +405,6 @@ public class RogueTurnManager {
         return switch (type) {
             case TRAINER -> RouteConfig.trainerWinGold(segment);
             case WILD -> RouteConfig.wildWinGold(segment);
-            case SPECIAL -> RouteConfig.specialGold(segment);
             case ROCKET -> RouteConfig.rocketWinGold(segment);
             case ROCKET_CAPTURE -> RouteConfig.rocketCaptureWinGold(segment);
             case LEGENDARY -> RouteConfig.legendaryWinGold(segment);
@@ -389,7 +412,7 @@ public class RogueTurnManager {
             case ELITE_FOUR -> RouteConfig.eliteFourWinGold(segment);
             case CHAMPION -> RouteConfig.championWinGold(segment);
             case ROCKET_INVASION -> RouteConfig.bossAggressionWinGold(segment);
-            case HOSPITAL, SHOP, REWARD -> 0;
+            case HOSPITAL, SHOP, REWARD, TRADE, CANDY -> 0;
         };
     }
 

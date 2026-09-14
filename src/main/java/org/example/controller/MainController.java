@@ -1,5 +1,6 @@
 package org.example.controller;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
@@ -8,6 +9,7 @@ import java.util.stream.Collectors;
 
 import org.example.GameSession;
 import org.example.battle.BattleDataPort;
+import org.example.battle.BattleGrowthPort;
 import org.example.battle.BattleService;
 import org.example.battle.BattleServices;
 import org.example.config.AppConfig;
@@ -23,11 +25,13 @@ import org.example.model.OptionType;
 import org.example.model.Player;
 import org.example.model.Pokemon;
 import org.example.model.RouteConfig;
+import org.example.model.RoutePhase;
 import org.example.model.RunData;
 import org.example.model.Trainer;
 import org.example.save.SaveFormatException;
 import org.example.save.SaveManager;
 import org.example.save.SaveSlot;
+import org.example.service.ItemUsageService;
 import org.example.util.LogUtil;
 import org.example.util.MusicPlayer;
 import org.example.view.CustomBattleSetupView;
@@ -35,7 +39,6 @@ import org.example.view.CustomBattleView;
 import org.example.view.ItemDexView;
 import org.example.view.MainView;
 import org.example.view.PokedexView;
-import org.example.view.PokemonDetailView;
 import org.example.view.RogueFloorView;
 import org.example.view.SaveSlotView;
 import org.example.view.ShopView;
@@ -87,24 +90,42 @@ public class MainController {
      * 组装层统一入口：创建野生战引擎并注入数据端口与成长端口。
      *
      * <p>成长端口由外部成长模块实现（经验 / 升级 / 学招 / 进化判定 + 图鉴进度），
-     * 战斗模块自身不承担成长规则。</p>
+     * 战斗模块自身不承担成长规则。所有经本类发起的战斗均按当前段号附加
+     * 1 + 0.3×段数 的经验倍率（见 {@link #rogueGrowthPort}）。</p>
      */
     private BattleService newWildBattle(Player player, Pokemon wild) {
         BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
-        return BattleServices.newBattle(player, wild, dataPort,
-                PokemonBattleAdapter.battleGrowthPort(dataPort, growthProgress()));
+        return BattleServices.newBattle(player, wild, dataPort, rogueGrowthPort(dataPort));
     }
 
     /** 组装层统一入口：创建训练师轮战引擎并注入数据端口与成长端口。 */
     private BattleService newTrainerBattle(Player player, Trainer trainer) {
         BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
-        return BattleServices.newTrainerBattle(player, trainer, dataPort,
-                PokemonBattleAdapter.battleGrowthPort(dataPort, growthProgress()));
+        return BattleServices.newTrainerBattle(player, trainer, dataPort, rogueGrowthPort(dataPort));
+    }
+
+    /**
+     * 组装肉鸽战斗的成长端口：按当前段号给所有经验获取附加 1 + 0.3×段数 倍率。
+     * 独立模式（未开轮，session 为 null）时按段 1 口径（1.3 倍）处理。
+     */
+    private BattleGrowthPort rogueGrowthPort(BattleDataPort dataPort) {
+        GrowthService growth = new GrowthService(dataPort, growthProgress());
+        growth.setSegmentExpMultiplier(session != null ? session.getSegment() : 1);
+        return growth;
     }
 
     /** 本次会话的局外成长进度：捕捉次数 / 对战次数 / 个体值加成（图鉴数据来源）。 */
     private GrowthProgress growthProgress() {
         return session != null ? session.getGrowthProgress() : GrowthProgress.instance();
+    }
+
+    /**
+     * 局外道具使用服务：与战斗共用同一份成长端口，因此主菜单中栏吃神奇糖果升级
+     * 同样会到级学招与进化（口径见 {@link ItemUsageService}）。
+     */
+    private ItemUsageService newItemUsageService() {
+        BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
+        return new ItemUsageService(PokemonBattleAdapter.battleGrowthPort(dataPort, growthProgress()));
     }
 
     /** 对手等级锚点：队伍中宝可梦的最高等级（空队伍兑底 1）。 */
@@ -122,8 +143,7 @@ public class MainController {
 
     /**
      * 道具图鉴页·启动页入口：此时尚未读档，没有 {@link Player}，因此传 {@code null} 让图鉴
-     * 按「全部未拥有」只读展示（无穿戴 / 脱下操作，仅看效果与售价）。「返回」回到启动页；
-     * 主菜单内的道具图鉴入口（{@link #showItemDex()}）仍带玩家数据，可直接穿脱。
+     * 按「全部未拥有」只读展示（无穿戴 / 脱下操作，仅看效果与售价）。「返回」回到启动页。
      */
     public void showItemDexFromStart() {
         stage.setScene(new ItemDexView(null, null, this::showStartScreen, "返回主界面").createScene());
@@ -215,6 +235,11 @@ public class MainController {
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.NEW_GAME, saveManager.store().statuses(),
                 null,
                 slot -> confirmNewGame(slot, trainerName, starter),
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        chooseSlotForNewGame(trainerName, starter); // 删除后重进选档页（空档立即可用）
+                    }
+                },
                 this::showStartScreen).createScene());
     }
 
@@ -246,6 +271,11 @@ public class MainController {
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.CONTINUE, saveManager.store().statuses(),
                 activeSlot,
                 this::loadFromSlot,
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        showContinueSelection();
+                    }
+                },
                 this::showStartScreen).createScene());
     }
 
@@ -314,11 +344,6 @@ public class MainController {
             }
 
             @Override
-            public void onShowPokemonDetail(int index) {
-                showPokemonDetail(index);
-            }
-
-            @Override
             public void onShowItemDex() {
                 showItemDex();
             }
@@ -329,21 +354,16 @@ public class MainController {
             }
         }, session.mapBackgroundPath(), session.getSegment(),
                 session.getRogueRunData().isNotStarted() ? -1 : session.getRogueRunData().getGold(),
-                activeSlot == null ? null : activeSlot.displayName());
+                activeSlot == null ? null : activeSlot.displayName(),
+                newItemUsageService());
         stage.setScene(view.createScene());
-    }
-
-    /** 精灵详情页：由主菜单点击精灵名进入；左列表切换精灵、右侧属性/技能/装备（穿戴立即生效）；「返回」重建主菜单。 */
-    public void showPokemonDetail(int initialIndex) {
-        stage.setScene(new PokemonDetailView(player, initialIndex, session.mapBackgroundPath(), this::showMainMenu)
-                .createScene());
     }
 
     /**
      * 道具图鉴页：由主菜单「道具图鉴」按钮进入。
      *
-     * <p>全量列出商店商品目录（16 件消耗品 + 77 件装备），标注已拥有 / 未拥有与穿戴者；
-     * 已拥有的装备可在本页直接穿戴 / 脱下（写的就是玩家装备库，与详情页共用同一模型方法），
+     * <p>全量列出商店商品目录（17 件消耗品 + 77 件装备），标注已拥有 / 未拥有与穿戴者；
+     * 已拥有的装备可在本页直接穿戴 / 脱下（写的就是玩家装备库，与主菜单的道具区共用同一模型方法），
      * 因此这里不做二次校验，也不与金币 / 存档交互。「返回」重建主菜单以同步队伍变化。</p>
      */
     public void showItemDex() {
@@ -388,6 +408,11 @@ public class MainController {
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.CONTINUE, saveManager.store().statuses(),
                 activeSlot,
                 this::loadFromSlot,
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        showLoadSelection();
+                    }
+                },
                 this::showMainMenu).createScene());
     }
 
@@ -433,6 +458,11 @@ public class MainController {
                     infoAlert("保存成功", "进度已保存到 " + slot.displayName()
                             + "，之后的自动存档也会记录到这个档位。");
                 },
+                slot -> {
+                    if (confirmAndDelete(slot)) {
+                        chooseSlotToSave(); // 删除后重进选档页（空档可写；删的若是当前档也已置空）
+                    }
+                },
                 this::showMainMenu).createScene());
     }
 
@@ -468,6 +498,38 @@ public class MainController {
         return alert.showAndWait().filter(overwrite::equals).isPresent();
     }
 
+    /**
+     * 删除指定档位的存档（二次确认后执行）。
+     *
+     * <p>删除的若正是当前档位，会把 {@link #activeSlot} 置空 —— 之后的自动存档自然跳过，
+     * 避免悄悄把刚删掉的档位又写回去；玩家可经由「保存游戏」重新选择档位。</p>
+     *
+     * @return 是否真的执行了删除（取消或失败时为 {@code false}）
+     */
+    private boolean confirmAndDelete(SaveSlot slot) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("删除存档");
+        alert.setHeaderText(null);
+        alert.setContentText("删除会永久清除 " + slot.displayName() + " 的进度与图鉴成长，确定继续吗？");
+        ButtonType delete = new ButtonType("删除", ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancel = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(delete, cancel);
+        if (alert.showAndWait().filter(delete::equals).isEmpty()) {
+            return false;
+        }
+        try {
+            saveManager.store().delete(slot);
+        } catch (RuntimeException ex) {
+            LogUtil.info("[MainController] 删除存档失败：" + slot + "（" + ex.getMessage() + "）");
+            infoAlert("删除失败", "删除 " + slot.displayName() + " 时出错：\n" + ex.getMessage());
+            return false;
+        }
+        if (slot == activeSlot) {
+            activeSlot = null; // 刚删的就是当前档：置空后自动存档跳过，避免又写回来
+        }
+        return true;
+    }
+
     // ------------------------------------------------------------------
     // 路线节点流程：节点页 ⇄ 真实战斗 ⇄ 必然节点（道馆 / 四天王 / 冠军）
     // ------------------------------------------------------------------
@@ -499,8 +561,8 @@ public class MainController {
 
     /**
      * 路线节点统一入口：必然节点（道馆 / 四天王 / 冠军）直接开战且不消耗行动点；
-     * 其余节点先扣行动点，再按类型分发——战斗节点接管为真实战斗，医院 / 特殊事件当场结算，
-     * 商店打开购买界面。
+     * 其余节点先扣行动点，再按类型分发——战斗节点接管为真实战斗，医院当场结算，
+     * 商店打开购买界面，装备补给当场入库。
      */
     private void handleRogueOption(Option option) {
         if (option == null || session == null) {
@@ -521,10 +583,18 @@ public class MainController {
             case ROCKET -> startRocketBattle();
             case ROCKET_CAPTURE -> startRocketCaptureBattle();
             case LEGENDARY -> startLegendaryBattle();
-            case HOSPITAL, SPECIAL -> resolveNonBattleNode(option);
+            case HOSPITAL -> resolveNonBattleNode(option);
             case SHOP -> openShop();
             case REWARD -> {
                 resolveRogueEquipmentReward();
+                finishNodeStep(true);
+            }
+            case TRADE -> {
+                resolveTradeEvent();
+                finishNodeStep(true);
+            }
+            case CANDY -> {
+                resolveRogueCandySupply();
                 finishNodeStep(true);
             }
             default -> showRogueFloorScene();
@@ -543,18 +613,86 @@ public class MainController {
             infoAlert("装备补给", "你已经拥有【" + reward.getName() + "】了，补给落空。");
             return;
         }
-        infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription()
-                + "\n可在主菜单点击精灵名，在详情页中穿戴。");
+        infoAlert("装备补给", "获得装备【" + reward.getName() + "】：" + reward.getDescription());
     }
 
-    /** 非战斗节点：当场效果（医院治疗 / 特殊事件金币）结算后走节点收尾。 */
+    /** CANDY 事件：按所在段发放一批神奇糖果（8 / 10 / 12 / 14 / 16，逐段递增）。 */
+    private void resolveRogueCandySupply() {
+        Item candy = GameData.instance().item(RouteConfig.CANDY_ITEM_ID);
+        int count = RouteConfig.candyCountForSegment(session.getSegment());
+        if (candy == null) {
+            infoAlert("糖果补给", "道具数据缺失，本次补给落空。");
+            return;
+        }
+        player.getBag().add(candy, count);
+        LogUtil.info("糖果补给：获得 " + candy.getName() + " x" + count);
+        infoAlert("糖果补给", "获得神奇糖果 x" + count + "：喂给精灵可直接提升 1 级（主菜单中栏道具区可喂食）。");
+    }
+
+    /**
+     * TRADE 事件：宝可梦交换——系统提供一只「队伍平均等级（向下取整）+1 或 2」的宝可梦，
+     * 玩家可用队伍中的一只与其交换，也可放弃（均不返还行动点）。
+     */
+    private void resolveTradeEvent() {
+        if (player == null || player.getParty().isEmpty()) {
+            infoAlert("宝可梦交换", "队伍为空，无法进行交换。");
+            return;
+        }
+        List<Pokemon> party = player.getParty();
+        int avgLevel = party.stream().mapToInt(Pokemon::getLevel).sum() / party.size();
+        int level = avgLevel + 1 + (int) (Math.random() * 2);
+        Optional<Pokemon> offered = PokemonBattleAdapter.createWildPokemonExact(level, session.getSegment(), growthProgress());
+        if (offered.isEmpty()) {
+            infoAlert("数据异常", "宝可梦交换事件无法生成交换对象（数据缺失）。");
+            return;
+        }
+        Pokemon offer = offered.get();
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("宝可梦交换");
+        alert.setHeaderText("神秘商人带来了一只 Lv." + offer.getLevel() + " 的 " + offer.getName() + "！");
+        alert.setContentText("可用队伍中的一只宝可梦与其交换，也可以放弃（无论是否交换都不返还行动点）。");
+        ButtonType trade = new ButtonType("交换", ButtonBar.ButtonData.OK_DONE);
+        ButtonType giveUp = new ButtonType("不交换", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(trade, giveUp);
+        alert.showAndWait().ifPresent(choice -> {
+            if (choice == trade) {
+                askWhichPokemonToTrade(offer);
+            }
+        });
+    }
+
+    /** 交换对象选择：从队伍中选一只被交换离队（交换完成后同步肉鸽队伍快照）。 */
+    private void askWhichPokemonToTrade(Pokemon offered) {
+        List<Pokemon> party = player.getParty();
+        List<String> choices = new ArrayList<>();
+        for (int i = 0; i < party.size(); i++) {
+            Pokemon p = party.get(i);
+            choices.add((i == player.getActiveIndex() ? "▶ " : "   ") + p.getName()
+                    + " Lv." + p.getLevel() + (p.isFainted() ? "（濒死）" : ""));
+        }
+        ChoiceDialog<String> dialog = new ChoiceDialog<>(choices.get(0), choices);
+        dialog.setTitle("选择交换对象");
+        dialog.setHeaderText("用队伍中的哪一只交换 Lv." + offered.getLevel() + " 的 " + offered.getName() + "？");
+        dialog.setContentText("被交换的宝可梦将离开队伍：");
+        dialog.showAndWait().ifPresent(selected -> {
+            int index = choices.indexOf(selected);
+            Pokemon gone = index >= 0 ? player.swapPartyMember(index, offered) : null;
+            if (gone != null) {
+                session.syncRogueTeam();
+                infoAlert("交换完成", gone.getName() + " 离开了队伍，" + offered.getName()
+                        + "（Lv." + offered.getLevel() + "）加入了队伍！");
+            }
+        });
+    }
+
+    /** 非战斗节点：当场效果（医院治疗全队）结算后走节点收尾。 */
     private void resolveNonBattleNode(Option option) {
         session.resolveRogueOptionEffect(option);
         finishNodeStep(true);
     }
 
     /**
-     * 节点收尾：自回血 → 刷新本段路线节点 → 可能触发道馆战 → 统一推进。
+     * 节点收尾：自回血 → 刷新本段路线节点 → 可能触发必然节点（末段直接进入四天王连打）→ 统一推进。
      * 战斗节点由战后回调调用。
      *
      * @param refreshRoute 是否刷新本段节点。走完一个<b>路线节点</b>后为 {@code true}；
@@ -570,14 +708,22 @@ public class MainController {
         afterRogueStep();
     }
 
-    /** 一次节点（含战斗）结束后的统一推进：已结束→结算；必然节点→开战；否则落盘并重绘。 */
+    /**
+     * 一次节点（含战斗）结束后的统一推进：已结束→结算；连打衔接→直接续战；
+     * 行动点耗尽/无节点可走→落盘并显示道馆战准备界面，由玩家确认后再开战。
+     */
     private void afterRogueStep() {
         if (session.isRogueRunFinished()) {
             finishRogueRun();
             return;
         }
-        if (session.getRogueRunData().getPhase().isMandatoryBattle()) {
-            startMandatoryBattle(session.getRogueRunData().getPhase().toOptionType()); // 行动点耗尽：必然节点
+        RoutePhase phase = session.getRogueRunData().getPhase();
+        // 四天王 / 冠军 / 首领侵略战：上一战胜利后直接续战（连打节奏不变）。
+        // 道馆战例外（行动点耗尽触发，phase=GYM）：不直接开战，先落盘并显示必然节点准备界面——
+        // 玩家可查看道馆信息、退回主菜单存档 / 调整队伍后再点「开始挑战」进入战斗
+        // （与失败一次后的重试界面同一形态）。
+        if (phase.isMandatoryBattle() && phase != RoutePhase.GYM) {
+            startMandatoryBattle(phase.toOptionType());
             return;
         }
         autoSave(); // 每推进一步就落盘：存档点即「未作战」的节点之间
@@ -609,6 +755,9 @@ public class MainController {
     /** 本次商店的商品库存；为 null 表示当前不在商店。 */
     private ShopStock currentShopStock;
 
+    /** 本次商店的界面实例：购买后原地刷新它（不换 Scene），滚动位置才不会被重置。 */
+    private ShopView currentShopView;
+
     /** 打开商店：按当前段生成库存（装备池排除已拥有的装备）。 */
     private void openShop() {
         currentShopStock = ShopStock.forSegment(session.getSegment(), new Random(), ownedEquipmentIds());
@@ -623,12 +772,28 @@ public class MainController {
         return player.getEquipment().stream().map(HeldItem::getId).collect(Collectors.toSet());
     }
 
+    /** 进入商店：为本次库存新建界面（一次进店只建一次 Scene）。 */
     private void showShopScene() {
         if (currentShopStock == null) {
             showRogueFloorScene();
             return;
         }
-        stage.setScene(new ShopView(session, currentShopStock, this::buyFromShop, this::leaveShop).createScene());
+        currentShopView = new ShopView(session, currentShopStock, this::buyFromShop, this::leaveShop);
+        stage.setScene(currentShopView.createScene());
+    }
+
+    /**
+     * 购买后刷新货架：原地更新金币与各条目的可购状态，并保住滚动位置。
+     *
+     * <p>不能像以前那样重建整个 Scene —— 新建 Scene 会让 ScrollPane 回到顶部，玩家在长货架
+     * 中段买一件东西就被弹回最上面。视图缺失（尚未进店）时才退化为整页重建。</p>
+     */
+    private void refreshShopScene() {
+        if (currentShopView == null) {
+            showShopScene();
+            return;
+        }
+        currentShopView.refresh(currentShopStock);
     }
 
     /** 购买：校验金币 → 扣款 → 消耗品入背包 / 装备入库 → 刷新货架。 */
@@ -651,7 +816,7 @@ public class MainController {
         }
         player.getBag().add(item, 1);
         LogUtil.info("商店购买: " + entry.itemName() + " x1，花费 " + entry.price() + " 金币");
-        showShopScene();
+        refreshShopScene();
     }
 
     /**
@@ -667,7 +832,7 @@ public class MainController {
         if (player.getEquipment().contains(equipment)) {
             infoAlert("已拥有", "你已经拥有【" + equipment.getName() + "】了，本次不上架该装备。");
             currentShopStock = currentShopStock.withoutEntry(entry.itemId());
-            showShopScene();
+            refreshShopScene();
             return;
         }
         if (!session.getRogueRunData().spendGold(entry.price())) {
@@ -676,15 +841,15 @@ public class MainController {
         }
         player.addEquipment(equipment);
         LogUtil.info("商店购买装备: " + equipment.getName() + "，花费 " + entry.price() + " 金币");
-        LogUtil.info("获得装备【" + equipment.getName() + "】：" + equipment.getDescription()
-                + "\n可在主菜单点击精灵名，在详情页中穿戴。");
+        LogUtil.info("获得装备【" + equipment.getName() + "】：" + equipment.getDescription());
         currentShopStock = currentShopStock.withoutEntry(entry.itemId());
-        showShopScene();
+        refreshShopScene();
     }
 
     /** 离开商店：视为完成该商店节点，走节点收尾。 */
     private void leaveShop() {
         currentShopStock = null;
+        currentShopView = null;
         finishNodeStep(true);
     }
 
@@ -771,8 +936,20 @@ public class MainController {
         LogUtil.info(reason + "：获得 " + item.getName());
     }
 
-    /** 必然节点战败（§4.3）：道馆 / 四天王可失败一次（重试再败结束），冠军与首领侵略战不可失败。 */
+    /**
+     * 必然节点战败（§4.3）：道馆 / 四天王可失败一次（重试再败结束），冠军与首领侵略战不可失败。
+     * 第一次道馆战全灭时免费恢复全队满状态（不扣金币 / 行动点），消耗本段失败机会后可再次挑战。
+     */
     private void handleMandatoryDefeat(OptionType type) {
+        // 第一次道馆战全灭：免费救援（满状态恢复，不扣金币与行动点），失败机会照常消耗
+        if (type == OptionType.GYM && !session.hasHealthyPokemon() && session.useFreeRogueGymRescue()) {
+            player.healParty();
+            session.leadWithFirstHealthy();
+            infoAlert("道馆救援", "队伍全灭！第一次挑战道馆失败，已免费恢复全队状态，可再次挑战道馆。");
+            autoSave();
+            showRogueFloorScene();
+            return;
+        }
         if (session.resolveRogueMandatoryDefeat()) {
             infoAlert("挑战失败", type.getDisplayName() + "战败，已扣除金币；本段还可再挑战一次。");
             autoSave();
@@ -822,7 +999,7 @@ public class MainController {
             return;
         }
         int level = highestPartyLevel() + RouteConfig.wildLevelBonus(session.getSegment());
-        Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level, growthProgress());
+        Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemon(level, session.getSegment(), growthProgress());
         if (wild.isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的野生精灵（数据缺失）。");
             showRogueFloorScene();
@@ -830,7 +1007,7 @@ public class MainController {
         }
         try {
             BattleService engine = newWildBattle(player, wild.get());
-            enterBattle(engine, rogueBattleFinished(engine, OptionType.WILD));
+            enterBattle(engine, rogueBattleFinished(engine, OptionType.WILD), OptionType.WILD);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -851,7 +1028,7 @@ public class MainController {
         int max = RouteConfig.trainerPartyMax(segment);
         int count = min + (int) (Math.random() * (max - min + 1));
         for (int i = 0; i < count; i++) {
-            PokemonBattleAdapter.createWildPokemon(level, growthProgress()).ifPresent(trainer::addPokemon);
+            PokemonBattleAdapter.createWildPokemon(level, segment, growthProgress()).ifPresent(trainer::addPokemon);
         }
         if (trainer.getParty().isEmpty()) {
             infoAlert("数据异常", "没有可遭遇的精灵（数据缺失）。");
@@ -860,7 +1037,7 @@ public class MainController {
         }
         try {
             BattleService engine = newTrainerBattle(player, trainer);
-            enterBattle(engine, rogueBattleFinished(engine, OptionType.TRAINER));
+            enterBattle(engine, rogueBattleFinished(engine, OptionType.TRAINER), OptionType.TRAINER);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -878,13 +1055,14 @@ public class MainController {
         Trainer rocket = new Trainer("火箭队队员");
         rocket.setExpMultiplier(GrowthService.TRAINER_EXP_NUMERATOR, GrowthService.TRAINER_EXP_DENOMINATOR);
         for (int i = 0; i < RouteConfig.rocketPartySize(segment); i++) {
-            PokemonBattleAdapter.createWildPokemon(level, growthProgress()).ifPresent(rocket::addPokemon);
+            PokemonBattleAdapter.createWildPokemon(level, segment, growthProgress()).ifPresent(rocket::addPokemon);
         }
         startRocketNodeBattle(rocket, OptionType.ROCKET);
     }
 
     /**
      * ROCKET_CAPTURE 节点：「火箭队抓捕神兽」（§5.3），不可失败；
+     * 首领固定 4 只宝可梦，等级为队伍最高等级 +4 ±1；
      * 胜利缴获大师球，并把一次 0 点的神兽偶遇追加进本段路线。
      */
     private void startRocketCaptureBattle() {
@@ -892,16 +1070,19 @@ public class MainController {
             return;
         }
         int segment = session.getSegment();
-        int level = highestPartyLevel() + RouteConfig.rocketBossLevelBonus(segment);
+        int baseLevel = highestPartyLevel() + RouteConfig.ROCKET_BOSS_LEVEL_BONUS;
         Trainer boss = new Trainer("火箭队首领");
         boss.setExpMultiplier(GrowthService.TRAINER_EXP_NUMERATOR, GrowthService.TRAINER_EXP_DENOMINATOR);
-        for (int i = 0; i < RouteConfig.rocketBossPartySize(segment); i++) {
-            PokemonBattleAdapter.createWildPokemon(level, growthProgress()).ifPresent(boss::addPokemon);
+        for (int i = 0; i < RouteConfig.ROCKET_BOSS_PARTY_SIZE; i++) {
+            // 队伍最高等级 +4，再 ±1 浮动
+            int level = Math.max(1, baseLevel - 1 + (int) (Math.random() * 3));
+            PokemonBattleAdapter.createWildPokemonExact(level, segment, growthProgress())
+                    .ifPresent(boss::addPokemon);
         }
         startRocketNodeBattle(boss, OptionType.ROCKET_CAPTURE);
     }
 
-    /** LEGENDARY 节点：野生神兽（§5.1），判定与普通遭遇一致，可战斗也可捕获，战败仅扣金币。 */
+    /** LEGENDARY 节点：神兽偶遇（§5.1），从专属候选池生成，可战斗也可捕获，战败仅扣金币。 */
     private void startLegendaryBattle() {
         if (!ensureRogueBattleReady()) {
             return;
@@ -916,7 +1097,7 @@ public class MainController {
         }
         try {
             BattleService engine = newWildBattle(player, legendary.get());
-            enterBattle(engine, rogueBattleFinished(engine, OptionType.LEGENDARY));
+            enterBattle(engine, rogueBattleFinished(engine, OptionType.LEGENDARY), OptionType.LEGENDARY);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -933,7 +1114,7 @@ public class MainController {
         }
         try {
             BattleService engine = newTrainerBattle(player, opponent);
-            enterBattle(engine, rogueBattleFinished(engine, type));
+            enterBattle(engine, rogueBattleFinished(engine, type), type);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -942,17 +1123,21 @@ public class MainController {
     }
 
     /**
-     * 必然节点战斗（道馆战 / 四天王连打 / 冠军战 / 首领侵略战）：不消耗行动点，队伍规模与等级随段数增强。
-     * 1~4 段道馆主为固定配置（2/3/3/4 只、等级 11/17/24/32，精确无浮动）；第 5 段道馆主与
-     * 四天王 / 冠军 / 侵略战锚定队伍最高等级 ±2 浮动。道馆与四天王战败可再挑战一次，冠军战败本轮结束。
+     * 必然节点战斗（道馆战 / 四天王连打 / 冠军战 / 首领侵略战）：不消耗行动点。
+     * 1~4 段道馆主为固定配置（2/3/3/4 只、等级 11/18/25/34，精确无浮动）；末段行动点耗尽后
+     * 直接进入四天王连打（固定 4 只、队伍最高等级 ±2 浮动）；冠军固定 5 只、队伍最高等级 +3 ±1；
+     * 首领侵略战固定 6 只、队伍最高等级 +1 ±1。道馆与四天王战败可再挑战一次，
+     * 冠军战败本轮结束。
      */
     private void startMandatoryBattle(OptionType type) {
         if (type == null || !ensureRogueBattleReady()) {
             return;
         }
         int segment = session.getSegment();
-        // 1~4 段道馆主：固定等级（11/17/24/32）且精确无浮动；其余必然节点（含第 5 段道馆主）锚定队伍最高等级 ±2 浮动
+        // 1~4 段道馆主：固定等级（11/18/25/34）且精确无浮动；其余必然节点锚定队伍最高等级
         boolean gymFixed = type == OptionType.GYM && segment <= 4;
+        // 冠军战与首领侵略战：精确等级再 ±1 窄浮动（其余必然节点走 ±2 宽浮动）
+        boolean narrowSpread = type == OptionType.CHAMPION || type == OptionType.ROCKET_INVASION;
         int level = gymFixed
                 ? RouteConfig.gymFixedLevel(segment)
                 : Math.max(5, highestPartyLevel() + mandatoryLevelBonus(type, segment));
@@ -965,9 +1150,16 @@ public class MainController {
         }
         int count = mandatoryPartySize(type, segment);
         for (int i = 0; i < count; i++) {
-            Optional<Pokemon> foe = gymFixed
-                    ? PokemonBattleAdapter.createWildPokemonExact(level, growthProgress())
-                    : PokemonBattleAdapter.createWildPokemon(level, growthProgress());
+            Optional<Pokemon> foe;
+            if (gymFixed) {
+                foe = PokemonBattleAdapter.createWildPokemonExact(level, segment, growthProgress());
+            } else if (narrowSpread) {
+                // 冠军战 / 首领侵略战：等级加成后再 ±1 窄浮动（精确等级，不走宽浮动）
+                int narrowLevel = Math.max(1, level - 1 + (int) (Math.random() * 3));
+                foe = PokemonBattleAdapter.createWildPokemonExact(narrowLevel, segment, growthProgress());
+            } else {
+                foe = PokemonBattleAdapter.createWildPokemon(level, segment, growthProgress());
+            }
             foe.ifPresent(opponent::addPokemon);
         }
         if (opponent.getParty().isEmpty()) {
@@ -977,7 +1169,7 @@ public class MainController {
         }
         try {
             BattleService engine = newTrainerBattle(player, opponent);
-            enterBattle(engine, rogueBattleFinished(engine, type));
+            enterBattle(engine, rogueBattleFinished(engine, type), type);
         } catch (IllegalArgumentException ex) {
             LogUtil.info("无法开始战斗: " + ex.getMessage());
             infoAlert("无法开始战斗", ex.getMessage());
@@ -1018,13 +1210,16 @@ public class MainController {
     /**
      * 进入战斗场景：战斗期间 {@link #battleInProgress} 为真（存档被拒），
      * 战斗结束后回调前先复位，保证「未作战时才可存档」这一约束成立。
+     *
+     * @param type 本次战斗的节点类型，用于按类型取战斗背景（道馆随机不重复 / 路人 / Boss / 其余默认野外图，
+     *             见 {@link GameSession#battleBackgroundFor(OptionType)}）
      */
-    private void enterBattle(BattleService engine, Runnable onFinished) {
+    private void enterBattle(BattleService engine, Runnable onFinished, OptionType type) {
         battleInProgress = true;
         stage.setScene(new BattleController(engine, () -> {
             battleInProgress = false;
             onFinished.run();
-        }, session.getSegment()).createScene());
+        }, session.getSegment(), session.battleBackgroundFor(type)).createScene());
     }
 
     /** 绑定窗口事件：关闭确认与生命周期日志。 */

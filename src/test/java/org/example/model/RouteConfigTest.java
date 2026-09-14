@@ -1,12 +1,15 @@
 package org.example.model;
 
+import java.util.Random;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link RouteConfig} 的单元测试：把《需求文档》§4 里「行动点上限随进度提升」「商店随进展变多、
- * 变贵」「敌人随进度变强」「自回血 1/5」这些可调数值的<b>趋势</b>钉住。
+ * {@link RouteConfig} 的单元测试：把《需求文档》§4 里「行动点上限随进度提升」「商店随进展变贵」
+ * 「敌人随进度变强」「自回血 1/5」这些可调数值的<b>趋势</b>钉住。
  *
  * <p>具体数值仍是「待配置」项，因此这里只断言相对关系（递增 / 有上限 / 非法输入兜底），
  * 不锁死绝对值 —— 调平衡时改 {@link RouteConfig} 不会大面积翻测试。</p>
@@ -32,14 +35,6 @@ class RouteConfigTest {
     }
 
     @Test
-    void 商店商品数量随段增长但有上限() {
-        assertEquals(RouteConfig.BASE_SHOP_STOCK, RouteConfig.shopStockSize(1));
-        assertTrue(RouteConfig.shopStockSize(3) > RouteConfig.shopStockSize(1));
-        assertEquals(RouteConfig.MAX_SHOP_STOCK, RouteConfig.shopStockSize(99));
-        assertEquals(RouteConfig.BASE_SHOP_STOCK, RouteConfig.shopStockSize(0), "非法段号按第 1 段处理");
-    }
-
-    @Test
     void 商店售价首段为原价其后随通胀上浮() {
         assertEquals(100, RouteConfig.shopPrice(100, 1));
         assertTrue(RouteConfig.shopPrice(100, 2) > 100);
@@ -52,7 +47,6 @@ class RouteConfigTest {
     void 金币奖惩随段提高() {
         assertTrue(RouteConfig.trainerWinGold(2) > RouteConfig.trainerWinGold(1));
         assertTrue(RouteConfig.wildWinGold(2) > RouteConfig.wildWinGold(1));
-        assertTrue(RouteConfig.specialGold(2) > RouteConfig.specialGold(1));
         assertTrue(RouteConfig.gymWinGold(2) > RouteConfig.gymWinGold(1));
         assertTrue(RouteConfig.eliteFourWinGold(2) > RouteConfig.eliteFourWinGold(1));
         assertTrue(RouteConfig.championWinGold(2) > RouteConfig.championWinGold(1));
@@ -72,8 +66,8 @@ class RouteConfigTest {
     @Test
     void 敌人强度随段推进且强度阶梯为道馆四天王冠军() {
         assertTrue(RouteConfig.gymLevelBonus(3) > RouteConfig.gymLevelBonus(1));
-        assertTrue(RouteConfig.eliteFourLevelBonus(3) > RouteConfig.gymLevelBonus(3),
-                "四天王强于同段道馆");
+        assertEquals(0, RouteConfig.eliteFourLevelBonus(3),
+                "四天王按队伍最高等级 ±2 浮动，无额外等级加成");
         assertTrue(RouteConfig.championLevelBonus(3) > RouteConfig.eliteFourLevelBonus(3),
                 "冠军最强");
         assertTrue(RouteConfig.trainerLevelBonus(3) > RouteConfig.wildLevelBonus(3),
@@ -102,8 +96,8 @@ class RouteConfigTest {
     @Test
     void 对手队伍规模有上限() {
         assertTrue(RouteConfig.gymPartySize(99) <= 3);
-        assertTrue(RouteConfig.eliteFourPartySize(99) <= 4);
-        assertTrue(RouteConfig.championPartySize(99) <= 6);
+        assertEquals(4, RouteConfig.eliteFourPartySize(3), "四天王固定 4 只");
+        assertEquals(5, RouteConfig.championPartySize(3), "冠军固定 5 只");
         assertTrue(RouteConfig.championPartySize(1) >= RouteConfig.gymPartySize(1));
     }
 
@@ -114,9 +108,9 @@ class RouteConfigTest {
         assertEquals(3, RouteConfig.gymPartySize(3));
         assertEquals(4, RouteConfig.gymPartySize(4));
         assertEquals(11, RouteConfig.gymFixedLevel(1));
-        assertEquals(17, RouteConfig.gymFixedLevel(2));
-        assertEquals(24, RouteConfig.gymFixedLevel(3));
-        assertEquals(32, RouteConfig.gymFixedLevel(4));
+        assertEquals(18, RouteConfig.gymFixedLevel(2));
+        assertEquals(25, RouteConfig.gymFixedLevel(3));
+        assertEquals(34, RouteConfig.gymFixedLevel(4));
         // 第 5 段道馆主保持旧行为：数量 3 只，等级走相对队伍最高等级的加成公式
         assertEquals(3, RouteConfig.gymPartySize(5));
         assertEquals(12, RouteConfig.gymLevelBonus(5));
@@ -132,17 +126,68 @@ class RouteConfigTest {
         assertEquals(2, RouteConfig.trainerPartyMax(3));
         assertEquals(3, RouteConfig.trainerPartyMin(4));
         assertEquals(3, RouteConfig.trainerPartyMax(4));
-        // 第 5 段保持现状：随机 1~2 只
-        assertEquals(1, RouteConfig.trainerPartyMin(5));
-        assertEquals(2, RouteConfig.trainerPartyMax(5));
+        // 第 5 段保持现状：随机 3~4 只
+        assertEquals(3, RouteConfig.trainerPartyMin(5));
+        assertEquals(4, RouteConfig.trainerPartyMax(5));
+    }
+
+    @Test
+    void 火箭队队员数量按段固定配置() {
+        assertEquals(2, RouteConfig.rocketPartySize(1), "第 1 段火箭队队员 2 只");
+        assertEquals(3, RouteConfig.rocketPartySize(2), "第 2 段火箭队队员 3 只");
+        assertEquals(3, RouteConfig.rocketPartySize(3), "第 3 段火箭队队员 3 只");
+        assertEquals(4, RouteConfig.rocketPartySize(4), "第 4 段火箭队队员 4 只");
+        assertEquals(4, RouteConfig.rocketPartySize(5), "第 5 段火箭队队员 4 只");
+    }
+
+    @Test
+    void 首领侵略战固定六只且等级加成一() {
+        assertEquals(6, RouteConfig.bossAggressionPartySize(5), "首领侵略战固定 6 只");
+        assertEquals(1, RouteConfig.bossAggressionLevelBonus(5), "首领侵略战等级加成固定 +1");
+        assertEquals(1, RouteConfig.bossAggressionLevelBonus(1), "等级加成不随段数变化");
+    }
+
+    @Test
+    void 糖果补给按段递增且节点描述提示用法() {
+        assertEquals(8, RouteConfig.candyCountForSegment(1));
+        assertEquals(10, RouteConfig.candyCountForSegment(2));
+        assertEquals(12, RouteConfig.candyCountForSegment(3));
+        assertEquals(14, RouteConfig.candyCountForSegment(4));
+        assertEquals(16, RouteConfig.candyCountForSegment(5));
+        assertEquals(RouteConfig.candyCountForSegment(1), RouteConfig.candyCountForSegment(0),
+                "非法段号按第 1 段处理");
+        assertEquals(RouteConfig.candyCountForSegment(1), RouteConfig.candyCountForSegment(-3));
+
+        Option candy = new NodeGenerator(new Random(1)).createCandy();
+        assertEquals(OptionType.CANDY, candy.getType());
+        assertEquals(1, candy.getCost(), "§4.1 糖果补给消耗 1 点");
+        assertTrue(candy.getDescription().contains("神奇糖果"),
+                "节点描述应说明发放的道具：" + candy.getDescription());
     }
 
     @Test
     void 总段数与节点上限已被配置钉住() {
         assertEquals(5, RouteConfig.TOTAL_SEGMENTS);
-        assertTrue(RouteConfig.MAX_ROUTE_NODES >= 5, "3 个常驻节点外还要容得下商店与特殊事件");
+        assertTrue(RouteConfig.MAX_ROUTE_NODES >= 6,
+                "3 个常驻节点外还要容得下商店、特殊事件槽位与末段固定的火箭队首领节点");
         assertTrue(RouteConfig.STARTING_GOLD > 0, "新远征必须带得动起始金币");
-        assertTrue(RouteConfig.SPECIAL_AP_COST > 0, "普通特殊事件（神兽偶遇）消耗行动点");
         assertEquals(2, RouteConfig.DEFEAT_RESCUE_AP_COST, "战败全灭救援固定消耗 2 点行动点");
+        assertEquals(30, RouteConfig.TRADE_PERCENT, "宝可梦交换事件出现概率 30%");
+        assertEquals(30, RouteConfig.EQUIPMENT_PERCENT, "装备补给事件出现概率 30%");
+    }
+
+    @Test
+    void 火箭队首领在末段起固定出现() {
+        assertEquals(RouteConfig.TOTAL_SEGMENTS, RouteConfig.ROCKET_BOSS_RESIDENT_SEGMENT,
+                "固定出现段号即末段");
+        assertFalse(RouteConfig.isRocketBossResidentSegment(1));
+        assertFalse(RouteConfig.isRocketBossResidentSegment(RouteConfig.TOTAL_SEGMENTS - 1));
+        assertTrue(RouteConfig.isRocketBossResidentSegment(RouteConfig.TOTAL_SEGMENTS));
+        assertTrue(RouteConfig.isRocketBossResidentSegment(RouteConfig.TOTAL_SEGMENTS + 1),
+                "越界段号按最靠后的段处理，仍属固定出现区间");
+
+        Option capture = new NodeGenerator(new Random(1)).createRocketCapture();
+        assertEquals(OptionType.ROCKET_CAPTURE, capture.getType());
+        assertEquals(RouteConfig.ROCKET_CAPTURE_AP_COST, capture.getCost(), "抓捕神兽消耗 2 点");
     }
 }

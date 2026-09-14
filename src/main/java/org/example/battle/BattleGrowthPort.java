@@ -1,5 +1,6 @@
 package org.example.battle;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.example.model.Pokemon;
@@ -111,6 +112,58 @@ public interface BattleGrowthPort {
     default Settlement settleCapture(List<Pokemon> survivors, Pokemon caught) {
         onCaptured(caught == null ? null : caught.getSpecies().getId());
         return new Settlement(List.of(), List.of());
+    }
+
+    /**
+     * 局外直接提升等级（神奇糖果等升级类道具，见 {@link org.example.model.ItemCategory#LEVEL_UP}）。
+     *
+     * <p>与战斗结算出的升级走<b>同一条规则</b>：逐级「升到 Lv.N → 到级学招 → 进化」，
+     * 因此局外吃糖同样会学招与进化。目标已满级或 {@code levels ≤ 0} 时不做任何改动。</p>
+     *
+     * <p>默认实现为空操作，因此 {@link #none()} 与既有实现无需改动即保持原有行为。</p>
+     *
+     * @param pokemon 目标精灵，{@code null} 时忽略
+     * @param levels  要提升的等级数
+     * @return 需要展示给玩家的文本行（升级 / 学招 / 进化），无变化时为空列表
+     */
+    default List<String> boostLevel(Pokemon pokemon, int levels) {
+        return List.of();
+    }
+
+    /**
+     * 只涨等级与属性的端口：升级不触发学招与进化，也不做任何经验结算。
+     *
+     * <p>供「未接入成长模块」的场景使用（如局外吃神奇糖果时只想让等级 +1）。
+     * 需要到级学招与进化时请改用 {@code org.example.growth.GrowthService}。</p>
+     */
+    static BattleGrowthPort levelsOnly() {
+        return new BattleGrowthPort() {
+
+            @Override
+            public Settlement settle(List<Pokemon> survivors, List<Pokemon> defeated) {
+                return new Settlement(List.of(), List.of());
+            }
+
+            @Override
+            public List<String> resolveLearn(BattleService.LearnChoice choice, int forgetSlotIndex) {
+                return List.of();
+            }
+
+            @Override
+            public List<String> boostLevel(Pokemon pokemon, int levels) {
+                if (pokemon == null || levels <= 0) {
+                    return List.of();
+                }
+                List<String> log = new ArrayList<>();
+                for (int i = 0; i < levels && pokemon.getLevel() < Pokemon.MAX_LEVEL; i++) {
+                    if (pokemon.addExp(pokemon.expToNextLevel()) <= 0) {
+                        break;
+                    }
+                    log.add(pokemon.getName() + " 升到了 Lv." + pokemon.getLevel() + "！");
+                }
+                return log;
+            }
+        };
     }
 
     /** 空端口：不判定任何成长（经验 / 升级 / 学招 / 进化均降级为无操作）。 */

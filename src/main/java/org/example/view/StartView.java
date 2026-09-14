@@ -182,7 +182,7 @@ public final class StartView {
                 onPokedex.run();
             }
         });
-        // 「道具图鉴」进入全量道具页（ItemDexView：93 件道具 / 装备一览，启动页无存档时只读）
+        // 「道具图鉴」进入全量道具页（ItemDexView：94 件道具 / 装备一览，启动页无存档时只读）
         menu.addPill("teal", "道具图鉴", "ITEM DEX", ICON_BAG, () -> {
             if (onItemDex != null) {
                 onItemDex.run();
