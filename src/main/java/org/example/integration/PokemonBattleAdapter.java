@@ -179,8 +179,21 @@ public final class PokemonBattleAdapter {
         return Optional.of(toBattlePokemon(source.createPokemon(species.getId(), level, randomNature(source))));
     }
 
-    /** 无进化宝可梦最早出现的段号：段 1 不出现，第 2 段起才进入遭遇候选池。 */
-    private static final int NO_EVOLUTION_MIN_SEGMENT = 2;
+    /** 无进化链宝可梦被排除出候选池的段号：第 1 段不出现。 */
+    private static final int NO_EVOLUTION_EXCLUDED_SEGMENT = 1;
+
+    /**
+     * 无进化链宝可梦降权出现的段号（第 2 段）：池中只占 1 份，其余候选按
+     * {@value #SEGMENT2_COMMON_WEIGHT} 份计入 —— 出现概率相对降为其一半；
+     * 段 3 及以后恢复正常等权（2026-09-14 需求调整）。
+     */
+    private static final int NO_EVOLUTION_WEAKENED_SEGMENT = 2;
+
+    /** 第 2 段普通候选的条目份数（无进化链宝可梦固定 1 份，相对权重 1:2）。 */
+    private static final int SEGMENT2_COMMON_WEIGHT = 2;
+
+    /** 非肉鸽调用方使用的伪段号：不应用任何段出现规则（段 1 / 段 2 的判断均不命中）。 */
+    private static final int NEUTRAL_SEGMENT = 0;
 
     /** 绿毛虫一家（绿毛虫 / 铁甲蛹 / 巴大蝶）物种 id。 */
     private static final Set<String> CATERPIE_LINE = Set.of("caterpie", "metapod", "butterfree");
@@ -209,21 +222,22 @@ public final class PokemonBattleAdapter {
      * 低等级只出合法形态，进化形态到其前一进化型的进化等级之后才出现；
      * 已过自身进化等级的形态不再出现（如 20 级不会遇到妙蛙种子）。</p>
      *
-     * <p>本重载不区分段号（无进化宝可梦照常出现），适合非肉鸽流程的调用方。</p>
+     * <p>本重载不应用段号出现规则（{@link #NEUTRAL_SEGMENT}），无进化链宝可梦照常同权出现，
+     * 适合非肉鸽流程的调用方。</p>
      *
      * @param aroundLevel 目标等级
      * @param progress    局外成长进度（决定个体值加成）
      */
     public static Optional<Pokemon> createWildPokemon(int aroundLevel, GrowthProgress progress) {
-        return createWildPokemon(aroundLevel, NO_EVOLUTION_MIN_SEGMENT, progress);
+        return createWildPokemon(aroundLevel, NEUTRAL_SEGMENT, progress);
     }
 
     /**
      * 使用新宝可梦库生成野生精灵（指定肉鸽段号，个体值已含局外成长加成）。
      *
      * <p>段号决定候选池的<b>出现规则</b>（见 {@link #wildCandidates(int, int)}）：
-     * 段 1 不出现无进化宝可梦（第 {@value #NO_EVOLUTION_MIN_SEGMENT} 段起才出现），
-     * 且绿毛虫一家在段 1 的候选权重略高。</p>
+     * 段 1 不出现无进化链宝可梦、绿毛虫一家权重略高；段 2 无进化链宝可梦出现概率降低
+     * （相对权重减半）；段 3 及以后恢复正常等权。</p>
      *
      * @param aroundLevel 目标等级（结果在 ±2 内浮动）
      * @param segment     当前段号（1 起）
@@ -246,16 +260,17 @@ public final class PokemonBattleAdapter {
      * 使用新宝可梦库生成一只<b>精确等级</b>的对手精灵（无 ±2 浮动；个体值仍含局外成长加成）。
      * 候选池同样按该等级做进化链合法性筛选（见 {@link #wildCandidates(int, int)}）。
      *
-     * <p>适用于需要钉死等级的对手（如 1~4 段道馆馆主：11 / 18 / 25 / 34），避免
+     * <p>适用于需要钉死等级的对手（如 1~4 段道馆馆主：11 / 17 / 24 / 32），避免
      * {@code createWildPokemon} 的等级浮动把配置值漂移出去。</p>
      *
-     * <p>本重载不区分段号（无进化宝可梦照常出现），适合非肉鸽流程的调用方。</p>
+     * <p>本重载不应用段号出现规则（{@link #NEUTRAL_SEGMENT}），无进化链宝可梦照常同权出现，
+     * 适合非肉鸽流程的调用方。</p>
      *
      * @param level    目标等级（生成结果即此等级）
      * @param progress 局外成长进度（决定个体值加成）
      */
     public static Optional<Pokemon> createWildPokemonExact(int level, GrowthProgress progress) {
-        return createWildPokemonExact(level, NO_EVOLUTION_MIN_SEGMENT, progress);
+        return createWildPokemonExact(level, NEUTRAL_SEGMENT, progress);
     }
 
     /**
@@ -308,10 +323,10 @@ public final class PokemonBattleAdapter {
     }
 
     /**
-     * 按<b>确定后的遭遇等级</b>筛选合法候选：剔除「前一进化型进化等级高于该等级」的形态，
-     * 以及「自身进化等级小于该等级」的形态。
+     * 按<b>确定后的遭遇等级</b>与<b>段号</b>筛选合法候选。
      *
-     * <p>进化链数据来自宝可梦库 species.csv：{@code evolutionTarget} 指向进化目标，
+     * <p><b>进化链合法性</b>：剔除「前一进化型进化等级高于该等级」的形态，以及「自身进化等级小于
+     * 该等级」的形态。进化链数据来自宝可梦库 species.csv：{@code evolutionTarget} 指向进化目标，
      * {@code evolutionLevel} 为该物种进化成目标形态的等级。因此对候选形态 S：</p>
      * <ul>
      *   <li>若存在某个物种 T 满足 {@code T.evolutionTarget == S.id} 且 {@code T.evolutionLevel > level}，
@@ -319,24 +334,21 @@ public final class PokemonBattleAdapter {
      *   <li>若 S 自身 {@code evolutionTarget != null} 且 {@code evolutionLevel < level}，
      *       则 S 在该等级不合法（例如 20 级遭遇不会出现 16 级就该进化的妙蛙种子）。</li>
      * </ul>
-     */
-    private static List<org.example.pokemon.domain.Species> wildCandidates(int level) {
-        return wildCandidates(level, NO_EVOLUTION_MIN_SEGMENT);
-    }
-
-    /**
-     * 按<b>确定后的遭遇等级</b>与<b>段号</b>筛选合法候选。
      *
-     * <p>在 {@link #wildCandidates(int)} 的进化链合法性筛选之上追加两条出现规则：</p>
+     * <p><b>段号出现规则</b>（2026-09-14 需求调整）：</p>
      * <ul>
-     *   <li>段 1 剔除无进化链的宝可梦（第 {@value #NO_EVOLUTION_MIN_SEGMENT} 段起才出现）；</li>
-     *   <li>段 1 的绿毛虫一家（绿毛虫 / 铁甲蛹 / 巴大蝶）按
-     *       {@value #SEGMENT1_CATERPIE_LINE_WEIGHT} 倍权重进入候选池（其余候选权重为 1）。</li>
+     *   <li>段 {@value #NO_EVOLUTION_EXCLUDED_SEGMENT}：无进化链宝可梦不入池；绿毛虫一家（绿毛虫 /
+     *       铁甲蛹 / 巴大蝶）按 {@value #SEGMENT1_CATERPIE_LINE_WEIGHT} 份权重进入；</li>
+     *   <li>段 {@value #NO_EVOLUTION_WEAKENED_SEGMENT}：无进化链宝可梦占 1 份、其余候选占
+     *       {@value #SEGMENT2_COMMON_WEIGHT} 份（相对权重 1:2，出现概率减半）；</li>
+     *   <li>段 3 及以后：全部候选等权（每只 1 份），规则恢复默认。</li>
      * </ul>
      *
      * <p>加权采用「候选池内重复条目」实现：随机抽取仍均匀，但被加权物种被抽中的份数更多。</p>
+     *
+     * <p>package-private 供同包测试直接断言候选池组成（避免采样统计的不确定性）。</p>
      */
-    private static List<org.example.pokemon.domain.Species> wildCandidates(int level, int segment) {
+    static List<org.example.pokemon.domain.Species> wildCandidates(int level, int segment) {
         List<org.example.pokemon.domain.Species> all =
                 org.example.pokemon.infrastructure.GameData.instance().getAllSpecies();
         List<org.example.pokemon.domain.Species> candidates = new ArrayList<>();
@@ -347,14 +359,18 @@ public final class PokemonBattleAdapter {
             if (!legalAtLevel(species, level, all)) {
                 continue;
             }
-            if (segment < NO_EVOLUTION_MIN_SEGMENT && hasNoEvolutionLine(species, all)) {
-                continue;
+            boolean noEvolution = hasNoEvolutionLine(species, all);
+            if (noEvolution && segment == NO_EVOLUTION_EXCLUDED_SEGMENT) {
+                continue; // 段 1：无进化链宝可梦不入池
             }
-            candidates.add(species);
-            if (segment == 1 && CATERPIE_LINE.contains(species.getId())) {
-                for (int extra = 1; extra < SEGMENT1_CATERPIE_LINE_WEIGHT; extra++) {
-                    candidates.add(species);
-                }
+            int weight = 1;
+            if (segment == NO_EVOLUTION_EXCLUDED_SEGMENT && CATERPIE_LINE.contains(species.getId())) {
+                weight = SEGMENT1_CATERPIE_LINE_WEIGHT; // 段 1：绿毛虫一家加权
+            } else if (segment == NO_EVOLUTION_WEAKENED_SEGMENT && !noEvolution) {
+                weight = SEGMENT2_COMMON_WEIGHT; // 段 2：其余候选加倍（无进化链相对权重 1:2）
+            }
+            for (int i = 0; i < weight; i++) {
+                candidates.add(species);
             }
         }
         return candidates;

@@ -1,19 +1,15 @@
 package org.example.integration;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.example.battle.BattleDataPort;
 import org.example.growth.GrowthProgress;
+import org.example.growth.GrowthService;
 import org.example.model.ElementType;
 import org.example.model.Move;
 import org.example.model.MoveCategory;
@@ -21,6 +17,7 @@ import org.example.model.MoveEffect;
 import org.example.model.MoveSlot;
 import org.example.model.Player;
 import org.example.model.Pokemon;
+import org.example.model.RouteConfig;
 import org.example.model.Stat;
 import org.example.model.Trainer;
 import org.example.pokemon.domain.LearnableMove;
@@ -31,6 +28,7 @@ import org.example.pokemon.service.PokemonServiceImpl;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
@@ -141,7 +139,7 @@ class PokemonBattleAdapterTest {
     /** 精确等级创建同样受进化链合法性约束（道馆主固定等级配置依赖此口径）。 */
     @Test
     void testCreateWildPokemonExact_respectsEvolutionLegality() {
-        for (int level : new int[]{11, 18, 25, 34}) {
+        for (int level : new int[]{11, 17, 24, 32}) {
             for (int i = 0; i < 20; i++) {
                 Optional<Pokemon> wild = PokemonBattleAdapter.createWildPokemonExact(level, new GrowthProgress());
                 assertTrue(wild.isPresent());
@@ -152,7 +150,7 @@ class PokemonBattleAdapterTest {
     }
 
     // ------------------------------------------------------------------
-    // 段号出现规则：段 1 无进化宝可梦不出场、绿毛虫一家加权
+    // 段号出现规则：段 1 无进化宝可梦不出场、绿毛虫一家加权；段 2 无进化宝可梦降权；段 3 起等权
     // ------------------------------------------------------------------
 
     /** 无进化链宝可梦（自身不进化、也无前序进化型）物种 id，段 1 不应出现在遭遇候选池。 */
@@ -190,7 +188,7 @@ class PokemonBattleAdapterTest {
                 "段 1 绿毛虫一家出现次数应显著高于无加权期望，实际 " + caterpieLine + "/" + samples);
     }
 
-    /** 第 2 段起无进化宝可梦应进入遭遇候选池（段规则只约束段 1）。 */
+    /** 第 2 段无进化宝可梦应进入遭遇候选池（虽经降权，仍可被抽中）。 */
     @Test
     void testCreateWildPokemon_segment2AllowsNoEvolutionSpecies() {
         GrowthProgress progress = new GrowthProgress();
@@ -204,6 +202,41 @@ class PokemonBattleAdapterTest {
             }
         }
         assertTrue(seen, "第 2 段起无进化宝可梦应进入遭遇候选池");
+    }
+
+    /**
+     * 候选池组成的确定性断言（不依赖采样随机）：
+     * 段 1 排除无进化链宝可梦、绿毛虫一家 2 份；段 2 无进化链 1 份、其余候选 2 份；
+     * 段 3~{@link RouteConfig#TOTAL_SEGMENTS} 全部等权（每只 1 份，规则恢复默认）。
+     */
+    @Test
+    void testWildCandidates_segmentRulesOnNoEvolutionSpecies() {
+        int level = 5;
+        Map<String, Long> seg1 = candidatesById(level, 1);
+        assertTrue(seg1.keySet().stream().noneMatch(NO_EVOLUTION_IDS::contains),
+                "段 1 候选池不应包含无进化链宝可梦：" + seg1.keySet());
+        assertEquals(2L, seg1.get("caterpie"), "段 1 绿毛虫一家应按 2 份加权");
+        assertEquals(1L, seg1.get("bulbasaur"), "段 1 其余候选应保持 1 份");
+
+        Map<String, Long> seg2 = candidatesById(level, 2);
+        for (String id : NO_EVOLUTION_IDS) {
+            assertEquals(1L, seg2.getOrDefault(id, 0L), "段 2 无进化链宝可梦应只占 1 份：" + id);
+        }
+        assertEquals(2L, seg2.get("bulbasaur"), "段 2 其余候选应按 2 份计入（无进化链相对概率减半）");
+
+        for (int segment = 3; segment <= RouteConfig.TOTAL_SEGMENTS; segment++) {
+            Map<String, Long> pool = candidatesById(level, segment);
+            assertTrue(pool.values().stream().allMatch(count -> count == 1L),
+                    "段 " + segment + " 候选池应全部等权（每只 1 份）");
+            assertTrue(pool.keySet().containsAll(NO_EVOLUTION_IDS),
+                    "段 " + segment + " 候选池应包含无进化链宝可梦");
+        }
+    }
+
+    /** 统计候选池内各物种的条目份数（候选池用重复条目实现权重）。 */
+    private static Map<String, Long> candidatesById(int level, int segment) {
+        return PokemonBattleAdapter.wildCandidates(level, segment).stream()
+                .collect(Collectors.groupingBy(Species::getId, Collectors.counting()));
     }
 
     /**
@@ -440,6 +473,92 @@ class PokemonBattleAdapterTest {
         assertEquals(species.getBaseExpYield(),
                 player.getActive().getSpecies().getBaseExpYield(),
                 "战斗模型种族应带上原种族的经验值，经验折算才与种族挂钩");
+    }
+
+    // ------------------------------------------------------------------
+    // 学招等级门槛（回归：高等级招式曾因被当作「出生技能」而在低等级绕过门槛学会）
+    // ------------------------------------------------------------------
+
+    /** 转换到战斗模型后每条学招记录必须保留真实习得等级：终极吸取（16 级）不得变成 1 级。 */
+    @Test
+    void testToBattleSpecies_keepsTrueLearnLevels() {
+        Species bulbasaur = GameData.instance().getSpecies("bulbasaur").orElseThrow();
+        org.example.model.Species battle = PokemonBattleAdapter.toBattleSpecies(bulbasaur);
+
+        Map<String, Integer> minLevels = battle.getLearnableMoves().stream()
+                .collect(Collectors.toMap(org.example.model.LearnableMove::getMoveId,
+                        org.example.model.LearnableMove::getLevel, Math::min));
+
+        assertEquals(1, minLevels.get("tackle"), "撞击应为 1 级出生技能");
+        assertEquals(6, minLevels.get("sleep-powder"), "催眠粉应为 6 级习得");
+        assertEquals(16, minLevels.get("giga-drain"),
+                "终极吸取必须保留 16 级门槛（曾被误标为 1 级出生技能，导致低等级直接学会）");
+    }
+
+    /** 泛化防护：全部种族的学招等级经接缝转换后必须与宝可梦库数据完全一致。 */
+    @Test
+    void testToBattleSpecies_allSpeciesKeepTrueLevels() {
+        for (Species source : GameData.instance().getAllSpecies()) {
+            org.example.model.Species battle = PokemonBattleAdapter.toBattleSpecies(source);
+            Map<String, Integer> expected = source.getLearnableMoves().stream()
+                    .collect(Collectors.toMap(LearnableMove::getMoveId, LearnableMove::getLevel, Math::min));
+            Map<String, Integer> actual = battle.getLearnableMoves().stream()
+                    .collect(Collectors.toMap(org.example.model.LearnableMove::getMoveId,
+                            org.example.model.LearnableMove::getLevel, Math::min));
+            for (Map.Entry<String, Integer> entry : expected.entrySet()) {
+                assertEquals(entry.getValue(), actual.get(entry.getKey()),
+                        source.getId() + " 的 " + entry.getKey() + " 习得等级经转换后被篡改");
+            }
+        }
+    }
+
+    /** 行为回归：真实升级结算（5 → 6 级）不得学会 9/12/16 级才解锁的招式。 */
+    @Test
+    void testGrowth_level6BulbasaurDoesNotLearnFutureMoves() {
+        org.example.model.Pokemon seed = PokemonBattleAdapter.toBattlePokemon(
+                service.createPokemon("bulbasaur", 5));
+
+        BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
+        GrowthService growth = new GrowthService(dataPort, new GrowthProgress());
+        // 固定 8 级对手：每轮折算 73 点经验，从 5 级升级到 6 级恰好且不会跳级
+        org.example.model.Pokemon dummy = PokemonBattleAdapter.toBattlePokemon(
+                service.createPokemon("bulbasaur", 8, org.example.pokemon.domain.Nature.HARDY));
+
+        for (int i = 0; i < 20 && seed.getLevel() < 6; i++) {
+            growth.settle(List.of(seed), List.of(dummy));
+        }
+
+        assertEquals(6, seed.getLevel(), "前提：结算后应恰为 6 级");
+        assertTrue(seed.knowsMove("sleep-powder"), "6 级应学会本等级的催眠粉");
+        assertFalse(seed.knowsMove("leech-seed"), "6 级不得学会 9 级的寄生种子");
+        assertFalse(seed.knowsMove("razor-leaf"), "6 级不得学会 12 级的飞叶快刀");
+        assertFalse(seed.knowsMove("poison-powder"), "6 级不得学会 16 级的毒粉");
+        assertFalse(seed.knowsMove("giga-drain"), "6 级不得学会 16 级的终极吸取");
+    }
+
+    /**
+     * 反向回归：等级门槛修复不得把同等级追加条目「改丢」。15 → 16 级（也是妙蛙种子进化等级）
+     * 必须同时学会毒粉与终极吸取（两条 16 级记录），进化换族后不得丢失。
+     */
+    @Test
+    void testGrowth_level16Bulbasaur_canStillLearnGigaDrain() {
+        org.example.model.Pokemon seed = PokemonBattleAdapter.toBattlePokemon(
+                service.createPokemon("bulbasaur", 15, org.example.pokemon.domain.Nature.HARDY));
+
+        BattleDataPort dataPort = PokemonBattleAdapter.battleDataPort();
+        GrowthService growth = new GrowthService(dataPort, new GrowthProgress());
+        // 50 级对手每轮折算 457 点经验：从 15 级升到 16 级恰好在两轮内完成且不会跳到 17 级
+        org.example.model.Pokemon dummy = PokemonBattleAdapter.toBattlePokemon(
+                service.createPokemon("bulbasaur", 50, org.example.pokemon.domain.Nature.HARDY));
+
+        for (int i = 0; i < 20 && seed.getLevel() < 16; i++) {
+            growth.settle(List.of(seed), List.of(dummy));
+        }
+
+        assertEquals(16, seed.getLevel(), "前提：结算后应恰为 16 级");
+        assertTrue(seed.knowsMove("poison-powder"), "16 级应学会毒粉（等级表条目）");
+        assertTrue(seed.knowsMove("giga-drain"),
+                "16 级应学会终极吸取（同等级追加条目，不得因同时进化而被新种族表覆盖丢失）");
     }
 
     /** 战斗侧技能应能在新系统数据中回查，且关键字段与源数据一致。 */
