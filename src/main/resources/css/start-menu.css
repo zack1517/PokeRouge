@@ -268,6 +268,43 @@
     -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 2.0, 1.0, 0, 0);
 }
 
+/* 初始宝可梦三选一图标卡（StarterSelectionView）：直接点选；与输入框/档位卡同族（深蓝描边环 + 白底），
+   悬停亮蓝环、选中金环 + 金晕（与当前档位金环同色系），重复点击不取消 */
+.starter-pick {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+    -fx-background-color: #123c63, rgba(255, 255, 255, 0.94);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 14, 12.5;
+    -fx-padding: 9 10 7 10;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.35), 8, 0.05, 0, 3);
+    /* 屏蔽 modena 聚焦环（本项目全自定义背景） */
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.starter-pick:hover {
+    -fx-background-color: #2a75bb, rgba(255, 255, 255, 0.98);
+    -fx-effect: dropshadow(gaussian, rgba(42, 117, 187, 0.4), 9, 0.06, 0, 3);
+}
+
+/* 选中：金环 + 金晕（与当前档位 / 队伍首发格同色系）；悬停时保持金环 */
+.starter-pick:selected,
+.starter-pick:selected:hover {
+    -fx-background-color: #DAA520, rgba(255, 255, 255, 0.97);
+    -fx-effect: dropshadow(gaussian, rgba(218, 165, 32, 0.5), 10, 0.08, 0, 3);
+}
+
+/* 无立绘时的占位文字（图标卡内部回退） */
+.starter-pick-fallback {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 10px;
+    -fx-text-fill: rgba(18, 60, 99, 0.55);
+}
+
 /* 表单卡（初始宝可梦选择页）：去除卡片底 —— 输入 / 下拉 / 说明直接悬浮于背景（与内外层「无卡底」标题同理念） */
 .starter-card {
     -fx-padding: 12 18 14 18;

@@ -166,6 +166,8 @@ public class MainController {
 
     /** 自定义战斗模式选择页：由启动页「自定义战斗」进入；四种模式均已接入真实战斗。 */
     public void showCustomBattle() {
+        // 模式选择页属启动页功能区：恢复启动页 BGM（从战斗返回时切回；自启动页进入时同曲幂等不打断）
+        MusicPlayer.playBgm(AppConfig.BGM_START);
         stage.setScene(new CustomBattleView(this::showStartScreen, this::showCustomBattleSetup).createScene());
     }
 
@@ -212,7 +214,7 @@ public class MainController {
         Trainer foe = PokemonBattleAdapter.createSquadTrainer("自定义对手", squad.size(), squad.get(0).getLevel());
         try {
             BattleService engine = newTrainerBattle(squadPlayer, foe);
-            MusicPlayer.stop(); // 对局界面暂无 BGM（与肉鸽战斗保持一致）
+            MusicPlayer.playBgm(AppConfig.BGM_BATTLE); // 战斗场景 BGM（与肉鸽战斗一致）
             int segment = session != null ? session.getSegment() : 1; // 独立模式：未走主线时用默认段号
             stage.setScene(new BattleController(engine, this::showCustomBattle, segment).createScene());
         } catch (IllegalArgumentException ex) {
@@ -224,9 +226,7 @@ public class MainController {
 
     /** 初始宝可梦选择页：使用新 pokemon 系统选择初始宝可梦（由启动页「开始游戏」进入）。 */
     public void showStarterSelection() {
-        // 离开主界面即停 BGM：其它界面暂未配置音乐；
-        // 后续各界面各有 BGM 时，改为在对应界面入口调 MusicPlayer.playBgm（自动停旧播新）
-        MusicPlayer.stop();
+        MusicPlayer.playBgm(AppConfig.BGM_HOME); // 游戏内流程 BGM（自动停旧播新）
         stage.setScene(new StarterSelectionView(this::chooseSlotForNewGame, this::showStartScreen).createScene());
     }
 
@@ -267,7 +267,7 @@ public class MainController {
 
     /** 启动页「继续游戏」：选档位后读档进入主菜单。 */
     private void showContinueSelection() {
-        MusicPlayer.stop();
+        MusicPlayer.playBgm(AppConfig.BGM_HOME); // 游戏内流程 BGM（选档后进主菜单无缝延续）
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.CONTINUE, saveManager.store().statuses(),
                 activeSlot,
                 this::loadFromSlot,
@@ -315,6 +315,7 @@ public class MainController {
 
     /** 显示主菜单（重新构建，反映最新的队伍/背包），并在进入时自动保存一次。 */
     public void showMainMenu() {
+        MusicPlayer.playBgm(AppConfig.BGM_HOME); // 主菜单 BGM（战斗结束返回时自动切回）
         autoSave(); // 回到主菜单意味着不在战斗中，可安全落盘
         MainView view = new MainView(player, new MainView.Actions() {
             @Override
@@ -556,6 +557,7 @@ public class MainController {
 
     /** 显示路线节点页（每次重绘反映最新行动点 / 金币 / 节点状态）。 */
     private void showRogueFloorScene() {
+        MusicPlayer.playBgm(AppConfig.BGM_HOME); // 冒险流程 BGM（与主菜单同曲，战斗结束返回时自动切回）
         stage.setScene(new RogueFloorView(session, this::handleRogueOption, this::showMainMenu).createScene());
     }
 
@@ -1216,6 +1218,7 @@ public class MainController {
      */
     private void enterBattle(BattleService engine, Runnable onFinished, OptionType type) {
         battleInProgress = true;
+        MusicPlayer.playBgm(AppConfig.BGM_BATTLE); // 战斗场景 BGM（战后返回冒险/主菜单时自动切回 home）
         stage.setScene(new BattleController(engine, () -> {
             battleInProgress = false;
             onFinished.run();

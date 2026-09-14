@@ -6,20 +6,24 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
-import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
-import javafx.scene.control.ListCell;
 import javafx.scene.control.TextField;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.TextAlignment;
 import javafx.util.Duration;
-import javafx.util.StringConverter;
 import org.example.config.AppConfig;
 import org.example.util.ImageBackgrounds;
+import org.example.util.SpriteLoader;
 import org.example.util.UiScale;
 import org.example.pokemon.domain.Species;
 import org.example.pokemon.service.PokemonService;
@@ -29,9 +33,10 @@ import org.example.pokemon.service.PokemonServiceImpl;
  * 初始宝可梦选择页（启动页「开始游戏」进入）。
  *
  * <p>与商店页 / 队伍配置页同一套视觉体系：顶栏「返回胶囊 + 白描边深蓝字标题 + 副提示 +
- * 新游戏信息卡」，中部为无卡底表单（训练家名称输入、初始宝可梦下拉与说明直接悬浮于背景），
- * 表单下方紧随黄→金大胶囊「带它开始冒险」（表单区整体偏上，按钮不再贴底）；样式集中在 {@code /css/start-menu.css}
- * （.starter-* 表单系列 + .page-title 标题 + .primary-pill 主按钮 + 胶囊 / 暗角 / .rogue-info 共享规范）。</p>
+ * 新游戏信息卡」，中部为无卡底表单（训练家名称输入、初始宝可梦三图标卡直接点选、选中说明文字
+ * 直接悬浮于背景），表单下方紧随黄→金大胶囊「带它开始冒险」（表单区整体偏上，按钮不再贴底）；
+ * 样式集中在 {@code /css/start-menu.css}（.starter-* 表单系列 + .page-title 标题 + .primary-pill 主按钮
+ * + 胶囊 / 暗角 / .rogue-info 共享规范）。</p>
  *
  * <p>接线不变：选好初始精灵后进入存档位选择（新游戏）；「返回」（或 Esc）不创建精灵直接回启动页。</p>
  */
@@ -45,6 +50,9 @@ public final class StarterSelectionView {
 
     /** 初始宝可梦等级（信息卡展示与实际创建共用）。 */
     private static final int STARTER_LEVEL = 5;
+
+    /** 图标卡内立绘边长（设计画布 px；三卡横排的版面平衡值）。 */
+    private static final double PICK_SPRITE_SIZE = 88;
 
     private final BiConsumer<String, org.example.pokemon.domain.Pokemon> onStart;
     private final Runnable onBack;
@@ -77,36 +85,39 @@ public final class StarterSelectionView {
         name.getStyleClass().add("starter-input");
         name.setMaxWidth(260);
 
-        ComboBox<Species> choices = new ComboBox<>();
-        choices.getStyleClass().add("starter-combo");
-        choices.setMaxWidth(260);
-        choices.getItems().addAll(service.getInitialPool());
-        choices.getSelectionModel().selectFirst();
-        choices.setConverter(new StringConverter<>() {
-            @Override public String toString(Species value) { return value == null ? "" : value.getName() + "（" + value.getId() + "）"; }
-            @Override public Species fromString(String value) { return null; }
-        });
-        // 下拉收起按钮与展开选项的文本均水平居中（cellFactory 回调参数是内部 ListView，converter 需从 choices 取）
-        choices.setCellFactory(listView -> centeredSpeciesCell(choices));
-        choices.setButtonCell(centeredSpeciesCell(choices));
+        // 初始宝可梦：三张图标卡直接点选（ToggleGroup 互斥；重复点击已选卡时由监听器回滚，不会落空选）
+        ToggleGroup pickGroup = new ToggleGroup();
+        HBox picks = new HBox(12);
+        picks.setAlignment(Pos.CENTER);
+        for (Species species : service.getInitialPool()) {
+            picks.getChildren().add(buildStarterPick(species, pickGroup));
+        }
 
         Label description = new Label();
         description.getStyleClass().add("starter-note");
         description.setWrapText(true);
         description.setTextAlignment(TextAlignment.CENTER); // wrap 折行后逐行居中需 textAlignment
-        description.setMaxWidth(260); // 与输入行同宽，容纳整行不孤字折行
+        description.setMaxWidth(352); // 与三卡横排同宽，容纳整行不孤字折行
         description.setAlignment(Pos.CENTER);
-        choices.valueProperty().addListener((observable, oldValue, selected) -> {
-            if (selected != null) description.setText(selected.getCategory() + "：" + selected.getDescription());
+        pickGroup.selectedToggleProperty().addListener((observable, oldToggle, selectedToggle) -> {
+            if (selectedToggle == null) {
+                if (oldToggle != null) {
+                    oldToggle.setSelected(true); // 点击已选中卡时不落空选
+                }
+                return;
+            }
+            Species species = (Species) selectedToggle.getUserData();
+            description.setText(species.getCategory() + "：" + species.getDescription());
         });
-        if (choices.getValue() != null) description.setText(choices.getValue().getCategory() + "：" + choices.getValue().getDescription());
+        pickGroup.selectToggle((ToggleButton) picks.getChildren().get(0)); // 默认选中第一只，描述随之初始化
 
         Label nameCaption = new Label("训练家名称");
         nameCaption.getStyleClass().add("starter-caption");
         Label speciesCaption = new Label("初始宝可梦");
         speciesCaption.getStyleClass().add("starter-caption");
 
-        VBox form = new VBox(4, nameCaption, name, speciesCaption, choices, description);
+        VBox form = new VBox(4, nameCaption, name, speciesCaption, picks, description);
+        VBox.setMargin(picks, new Insets(2, 0, 4, 0)); // 三卡与上下标注/说明留呼吸感
         form.setAlignment(Pos.CENTER);
         form.setMaxWidth(Region.USE_PREF_SIZE);
         form.getStyleClass().add("starter-card");
@@ -116,7 +127,7 @@ public final class StarterSelectionView {
         start.getStyleClass().add("primary-pill");
         start.setOnAction(e -> {
             String trainerName = name.getText().isBlank() ? AppConfig.PLAYER_NAME : name.getText().trim();
-            Species selected = choices.getValue();
+            Species selected = (Species) pickGroup.getSelectedToggle().getUserData();
             onStart.accept(trainerName, service.createPokemon(selected.getId(), STARTER_LEVEL));
         });
 
@@ -195,21 +206,32 @@ public final class StarterSelectionView {
         fade.play();
     }
 
-    /** 精灵选择下拉：收起按钮与展开选项的文本均居中（与列内其他行一致）。 */
-    private static ListCell<Species> centeredSpeciesCell(ComboBox<Species> combo) {
-        return new ListCell<>() {
-            @Override
-            protected void updateItem(Species item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    return;
-                }
-                setText(combo.getConverter() == null
-                        ? item.toString()
-                        : combo.getConverter().toString(item));
-                setAlignment(Pos.CENTER);
-            }
-        };
+    /** 单张初始宝可梦图标卡：立绘（无图回退占位文本）+ 名称，点击即选中（互斥由 ToggleGroup 管理）。 */
+    private static ToggleButton buildStarterPick(Species species, ToggleGroup group) {
+        Image image = SpriteLoader.load(species.getName());
+        ImageView sprite = new ImageView();
+        sprite.setFitWidth(PICK_SPRITE_SIZE);
+        sprite.setFitHeight(PICK_SPRITE_SIZE);
+        sprite.setPreserveRatio(true);
+        sprite.setSmooth(true);
+        Label fallback = new Label("暂无立绘");
+        fallback.getStyleClass().add("starter-pick-fallback");
+        StackPane portrait = new StackPane(fallback, sprite);
+        portrait.setMinSize(PICK_SPRITE_SIZE, PICK_SPRITE_SIZE);
+        portrait.setPrefSize(PICK_SPRITE_SIZE, PICK_SPRITE_SIZE);
+        portrait.setMaxSize(PICK_SPRITE_SIZE, PICK_SPRITE_SIZE);
+        if (image != null) {
+            sprite.setImage(image);
+            fallback.setVisible(false);
+            fallback.setManaged(false);
+        }
+
+        ToggleButton pick = new ToggleButton(species.getName(), portrait);
+        pick.setContentDisplay(ContentDisplay.TOP);
+        pick.setGraphicTextGap(4);
+        pick.setToggleGroup(group);
+        pick.setUserData(species);
+        pick.getStyleClass().add("starter-pick");
+        return pick;
     }
 }
