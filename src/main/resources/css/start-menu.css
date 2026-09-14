@@ -412,6 +412,27 @@
     -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.15), 4, 0.03, 0, 1);
 }
 
+/* 回退按钮：白底蓝字小胶囊（「退回最近一次落盘之前」的次级入口；仅在该档位留有上一个存档点时显示） */
+.slot-rollback {
+    -fx-font-family: 'Microsoft YaHei';
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #123c63;
+    -fx-background-color: #2a75bb, rgba(255, 255, 255, 0.96);
+    -fx-background-insets: 0, 1.5;
+    -fx-background-radius: 999, 997.5;
+    -fx-padding: 4 12;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(6, 22, 42, 0.25), 6, 0.05, 0, 2);
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+
+.slot-rollback:hover {
+    -fx-background-color: #123c63, rgba(242, 248, 255, 1.0);
+    -fx-effect: dropshadow(gaussian, rgba(18, 60, 99, 0.45), 8, 0.08, 0, 2);
+}
+
 /* ---------- 悬浮子页·内部事件页（RogueFloorView）：段位信息卡 ---------- */
 /* （返回胶囊已改为直接复用 .menu-pill 共享胶囊组件，不再单设小号样式） */
 /* 段位信息卡：与存档页 .slot-row 同族的白底圆角卡（深蓝描边环 insets 双层），按顶栏体量缩小 */

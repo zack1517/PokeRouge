@@ -17,9 +17,12 @@ import java.util.List;
  * @param ap           当前剩余行动点
  * @param gold         金币余额
  * @param savedAtMillis 存档时间（epoch millis）
+ * @param gameOver     这一轮远征是否已战败结束
+ * @param cleared      这一轮远征是否已通关
  */
 public record SaveSummary(SaveSlot slot, String playerName, int partySize, int aliveCount,
-                          int segment, int ap, int gold, long savedAtMillis) {
+                          int segment, int ap, int gold, long savedAtMillis,
+                          boolean gameOver, boolean cleared) {
 
     private static final DateTimeFormatter TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
@@ -38,6 +41,24 @@ public record SaveSummary(SaveSlot slot, String playerName, int partySize, int a
      */
     public boolean teamWiped() {
         return partySize > 0 && aliveCount == 0;
+    }
+
+    /**
+     * 这一轮远征是否已经结束（通关或战败）。
+     *
+     * <p>结束的一轮没有可继续的内容，档位列表据此把按钮改成「开始新一轮」：在同一档位上
+     * 重开一轮，<b>保留</b>该档位的图鉴成长、只重置远征进度。</p>
+     */
+    public boolean finished() {
+        return gameOver || cleared;
+    }
+
+    /** 本轮结束原因的可读文本；本轮尚未结束时返回空串。 */
+    public String finishedText() {
+        if (cleared) {
+            return "本轮已通关";
+        }
+        return gameOver ? "本轮已战败" : "";
     }
 
     /** 一行式摘要文本，例如「小明 · 队伍 3 · 第 2 段 · 行动点 4 · 金币 320 · 2026-09-10 15:30」。 */

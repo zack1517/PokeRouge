@@ -98,6 +98,9 @@ public final class SaveManager {
      */
     public void save(SaveSlot slot, Player player, GameSession session) {
         store.write(slot, snapshot(player, session));
+        // 图鉴成长一并写到目标档位：把进度「另存」到别的档位时成长必须跟着走，
+        // 否则换档之后图鉴还会继续写回原档位的文件，两个档位的成长各自为政
+        store.writeGrowth(slot, session == null ? null : session.getGrowthProgress());
     }
 
     /**
@@ -129,7 +132,28 @@ public final class SaveManager {
      * @throws SaveFormatException 存档内容不合格式（调用方应按「存档损坏」提示）
      */
     public Optional<GameSession> load(SaveSlot slot) {
-        Optional<SaveData> loaded = store.read(slot);
+        return rebuild(slot, store.read(slot));
+    }
+
+    /**
+     * 读取指定档位的「上一个存档点」并重建会话 —— 供「回退一步」使用（读档页的 SL 大法）。
+     *
+     * <p>重建规则与 {@link #load(SaveSlot)} 完全一致（同一份 {@link SaveData} 格式、同样的容错），
+     * 唯一的区别是数据来源换成 {@code save.prev.txt}；图鉴成长依旧取该档位的成长文件，
+     * <b>不随回退还原</b>（成长属于局外数据）。</p>
+     *
+     * <p>本方法只读不写：备份是否消耗由 {@link SaveStore#rollbackToPrevious(SaveSlot)} 决定，
+     * 调用方若要让「上一个存档点」正式生效（并被下一次落盘收走），应在载入成功后调用它。</p>
+     *
+     * @return 该档位没有上一个存档点、备份里没有任何可用精灵时返回空
+     * @throws SaveFormatException 备份内容不合格式
+     */
+    public Optional<GameSession> loadPrevious(SaveSlot slot) {
+        return rebuild(slot, store.readPrevious(slot));
+    }
+
+    /** 用一份已解析的存档重建会话（{@code load} 与 {@code loadPrevious} 共用）。 */
+    private Optional<GameSession> rebuild(SaveSlot slot, Optional<SaveData> loaded) {
         if (loaded.isEmpty()) {
             return Optional.empty();
         }
@@ -219,6 +243,29 @@ public final class SaveManager {
         store.delete(slot);
         Player player = PokemonBattleAdapter.createBattlePlayer(trainerName, starter);
         GrowthProgress growth = store.createGrowth(slot);
+        return new GameSession(player, growth);
+    }
+
+    /**
+     * 在同一个档位上开新一轮远征：<b>保留</b>该档位的图鉴成长，只重置远征进度。
+     *
+     * <p>与 {@link #newGame(SaveSlot, String, org.example.pokemon.domain.Pokemon)} 的区别只有一个 ——
+     * 不动 {@code growth-progress.txt}：旧进度快照（含上一个存档点）被清掉，图鉴成长原样继承，
+     * 于是玩家可以拿同一个档位反复游玩，个体值加成一轮轮攒下去。</p>
+     *
+     * <p>每次开新一轮，金币 / 背包 / 装备 / 队伍都会回到初始状态：新会话内部的 {@link RunData}
+     * 本来就是默认值（起始金币、空背包、空队伍），只有图鉴成长是外部带进来的。</p>
+     *
+     * @param slot        已经用过的档位（空档位也可以用，效果等同新游戏）
+     * @param trainerName 训练家名
+     * @param starter     初始精灵（新宝可梦体系）
+     * @return 新一轮的会话
+     */
+    public GameSession newRun(SaveSlot slot, String trainerName,
+                              org.example.pokemon.domain.Pokemon starter) {
+        store.deleteProgress(slot);
+        Player player = PokemonBattleAdapter.createBattlePlayer(trainerName, starter);
+        GrowthProgress growth = store.loadGrowth(slot);
         return new GameSession(player, growth);
     }
 

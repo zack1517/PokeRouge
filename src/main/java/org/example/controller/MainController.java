@@ -65,6 +65,11 @@ import javafx.stage.Stage;
  * 存档仅在<b>未作战时</b>可用（主菜单手动保存 / 读档 / 回到主菜单与推进楼层时自动保存）；
  * 战斗场景接管舞台期间 {@link #battleInProgress} 为真，手动保存与读档都会被拒绝。</p>
  *
+ * <p>每个档位落盘时还会把上一份快照留在 {@code save.prev.txt}，读档页因此多出一条
+ * 「回退一步」：退回最近一次落盘之前（战败后重来 / 救回被写坏的最新存档），图鉴成长不随回退还原。
+ * 一轮结束（通关 / 战败）的档位也不会被作废 —— 可以在同一档位开始新一轮，只重置远征进度、
+ * 保留该档位的图鉴成长，于是同一个档位能反复游玩。</p>
+ *
  * <p>回合边界与启动页：主菜单「返回主界面」与肉鸽一轮结束（通关 / 战败）都<b>不</b>退出程序，
  * 而是先落盘再回到启动页 —— 玩家在启动页选择「开始游戏」（新游戏）或「继续游戏」（读档）；
  * 真正退出仍只由窗口关闭按钮的二次确认负责。</p>
@@ -79,6 +84,13 @@ public class MainController {
     private final SaveManager saveManager = SaveManager.defaultManager();
     /** 当前占用的存档位；尚未选档（如首次进入选初始精灵前）为 null。 */
     private SaveSlot activeSlot;
+    /**
+     * 待「在同一档位开始新一轮」的目标档位。
+     *
+     * <p>启动页选到「本轮已结束」的档位并确认开新一轮后置为该档位，选完初始精灵就直接落到它上面
+     * （跳过再选一次档位）；正常新游戏流程全程为 {@code null}，回到启动页时也会清空。</p>
+     */
+    private SaveSlot pendingNewRunSlot;
     /** 是否正处于战斗中：战斗中不允许存档（战斗结果尚未落定，存下来会是半场状态）。 */
     private boolean battleInProgress;
 
@@ -126,6 +138,7 @@ public class MainController {
 
     /** 游戏第一屏：启动页（「开始游戏」进入初始宝可梦选择；「继续游戏」选存档位后读档；「宝可梦图鉴」「道具图鉴」进入图鉴页；「自定义战斗」进入模式选择页）。 */
     public void showStartScreen() {
+        pendingNewRunSlot = null; // 回到启动页一律清掉「待开新一轮」的目标：避免下次新游戏跳过选档页
         MusicPlayer.playBgm(AppConfig.BGM_START); // 主界面 BGM（循环；文件缺失静默降级）
         stage.setScene(new StartView(this::showStarterSelection, this::showContinueSelection,
                 saveManager.store().hasAnySave(), this::showCustomBattle, this::showPokedex,
@@ -215,14 +228,31 @@ public class MainController {
 
     /** 初始宝可梦选择页：使用新 pokemon 系统选择初始宝可梦（由启动页「开始游戏」进入）。 */
     public void showStarterSelection() {
+        showStarterSelection(this::showStartScreen);
+    }
+
+    /**
+     * 初始宝可梦选择页（可指定「返回」的去处）。
+     *
+     * <p>「在同一档位开新一轮」也从这里进入，但返回时直接回启动页（当前会话已落盘），
+     * 避免退回读档页后又被「已结束」的档位绕回来。</p>
+     *
+     * @param onBack 「返回」的回调（Esc 同义）
+     */
+    private void showStarterSelection(Runnable onBack) {
         // 离开主界面即停 BGM：其它界面暂未配置音乐；
         // 后续各界面各有 BGM 时，改为在对应界面入口调 MusicPlayer.playBgm（自动停旧播新）
         MusicPlayer.stop();
-        stage.setScene(new StarterSelectionView(this::chooseSlotForNewGame, this::showStartScreen).createScene());
+        stage.setScene(new StarterSelectionView(this::chooseSlotForNewGame, onBack).createScene());
     }
 
     /** 选好初始宝可梦后先选存档位：新游戏会清空所选的档位。 */
     private void chooseSlotForNewGame(String trainerName, org.example.pokemon.domain.Pokemon starter) {
+        SaveSlot target = pendingNewRunSlot;
+        if (target != null) {
+            confirmNewGame(target, trainerName, starter); // 已定档位（同档开新一轮）：不必再选一次
+            return;
+        }
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.NEW_GAME, saveManager.store().statuses(),
                 null,
                 slot -> confirmNewGame(slot, trainerName, starter),
@@ -234,15 +264,25 @@ public class MainController {
                 this::showStartScreen).createScene());
     }
 
-    /** 覆盖已有档位需要玩家二次确认（旧进度到此不可恢复）。 */
+    /**
+     * 建立新一轮会话：正常新游戏用 {@link SaveManager#newGame}（清空档位、图鉴从零），
+     * 经「本轮已结束 → 在此档位开始新一轮」进来的（{@link #pendingNewRunSlot}）改用
+     * {@link SaveManager#newRun}：<b>保留</b>该档位的图鉴成长，只重置远征进度。
+     *
+     * <p>后者已单独确认过「开始新一轮」，因此跳过覆盖确认 —— 否则玩家要连点两次确认。</p>
+     */
     private void confirmNewGame(SaveSlot slot, String trainerName, org.example.pokemon.domain.Pokemon starter) {
-        if (!saveManager.store().status(slot).empty() && !confirmOverwrite(slot)) {
+        boolean newRunInSlot = slot == pendingNewRunSlot;
+        pendingNewRunSlot = null; // 用掉即清空：失败后重进选档页按普通新游戏处理
+        if (!newRunInSlot && !saveManager.store().status(slot).empty() && !confirmOverwrite(slot)) {
             chooseSlotForNewGame(trainerName, starter);
             return;
         }
         GameSession created;
         try {
-            created = saveManager.newGame(slot, trainerName, starter);
+            created = newRunInSlot
+                    ? saveManager.newRun(slot, trainerName, starter)
+                    : saveManager.newGame(slot, trainerName, starter);
         } catch (RuntimeException ex) {
             LogUtil.info("[MainController] 开新游戏失败：" + slot + "（" + ex.getMessage() + "）");
             infoAlert("无法开始", "清空并初始化 " + slot.displayName() + " 时出错：\n" + ex.getMessage());
@@ -256,7 +296,7 @@ public class MainController {
         showMainMenu();
     }
 
-    /** 启动页「继续游戏」：选档位后读档进入主菜单。 */
+    /** 启动页「继续游戏」：选档位后读档进入主菜单（本轮已结束的档位改为在同一档位开新一轮）。 */
     private void showContinueSelection() {
         MusicPlayer.stop();
         stage.setScene(new SaveSlotView(SaveSlotView.Purpose.CONTINUE, saveManager.store().statuses(),
@@ -267,14 +307,16 @@ public class MainController {
                         showContinueSelection();
                     }
                 },
+                this::rollbackSlot,
                 this::showStartScreen).createScene());
     }
 
     /**
-     * 读档并进入主菜单；档位无存档、存档损坏、或那一轮远征已经结束时给出提示并留在选档页。
+     * 读档并进入主菜单；档位无存档、存档损坏时给出提示并留在选档页。
      *
-     * <p>「本轮已结束」的档位不载入：结束的一轮（通关 / 战败）没有可继续的内容，载进去只会
-     * 卡在楼层页。此时局内读档保持当前会话不动，从启动页进来的则回到启动页去开新游戏。</p>
+     * <p>「本轮已结束」的档位（通关 / 战败）没有可继续的进展，直接载入只会卡在无事可做的楼层页，
+     * 因此这里改为<b>引导出路</b>：询问是否在同一档位开始新一轮（保留图鉴成长、重置远征进度）；
+     * 玩家也可以点卡片上的「回退一步」退回上一个存档点。</p>
      */
     private void loadFromSlot(SaveSlot slot) {
         try {
@@ -284,12 +326,8 @@ public class MainController {
                 return;
             }
             if (loaded.get().isRogueRunFinished()) {
-                infoAlert("本轮已结束", slot.displayName() + " 里的一轮远征已经结束，无法继续。\n"
-                        + "请选择其它存档位，或返回后开始新游戏。");
-                if (session == null || player == null) {
-                    showStartScreen(); // 启动页进来的：直接回启动页选「开始游戏」
-                }
-                return; // 局内读档：留在选档页，当前进度不受影响
+                offerNewRunInSlot(slot, loaded.get().isRogueRunCleared());
+                return; // 局内读档：未确认开新一轮时，当前进度不受影响
             }
             this.activeSlot = slot;
             this.session = loaded.get();
@@ -302,6 +340,34 @@ public class MainController {
             LogUtil.info("[MainController] 读档异常：" + slot + "（" + ex.getMessage() + "）");
             infoAlert("读档失败", "读取 " + slot.displayName() + " 时出错：" + ex.getMessage());
         }
+    }
+
+    /**
+     * 选到「本轮已结束」的档位时询问：是否在同一档位开始新一轮？
+     *
+     * <p>新一轮沿用该档位的图鉴成长（个体值加成一轮轮攒下去），只把远征进度重置为初始状态 ——
+     * 这样同一个档位可以反复游玩，而不是玩完一轮就报废。</p>
+     *
+     * @param cleared 是真通关（而非战败）结束
+     */
+    private void offerNewRunInSlot(SaveSlot slot, boolean cleared) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("本轮已结束");
+        alert.setHeaderText(null);
+        alert.setContentText(slot.displayName() + " 里的一轮远征" + (cleared ? "已经通关" : "已经战败")
+                + "，没有可继续的进展。\n\n"
+                + "可以在同一个档位开始新一轮：保留该档位的图鉴成长，只重置远征进度"
+                + "（金币 / 道具 / 装备 / 队伍回到初始状态）。\n"
+                + "也可以先点卡片上的「回退一步」退回上一个存档点。\n\n"
+                + "要现在开始新一轮吗？");
+        ButtonType start = new ButtonType("开始新一轮", ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancel = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(start, cancel);
+        if (alert.showAndWait().filter(start::equals).isEmpty()) {
+            return; // 取消：留在选档页
+        }
+        pendingNewRunSlot = slot; // 选完初始精灵直接落到这个档位（跳过再选一次档位）
+        showStarterSelection(this::returnToStartScreen);
     }
 
     /** 显示主菜单（重新构建，反映最新的队伍/背包），并在进入时自动保存一次。 */
@@ -396,7 +462,48 @@ public class MainController {
                         showLoadSelection();
                     }
                 },
+                this::rollbackSlot,
                 this::showMainMenu).createScene());
+    }
+
+    /**
+     * 回退到某个档位的「上一个存档点」，并载入它（读档页卡片上的「回退一步」）。
+     *
+     * <p>存档每次真实落盘前都会把上一份内容另存为 {@code save.prev.txt}，所以回退等于
+     * 「撤销最近一次落盘」：战败之后可以退回进战斗之前的那份存档重来，把已经在走的一条路
+     * 重走一遍；最新存档损坏时，上一份还能把进度救回来。</p>
+     *
+     * <p>实现顺序（重要）：先用备份<b>重建会话</b>，确认有可用精灵且能解析，再让
+     * {@link SaveStore#rollbackToPrevious} 真正覆盖文件并消耗备份 —— 顺序反过来的话，
+     * 备份一旦损坏就已经把当前进度覆盖掉了。回退只影响进度快照，图鉴成长不还原。</p>
+     */
+    private void rollbackSlot(SaveSlot slot) {
+        if (battleInProgress) {
+            infoAlert("战斗中无法读档", "请先结束当前战斗，回到主菜单后再读取存档。");
+            return;
+        }
+        if (!confirmRollback(slot)) {
+            return; // 取消：留在选档页
+        }
+        try {
+            Optional<GameSession> loaded = saveManager.loadPrevious(slot);
+            if (loaded.isEmpty() || !saveManager.store().rollbackToPrevious(slot)) {
+                infoAlert("无法回退", slot.displayName()
+                        + " 没有可用的上一个存档点（没有备份，或备份里没有可用精灵）。");
+                return;
+            }
+            this.activeSlot = slot;
+            this.session = loaded.get();
+            this.player = session.getPlayer();
+            showMainMenu();
+            infoAlert("已回退", "已回到 " + slot.displayName() + " 的上一个存档点。");
+        } catch (SaveFormatException ex) {
+            LogUtil.info("[MainController] 回退失败：" + slot + "（" + ex.getMessage() + "）");
+            infoAlert("无法回退", slot.displayName() + " 的上一个存档点无法解析：\n" + ex.getMessage());
+        } catch (RuntimeException ex) {
+            LogUtil.info("[MainController] 回退异常：" + slot + "（" + ex.getMessage() + "）");
+            infoAlert("回退失败", "回退 " + slot.displayName() + " 时出错：" + ex.getMessage());
+        }
     }
 
     /**
@@ -479,6 +586,20 @@ public class MainController {
         ButtonType cancel = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(overwrite, cancel);
         return alert.showAndWait().filter(overwrite::equals).isPresent();
+    }
+
+    /** 回退确认：回退会用上一个存档点替换当前进度（图鉴成长不受影响），因此需要二次确认。 */
+    private boolean confirmRollback(SaveSlot slot) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("回退到上一个存档点");
+        alert.setHeaderText(null);
+        alert.setContentText("回退会把 " + slot.displayName()
+                + " 的进度退回最近一次落盘之前，当前这份进度将被替换。\n"
+                + "图鉴成长不受影响。确定回退吗？");
+        ButtonType rollback = new ButtonType("回退", ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancel = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(rollback, cancel);
+        return alert.showAndWait().filter(rollback::equals).isPresent();
     }
 
     /**

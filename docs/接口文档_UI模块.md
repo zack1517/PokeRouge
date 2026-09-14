@@ -1,6 +1,6 @@
 # UI 模块接口与界面设计文档（接口文档_UI模块）
 
-> 版本：v0.1.27（草稿） · 日期：2026-09-13 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
+> 版本：v0.1.28（草稿） · 日期：2026-09-14 · 模块：JavaFX UI 设计（FXML / Controller / CSS / 界面）
 > 角色：UI 负责人 · 状态：**待组长评审**，评审通过前不进入编码
 > 依据：《需求文档》§7 界面与交互需求、《测试用例草稿》§D、《接口文档_战斗服务.md》v1.14、
 > **本阶段六系统任务分工**（游戏流程系统 / 存档系统 / 宝可梦系统 / 战斗系统 / 肉鸽系统 / JavaFX UI；其中游戏流程与存档由同一人负责）
@@ -25,6 +25,7 @@
 > 文中「[待确认]」项为需与组长 / 对应系统负责人确认后方可定稿的内容。
 > **v0.1.25 ~ v0.1.26 商店消耗品解锁与神奇糖果：消耗品第 1 段 7 件起步、每段再放开 2 件且解锁后常驻（货架件数 7 → 10 → 12 → 14 → 16），新增「神奇糖果」（`i_rare_candy`）与「糖果补给」节点（`OptionType.CANDY`，AP 1 点，逐段 8 / 10 / 12 / 14 / 16 个），精灵详情页新增「道具使用卡」（局外喂食 / 回复 / 解除）**；
 > **v0.1.27 火箭队抓捕神兽在末段固定出现：末段（第 5 段）剧情线已开且首领未败时，`OptionType.ROCKET_CAPTURE` 随常驻节点无条件入列且不占用特殊事件槽位（节点列表上限 5 → 6，末段 4~6 项）；节点仍为一次性，**渲染与交互无需改动**，UI 若需提示可读 `RouteConfig#isRocketBossResidentSegment(int)`**；
+> **v0.1.28 SL 回退与同档开新一轮（存档系统 v2.5）：选档卡片新增「回退一步」次级按钮（`.slot-rollback`，按 `SlotStatus#canRollback()` 显示）与「本轮已通关 / 本轮已战败」角标，已结束的一轮按钮文案改为「开始新一轮」，`SaveSlotView` 构造由 6 参扩为 7 参（多收 `onRollback`，6 参重载保留并转发 `null`）；回退时控制器**先按备份重建会话、再覆盖文件**，接线见 §3.5 与 §4.7**；
 
 ## 1. 概述
 
@@ -267,38 +268,50 @@ FXML 重写，要求：
 
 ### 3.5 存档位选择页（v0.1.11 新增，已落地）
 
-`SaveSlotView(purpose, statuses, currentSlot, onChoose, onCancel)` —— 一屏列出 4 个存档位，
+`SaveSlotView(purpose, statuses, currentSlot, onChoose, onDelete, onRollback, onCancel)` —— 一屏列出 4 个存档位，
 **三种用途复用同一个视图**（`Purpose.NEW_GAME / CONTINUE / SAVE`）：
 
 | Purpose | 标题 | 可选档位 | 按钮文案 |
 | --- | --- | --- | --- |
 | `NEW_GAME` | 选择存档位 | 全部（覆盖由控制器二次确认） | 空档「在此开始」/ 已占用「覆盖并开始」 |
-| `CONTINUE` | 继续游戏 | 仅 `SlotStatus#usable()`（存在且可解析） | 「继续游戏」 |
+| `CONTINUE` | 继续游戏 | `SlotStatus#usable()`（存在且可解析，**含本轮已结束的档位**） | **本轮已结束**「开始新一轮」/ 否则「继续游戏」 |
 | `SAVE` | 保存游戏 | 全部 | 当前档「保存到当前档」/ 其他档「保存并切换到此」 |
 
-- 每行展示 `SaveSlot#displayName()`、`SaveSummary#describe()` 与状态色
+- 每行展示 `SaveSlot#displayName()`、`SaveSummary#describeLines()` 与状态色
   （空档灰、正常深灰、损坏红字）；
 - **视图不做任何读写**：摘要来自传入的 `SaveStore.SlotStatus`，选择结果经 `onChoose`
   回调交回 `MainController`，覆盖确认与失败提示都由控制器负责 —— 与其他页面
   「Controller 持有状态、View 只渲染」的约定一致；
 - 启动页「继续游戏」在 `SaveStore#hasAnySave()` 为 false 时置灰并给出 tooltip；
-- 「本轮已结束」的档位在列表里与进行中的档位**看起来一样**（摘要不含结束标记），
-  由控制器在 `loadFromSlot()` 里按 `GameSession#isRogueRunFinished()` 拒绝载入并提示
-  回启动页开新游戏（见 §3.5 场景入口）。
+
+**v2.5 新增的档位卡元素**（`CONTINUE` 用途）：
+
+| 元素 | 显示条件 | 行为 |
+| --- | --- | --- |
+| 角标「本轮已通关 / 本轮已战败」 | `SlotStatus#finished()`（取 `SaveSummary#finishedText()`，优先于「队伍已全倒下」） | 只做提示 |
+| 按钮「**开始新一轮**」 | `SlotStatus#finished()` | 选定后由控制器询问是否在**同一档位**开新一轮（保留该档图鉴成长） |
+| 次级按钮「**回退一步**」 | `purpose == CONTINUE && SlotStatus#canRollback() && onRollback != null` | 调 `MainController#rollbackSlot(slot)`：二次确认后用 `save.prev.txt` 覆盖当前进度 |
+
+> **「本轮已结束」不再是死档**：它显示为灰卡（`slot-card-wiped`，表示「没有可继续的进展」）
+> 但**按钮可用**，因为它是「在同一档位开新一轮」的入口；`selectable()` 在 `CONTINUE` 下对已结束档
+> 返回 `true`。真正禁用的只剩「档位为空 / 损坏」与「队伍全倒下**且本轮未结束**」。
+> 「回退一步」按钮样式由 `start-menu.css` 的 `.slot-rollback` 提供。
 
 存档相关的场景入口（`MainController`）：
 
 ```
 启动页 ──开始游戏──► 选初始精灵 ──► 选档位(NEW_GAME) ──► newGame + autoSave + 主菜单
-  └──继续游戏──► 选档位(CONTINUE) ──► load ──► 主菜单
+  └──继续游戏──► 选档位(CONTINUE) ──┬─ 进行中的档 ──► load ──► 主菜单
+                                   ├─ 本轮已结束的档 ──确认──► 选初始精灵 ──► newRun + autoSave + 主菜单
+                                   └─ 「回退一步」──► 二次确认 ──► loadPrevious + rollbackToPrevious ──► 主菜单
 主菜单「保存游戏」──► 选档位(SAVE) ──►（覆盖其他已有档需确认）──► save ──► 回主菜单
-                      所选档位成为当前档位，标题栏随之更新，之后自动存档写该档
+                      所选档位成为当前档位，标题栏随之更新，之后自动存档写该档（图鉴成长一并交给该档）
 主菜单「读取存档」──► 选档位(CONTINUE) ──► load ──► 主菜单（先 autoSave 当前这局再换档）
 主菜单「返回主界面」──► autoSave + 释放会话 ──► 启动页（不退出程序）
-一轮远征结束（通关 / 战败 / 队伍全灭）──► autoSave + 释放会话 ──► 启动页，在那里「开始游戏」开新档
-读档被拒的三种情况：空档 / 存档损坏 / 该轮已结束 ──► 弹窗提示并留在选档页
+一轮远征结束（通关 / 战败 / 队伍全灭）──► autoSave + 释放会话 ──► 启动页，在那里「继续游戏」选同一档开新一轮
+读档被拒的情况：空档 / 存档损坏 ──► 弹窗提示并留在选档页
 主菜单 / 通过节点后 ──► autoSave（静默）
-战斗中 ──► 手动存档与读取存档都被拒绝并提示「请先结束当前战斗」
+战斗中 ──► 手动存档、读取存档与「回退一步」都被拒绝并提示「请先结束当前战斗」
 ```
 
 ### 3.6 路线地图页与商店页（v0.1.12 新增，已落地）
@@ -593,22 +606,28 @@ UI 侧当前**尚未接入界面**（本轮只交付模型 + 服务 + 单测）�
 | `SaveManager#defaultManager()` / `store()` | 默认编排器 / 其仓库（根目录 `<user.home>/.pokerouge/saves`） |
 | `SaveStore#statuses()` | 4 个 `SlotStatus`，档位列表的**唯一数据源** |
 | `SlotStatus#empty() / readable() / usable() / summary()` | 空档 / 可解析 / 可继续；`summary()` 为 `null` 表示空档 |
-| `SaveSummary#describe()` | 一行式摘要（`小明 · 队伍 3 · 第 2 段 · 行动点 4 · 金币 320 · 2026-09-10 15:30`；尚未开始远征时为 `… · 未开始远征`） |
-| `SaveManager#save(slot, player, session)` | 手动保存；**失败抛异常**，UI 须提示 |
+| `SlotStatus#canRollback() / finished()` | **是否有上一个存档点 / 本轮是否已结束**（v2.5 新增，决定「回退一步」按钮与「开始新一轮」文案） |
+| `SaveSummary#describeLines()` | 三行式摘要（`小明 · 队伍 3` / `第 2 段 · 行动点 4 · 金币 320` / `2026-09-10 15:30`；尚未开始远征的第二行为「未开始远征」） |
+| `SaveSummary#finished() / finishedText()` | 本轮是否已结束 / 「本轮已通关」「本轮已战败」（角标文案） |
+| `SaveManager#save(slot, player, session)` | 手动保存（进度 + 图鉴成长一并写到该档）；**失败抛异常**，UI 须提示 |
 | `SaveManager#autoSave(slot, player, session)` | 自动保存；**失败只返回 false**，UI 不得打扰玩家 |
 | `SaveManager#load(slot)` | `Optional<GameSession>`；空档返回空，损坏抛 `SaveFormatException` |
-| `SaveManager#newGame(slot, trainerName, starter)` | 清空该档后建立新会话 |
+| `SaveManager#loadPrevious(slot)` | 从**上一个存档点**重建会话（「回退一步」用）；**只读不写**，需再调 `store().rollbackToPrevious(slot)` 才落定 |
+| `SaveManager#newGame(slot, trainerName, starter)` | 清空该档（**含**图鉴成长）后建立新会话 |
+| `SaveManager#newRun(slot, trainerName, starter)` | **同一档位开新一轮**：只清进度，**保留**该档图鉴成长 |
 
-> **每个档位各自独立**：进度快照与图鉴成长都存放在该档位自己的目录下，换档位等于换一份
-> 个体值成长。UI 只需持有当前 `SaveSlot`，**不应**自行读写 `growth-progress.txt`。
+> **每个档位各自独立**：进度快照、上一个存档点与图鉴成长都存放在该档位自己的目录下，换档位等于
+> 换一份个体值成长。UI 只需持有当前 `SaveSlot`，**不应**自行读写 `growth-progress.txt`
+> ——「另存到别的档位」时把成长搬过去并重绑 saver 是 `SaveManager#save` 的责任。
 >
 > 存档时机由控制器把握：**仅在未作战时**（主菜单「保存游戏」手动保存、「读取存档」换档前保护当前进度、
-> 回到主菜单 / 通过节点后 / 离开这一局前自动保存）；战斗场景接管舞台期间手动保存与读取存档都会被拒绝。
-> UI 侧因此**无需**在战斗页放置存档入口。
+> 回到主菜单 / 通过节点后 / 离开这一局前自动保存）；战斗场景接管舞台期间手动保存、读取存档与
+> 「回退一步」都会被拒绝。UI 侧因此**无需**在战斗页放置存档入口。
 >
 > 读档入口有两处且共用同一段逻辑（`loadFromSlot`）：启动页「继续游戏」与主菜单「读取存档」
-> （后者先 `autoSave()` 当前这局再让玩家换档）。空档、损坏档、以及**那一轮已经结束**的档位
-> 都会被拒绝并提示，视图只需如实渲染选档页。
+> （后者先 `autoSave()` 当前这局再让玩家换档）。空档与损坏档会被拒绝并提示；**「本轮已结束」的档位
+> 不再被拒绝**，而是弹「开始新一轮 / 取消」询问（确认后选完初始精灵直接落到该档位，跳过再选档），
+> 视图只需如实渲染选档页。
 
 ### 4.8 肉鸽路线只读查询（v0.1.12 新增，已接入界面）
 
@@ -807,3 +826,4 @@ public interface ScreenFactory {
 | v0.1.25 | 2026-09-13 | **删除「神秘事件」占位节点**：路线地图页可能渲染的节点类型少一种 —— `OptionType.SPECIAL` 删除（13 → 12 值），`NodeGenerator#rollSpecialEvent` 的五级优先级链收窄为四级、全部落空返回 `null`（该批只剩 3 个常驻节点 + 概率商店）；`RogueTurnManager#resolveImmediateEffect` 与 `RouteConfig` 的 `SPECIAL_PERCENT` / `SPECIAL_AP_COST` / `specialGold(int)` 一并删除。存档以类型名字符串存 `OPTION` 行，未识别类型丢弃并打日志，故**不升格式版本** | [待确认：UI 负责人] |
 | v0.1.26 | 2026-09-13 | **新增神奇糖果与局外道具使用**：§3.5 精灵详情页增「道具使用卡」（`ItemUsageService`，局外使用回复类 / 解除类 / 升级类消耗品，精灵球不可用；不满足条件不消耗；升级走 `BattleGrowthPort#boostLevel`）；§3.6 `ShopView` 段补「神奇糖果第 2 段起解锁后一直有货」（货架件数 7 → 10 → 12 → 14 → 16）；§3.7 图鉴目录 93 → **94 件**（16 → 17 件消耗品），`describe(Item)` 补 `LEVEL_UP` 分支「提升精灵 N 级（可在精灵详情页喂食）」；路线地图页的特殊事件槽位新增「糖果补给」节点（`OptionType.CANDY`，AP 1 点，发放量逐段 8 / 10 / 12 / 14 / 16） | [待确认：UI 负责人] |
 | v0.1.27 | 2026-09-13 | **火箭队抓捕神兽在末段固定出现**：§3.1 场景图无变化，§3.6 节点列表段补「每段 3~6 个节点；末段剧情线未收束时 3 常驻 + 固定 `ROCKET_CAPTURE`，最多 6 项最少 4 项」；节点渲染与交互**无需改动**（仍为一次性节点，走过后按 v0.1.15 整批刷新消失），UI 若需提示可读 `RouteConfig#isRocketBossResidentSegment(int)` | [待确认：UI 负责人] |
+| v0.1.28 | 2026-09-14 | **同步《接口文档_存档系统.md》v2.5 的 SL 回退与同档开新一轮**：§3.5 `SaveSlotView` 构造 6 参 → **7 参**（多收 `onRollback`，6 参重载保留并转发为 `null`），`CONTINUE` 下「本轮已结束」的卡片不再禁用、按钮文案改「**开始新一轮**」、新增「**回退一步**」次级按钮（`SlotStatus#canRollback()` 判定，样式 `.slot-rollback`）与「本轮已通关 / 本轮已战败」角标（优先于「队伍已全倒下」），场景入口图补「已结束档 → 开新一轮」与「回退一步」两条路径；§4.7 契约表补 `SlotStatus#canRollback()/finished()`、`SaveSummary#finished()/finishedText()`、`SaveManager#loadPrevious/newRun`，并修订「本轮已结束的档位会被拒绝载入」为「改为询问是否同档开新一轮」。存档格式与 `MainController` 之外的 UI 渲染均未变 | [待确认：UI 负责人] |
