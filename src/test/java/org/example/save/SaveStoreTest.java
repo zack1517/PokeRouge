@@ -25,12 +25,17 @@ import org.junit.jupiter.api.io.TempDir;
 class SaveStoreTest {
 
     private static SaveData data(String playerName, int segment, int ap) {
+        return data(playerName, segment, ap, 150, false, false);
+    }
+
+    private static SaveData data(String playerName, int segment, int ap, int gold,
+                                boolean gameOver, boolean cleared) {
         return new SaveData(SaveData.FORMAT_VERSION, playerName, 0,
                 List.of(new SaveData.PokemonData("bulbasaur", 5,
                         new SaveData.IvData(1, 2, 3, 4, 5, 6), 100L, "NONE", 0, 0, 0, 20,
                         List.of(new SaveData.MoveData("tackle", 30)), List.of(), "")),
                 List.of(new SaveData.ItemData("potion", 1)),
-                new SaveData.RunRecord(ap, 8, "EXPLORING", 0, 150, false, false),
+                new SaveData.RunRecord(ap, 8, "EXPLORING", 0, gold, gameOver, cleared),
                 List.of(), null, segment, "map.png", 1_000L);
     }
 
@@ -46,6 +51,8 @@ class SaveStoreTest {
                 SaveSlot.all().stream().map(SaveSlot::displayName).toList());
         assertEquals(dir.resolve("slot3"), store.slotDir(SaveSlot.SLOT_3));
         assertEquals("save.txt", store.saveFile(SaveSlot.SLOT_3).getFileName().toString());
+        assertEquals("save.prev.txt", store.previousFile(SaveSlot.SLOT_3).getFileName().toString(),
+                "「上一个存档点」文件名是回退机制的接口，改名会让旧备份失效");
         assertEquals("growth-progress.txt", store.growthFile(SaveSlot.SLOT_3).getFileName().toString());
         assertEquals(SaveSlot.SLOT_2, SaveSlot.ofId("slot2").orElseThrow());
         assertTrue(SaveSlot.ofId("slot9").isEmpty());
@@ -83,16 +90,22 @@ class SaveStoreTest {
         assertTrue(store.hasAnySave());
     }
 
-    /** 一次写入不得残留临时文件（否则存档目录会越用越脏）。 */
+    /** 一次写入不得残留临时文件；第二次写入只应多出「上一个存档点」，不能留下 *.tmp。 */
     @Test
     void 写入不残留临时文件(@TempDir Path dir) throws IOException {
         SaveStore store = new SaveStore(dir);
 
         store.write(SaveSlot.SLOT_1, data("小明", 1, 1));
+        assertEquals(List.of("save.txt"), slotFileNames(store),
+                "第一次写入没有旧档可备份，目录里只应有快照本身");
 
+        store.write(SaveSlot.SLOT_1, data("小明", 2, 3));
+        assertEquals(List.of("save.prev.txt", "save.txt"), slotFileNames(store));
+    }
+
+    private static List<String> slotFileNames(SaveStore store) throws IOException {
         try (var files = Files.list(store.slotDir(SaveSlot.SLOT_1))) {
-            List<String> names = files.map(p -> p.getFileName().toString()).sorted().toList();
-            assertEquals(List.of("save.txt"), names);
+            return files.map(p -> p.getFileName().toString()).sorted().toList();
         }
     }
 
@@ -171,20 +184,132 @@ class SaveStoreTest {
                 "正式读档必须严格校验，与列表展示的宽松不同");
     }
 
-    /** 删除档位应同时清掉进度与图鉴成长两份文件。 */
+    /** 删除档位应同时清掉进度、上一个存档点与图鉴成长三份文件（不留能「复活」旧进度的备份）。 */
     @Test
-    void 删除档位清空两份文件(@TempDir Path dir) {
+    void 删除档位清空全部文件(@TempDir Path dir) {
         SaveStore store = new SaveStore(dir);
         store.write(SaveSlot.SLOT_1, data("小明", 1, 1));
+        store.write(SaveSlot.SLOT_1, data("小明", 2, 2));
         GrowthProgress growth = store.createGrowth(SaveSlot.SLOT_1);
         growth.recordCapture("bulbasaur");
         assertTrue(Files.isRegularFile(store.growthFile(SaveSlot.SLOT_1)));
+        assertTrue(store.hasPrevious(SaveSlot.SLOT_1));
 
         assertTrue(store.delete(SaveSlot.SLOT_1));
 
         assertFalse(store.exists(SaveSlot.SLOT_1));
         assertFalse(Files.exists(store.growthFile(SaveSlot.SLOT_1)));
+        assertFalse(store.hasPrevious(SaveSlot.SLOT_1), "删除档位后不应再留着可回退的备份");
         assertFalse(store.delete(SaveSlot.SLOT_1), "已是空档，再删应返回 false");
+    }
+
+    /** 只清进度不清图鉴：同一档位开新一轮时用它（成长要跨轮继承）。 */
+    @Test
+    void 清除进度保留图鉴成长(@TempDir Path dir) {
+        SaveStore store = new SaveStore(dir);
+        store.write(SaveSlot.SLOT_1, data("小明", 1, 1));
+        store.write(SaveSlot.SLOT_1, data("小明", 2, 2));
+        GrowthProgress growth = store.createGrowth(SaveSlot.SLOT_1);
+        growth.recordCapture("bulbasaur");
+
+        assertTrue(store.deleteProgress(SaveSlot.SLOT_1));
+
+        assertFalse(store.exists(SaveSlot.SLOT_1));
+        assertFalse(store.hasPrevious(SaveSlot.SLOT_1));
+        assertEquals(1, store.loadGrowth(SaveSlot.SLOT_1).dexEntries().size(),
+                "图鉴成长必须原样保留，这是「同档位反复游玩」的基础");
+        assertFalse(store.deleteProgress(SaveSlot.SLOT_1), "没有进度可清时应返回 false");
+    }
+
+    /** 每次落盘都把上一份快照留成「上一个存档点」，供读档页「回退一步」。 */
+    @Test
+    void 保留上一个存档点(@TempDir Path dir) {
+        SaveStore store = new SaveStore(dir);
+        assertFalse(store.hasPrevious(SaveSlot.SLOT_1), "空档位没有上一个存档点");
+        assertTrue(store.readPrevious(SaveSlot.SLOT_1).isEmpty());
+
+        SaveData first = data("小明", 1, 1);
+        SaveData second = data("小明", 3, 5);
+        store.write(SaveSlot.SLOT_1, first);
+        assertFalse(store.hasPrevious(SaveSlot.SLOT_1), "首次写入没有可备份的旧档");
+
+        store.write(SaveSlot.SLOT_1, second);
+
+        assertTrue(store.hasPrevious(SaveSlot.SLOT_1));
+        assertEquals(first, store.readPrevious(SaveSlot.SLOT_1).orElseThrow());
+        assertEquals(second, store.read(SaveSlot.SLOT_1).orElseThrow(), "当前快照仍是最新那份");
+    }
+
+    /** 内容没变的重复落盘不推进上一个存档点，否则回退一步会退到同一份进度。 */
+    @Test
+    void 重复写入相同进度不推进上一个存档点(@TempDir Path dir) throws IOException {
+        SaveStore store = new SaveStore(dir);
+        store.write(SaveSlot.SLOT_1, data("小明", 2, 4));
+        Files.writeString(store.previousFile(SaveSlot.SLOT_1), "哨兵", StandardCharsets.UTF_8);
+
+        store.write(SaveSlot.SLOT_1, data("小明", 2, 4)); // 只有 SAVED_AT 不同，视为同一份进度
+
+        assertEquals("哨兵", Files.readString(store.previousFile(SaveSlot.SLOT_1), StandardCharsets.UTF_8),
+                "无变化的写入不应把当前快照备份成上一个存档点");
+    }
+
+    /** 回退：用备份覆盖当前快照并消耗掉备份（同一份备份不能反复用）。 */
+    @Test
+    void 回退到上一个存档点(@TempDir Path dir) {
+        SaveStore store = new SaveStore(dir);
+        SaveData first = data("小明", 1, 1);
+        store.write(SaveSlot.SLOT_1, first);
+        store.write(SaveSlot.SLOT_1, data("小明", 3, 5));
+
+        assertTrue(store.rollbackToPrevious(SaveSlot.SLOT_1));
+
+        assertEquals(first, store.read(SaveSlot.SLOT_1).orElseThrow());
+        assertFalse(store.hasPrevious(SaveSlot.SLOT_1), "备份被消耗后不能再退一次");
+        assertFalse(store.rollbackToPrevious(SaveSlot.SLOT_1), "没有备份时回退应返回 false");
+    }
+
+    /** 备份损坏时回退必须失败且不动当前进度（否则等于把玩家的存档删了）。 */
+    @Test
+    void 上一个存档点损坏时回退不动当前进度(@TempDir Path dir) throws IOException {
+        SaveStore store = new SaveStore(dir);
+        store.write(SaveSlot.SLOT_1, data("小明", 1, 1));
+        SaveData latest = data("小明", 3, 5);
+        store.write(SaveSlot.SLOT_1, latest);
+        Files.writeString(store.previousFile(SaveSlot.SLOT_1), "这不是存档", StandardCharsets.UTF_8);
+
+        assertThrows(SaveFormatException.class, () -> store.rollbackToPrevious(SaveSlot.SLOT_1));
+        assertEquals(latest, store.read(SaveSlot.SLOT_1).orElseThrow(), "当前进度必须原封不动");
+    }
+
+    /** 档位状态要能回答「有没有上一个存档点」，读档页据此决定是否显示回退按钮。 */
+    @Test
+    void 状态标注是否可回退(@TempDir Path dir) {
+        SaveStore store = new SaveStore(dir);
+        store.write(SaveSlot.SLOT_2, data("小明", 1, 1));
+        assertFalse(store.status(SaveSlot.SLOT_2).canRollback());
+        store.write(SaveSlot.SLOT_2, data("小明", 2, 2));
+
+        assertTrue(store.status(SaveSlot.SLOT_2).canRollback());
+        assertTrue(store.statuses().get(1).canRollback());
+        assertFalse(store.status(SaveSlot.SLOT_1).canRollback(), "空档位当然不可回退");
+    }
+
+    /** 摘要要带上「这一轮是否已结束」，档位列表据此把按钮改成「开始新一轮」。 */
+    @Test
+    void 摘要标注本轮是否已结束(@TempDir Path dir) {
+        SaveStore store = new SaveStore(dir);
+        store.write(SaveSlot.SLOT_1, data("小明", 1, 1, 150, false, false));
+        store.write(SaveSlot.SLOT_2, data("小明", 1, 1, 150, true, false));
+        store.write(SaveSlot.SLOT_3, data("小明", 1, 1, 150, false, true));
+
+        assertFalse(store.status(SaveSlot.SLOT_1).finished());
+        assertEquals("", store.status(SaveSlot.SLOT_1).summary().finishedText());
+
+        assertTrue(store.status(SaveSlot.SLOT_2).finished());
+        assertEquals("本轮已战败", store.status(SaveSlot.SLOT_2).summary().finishedText());
+
+        assertTrue(store.status(SaveSlot.SLOT_3).finished());
+        assertEquals("本轮已通关", store.status(SaveSlot.SLOT_3).summary().finishedText());
     }
 
     /** 每个档位持有自己的图鉴成长：这是「4 个存档各自独立」的直接证据。 */

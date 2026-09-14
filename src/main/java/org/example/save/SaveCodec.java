@@ -321,6 +321,8 @@ public final class SaveCodec {
         long savedAt = 0L;
         int partySize = 0;
         int aliveCount = 0;
+        boolean gameOver = false;
+        boolean cleared = false;
         if (text != null) {
             for (String raw : text.split("\r?\n", -1)) {
                 String line = raw.trim();
@@ -335,10 +337,13 @@ public final class SaveCodec {
                         if (parts.size() <= 4) {
                             // v1 旧档：RUN|楼层|点数|已结束 —— 点数才是剩余进度
                             ap = softInt(field(parts, 2), ap);
+                            gameOver = softInt(field(parts, 3), 0) != 0;
                         } else {
                             // v2 起：RUN|行动点|上限|阶段|重试|金币|已结束|已通关
                             ap = softInt(field(parts, 1), ap);
                             gold = softInt(field(parts, 5), gold);
+                            gameOver = softInt(field(parts, 6), 0) != 0;
+                            cleared = softInt(field(parts, 7), 0) != 0;
                         }
                     }
                     case KEY_SAVED_AT -> savedAt = softLong(field(parts, 1), savedAt);
@@ -355,7 +360,32 @@ public final class SaveCodec {
                 }
             }
         }
-        return new SaveSummary(slot, playerName, partySize, aliveCount, segment, ap, gold, savedAt);
+        return new SaveSummary(slot, playerName, partySize, aliveCount, segment, ap, gold, savedAt,
+                gameOver, cleared);
+    }
+
+    /**
+     * 两份存档正文是否描述同一份进度 —— 忽略 {@code SAVED_AT} 时间戳后逐字比较。
+     *
+     * <p>存档仓库据此把「内容没有变化的重复落盘」当作空操作：既不必重写文件，也不会因为
+     * 主菜单之类的无变化自动存档把「上一个存档点」推掉（否则回退一步会退到同一份进度）。</p>
+     */
+    static boolean sameProgress(String left, String right) {
+        return withoutSavedAt(left).equals(withoutSavedAt(right));
+    }
+
+    /** 去掉 {@code SAVED_AT} 行后的正文（时间戳每次落盘都不同，不参与「进度是否变化」的判定）。 */
+    private static String withoutSavedAt(String text) {
+        if (text == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(text.length());
+        for (String line : text.split("\n", -1)) {
+            if (!line.startsWith(KEY_SAVED_AT + '|')) {
+                sb.append(line).append('\n');
+            }
+        }
+        return sb.toString();
     }
 
     // ------------------------------------------------------------------

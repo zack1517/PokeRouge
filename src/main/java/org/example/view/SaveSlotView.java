@@ -9,6 +9,7 @@ import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.ColumnConstraints;
@@ -31,14 +32,16 @@ import java.util.function.Consumer;
  * 存档位选择页：一屏列出 4 个存档位，供「新游戏」「继续游戏」「保存游戏」三种用途复用。
  *
  * <p>布局与商店页 / 队伍配置页同族：顶栏「返回胶囊 + 白描边深蓝字标题 + 当前档位信息卡」，
- * 内容为 2×2 紧凑方形档位卡（白底蓝环卡；当前档位金环；队伍已全倒下的档位自动变灰并标注
- * 「队伍已全倒下」，继续游戏时不可选），卡内摘要按三行窄幅排版（时间单独一行），主操作按钮为小号黄→金胶囊，
- * 「删除」为白底红字小胶囊（空档禁用）；样式见 {@code /css/start-menu.css} 的 .slot-* 系列，
- * 「返回」由 {@link FloatingMenu} 紧凑胶囊承载（与启动页同款），Esc 亦返回。</p>
+ * 内容为 2×2 紧凑方形档位卡（白底蓝环卡；当前档位金环；队伍已全倒下或本轮已结束的档位自动变灰，
+ * 并标注「队伍已全倒下」/「本轮已战败」/「本轮已通关」，继续游戏时仍可选 —— 已结束的一轮改用
+ * 「开始新一轮」在同一档位重开），卡内摘要按三行窄幅排版（时间单独一行），主操作按钮为小号黄→金胶囊，
+ * 「回退一步」（蓝圈白底，仅在该档位留有上一个存档点时显示）与「删除」（白底红字，空档禁用）为次级小胶囊；
+ * 样式见 {@code /css/start-menu.css} 的 .slot-* 系列，「返回」由 {@link FloatingMenu} 紧凑胶囊承载
+ * （与启动页同款），Esc 亦返回。</p>
  *
  * <p>每张卡展示档位名（当前档加「当前」徽章）、{@link org.example.save.SaveSummary#describe()}
- * 摘要与可用状态，按钮文案随 {@link Purpose} 变化。选择与删除结果经回调交回控制器 ——
- * 视图自身不做任何读写，删除确认、覆盖确认与失败提示也都由控制器负责。</p>
+ * 摘要与可用状态，按钮文案随 {@link Purpose} 变化。选择、回退与删除结果经回调交回控制器 ——
+ * 视图自身不做任何读写，回退确认、删除确认、覆盖确认与失败提示也都由控制器负责。</p>
  */
 public final class SaveSlotView {
 
@@ -64,8 +67,11 @@ public final class SaveSlotView {
     public enum Purpose {
         /** 新游戏选档：空档与已占用档都可选（覆盖由控制器二次确认）。 */
         NEW_GAME("选择存档位", "新游戏会清空所选档位的旧进度"),
-        /** 继续游戏：只有存在且可解析、且队伍未全倒下的档位可选。 */
-        CONTINUE("继续游戏", "请选择要载入的存档"),
+        /**
+         * 继续游戏：存在且可解析的档位可选；队伍未全倒下的档位才叫「继续游戏」，
+         * 本轮已结束的档位标注结束原因，并在同一档位开始新一轮。
+         */
+        CONTINUE("继续游戏", "请选择要载入的存档；已结束的一轮可在同档位开始新一轮"),
         /** 保存游戏：写入所选档位，选定后该档位成为当前档位。 */
         SAVE("保存游戏", "把当前进度写入所选档位，并切换到该档位继续游戏");
 
@@ -91,6 +97,7 @@ public final class SaveSlotView {
     private final SaveSlot currentSlot;
     private final Consumer<SaveSlot> onChoose;
     private final Consumer<SaveSlot> onDelete;
+    private final Consumer<SaveSlot> onRollback;
     private final Runnable onCancel;
 
     /** 顶栏「返回」胶囊（入场动画引用）。 */
@@ -110,11 +117,26 @@ public final class SaveSlotView {
                         Consumer<SaveSlot> onChoose,
                         Consumer<SaveSlot> onDelete,
                         Runnable onCancel) {
+        this(purpose, statuses, currentSlot, onChoose, onDelete, null, onCancel);
+    }
+
+    /**
+     * @param onRollback 「回退到上一个存档点」的请求回调，可为 {@code null}（为 null 时不显示回退按钮）
+     * @see #SaveSlotView(Purpose, List, SaveSlot, Consumer, Consumer, Runnable)
+     */
+    public SaveSlotView(Purpose purpose,
+                        List<SaveStore.SlotStatus> statuses,
+                        SaveSlot currentSlot,
+                        Consumer<SaveSlot> onChoose,
+                        Consumer<SaveSlot> onDelete,
+                        Consumer<SaveSlot> onRollback,
+                        Runnable onCancel) {
         this.purpose = purpose;
         this.statuses = List.copyOf(statuses);
         this.currentSlot = currentSlot;
         this.onChoose = onChoose;
         this.onDelete = onDelete;
+        this.onRollback = onRollback;
         this.onCancel = onCancel;
     }
 
@@ -240,10 +262,11 @@ public final class SaveSlotView {
         detail.setStyle("-fx-text-fill: " + detailColor(status) + ";"); // 按档位状态着色（空档灰 / 正常深灰 / 损坏红 / 全倒下灰）
 
         VBox texts = new VBox(2, nameRow, detail);
-        if (wiped) {
-            Label warn = new Label("队伍已全倒下");
-            warn.getStyleClass().add("slot-warn");
-            texts.getChildren().add(warn);
+        String flagText = flagText(status);
+        if (!flagText.isEmpty()) {
+            Label flag = new Label(flagText);
+            flag.getStyleClass().add("slot-warn");
+            texts.getChildren().add(flag);
         }
 
         Region spacer = new Region();
@@ -261,6 +284,14 @@ public final class SaveSlotView {
 
         HBox buttonRow = new HBox(6, action);
         buttonRow.setAlignment(Pos.CENTER_LEFT);
+        if (onRollback != null && purpose == Purpose.CONTINUE && status.canRollback()) {
+            Button rollback = new Button("回退一步");
+            rollback.getStyleClass().add("slot-rollback");
+            rollback.setMinWidth(Region.USE_PREF_SIZE);
+            rollback.setTooltip(new Tooltip("用该档位的上一个存档点覆盖当前进度，退回最近一次落盘之前"));
+            rollback.setOnAction(e -> onRollback.accept(slot));
+            buttonRow.getChildren().add(rollback);
+        }
         if (onDelete != null) {
             Region gap = new Region();
             HBox.setHgrow(gap, Priority.ALWAYS);
@@ -279,8 +310,8 @@ public final class SaveSlotView {
         if (slot == currentSlot) {
             card.getStyleClass().add("slot-card-current");
         }
-        if (wiped) {
-            card.getStyleClass().add("slot-card-wiped");
+        if (wiped || status.finished()) {
+            card.getStyleClass().add("slot-card-wiped"); // 全倒下与本轮已结束都用灰卡：都没有可继续的进展
         }
         return card;
     }
@@ -288,14 +319,31 @@ public final class SaveSlotView {
     private String buttonText(SaveStore.SlotStatus status) {
         return switch (purpose) {
             case NEW_GAME -> status.empty() ? "在此开始" : "覆盖并开始";
-            case CONTINUE -> "继续游戏";
+            case CONTINUE -> status.finished() ? "开始新一轮" : "继续游戏";
             case SAVE -> status.slot() == currentSlot ? "保存到当前档" : "保存并切换到此";
         };
     }
 
-    /** 能否选择该档位：继续游戏要求有档、可解析且队伍未全倒下；新游戏与保存游戏允许写入任意档位。 */
+    /**
+     * 能否选择该档位：继续游戏要求有档、可解析，且「有可继续的进展」——
+     * 队伍全倒下的未结束档不可选，但本轮已结束的档可以选（它在同一档位开始新一轮）。
+     */
     private boolean selectable(SaveStore.SlotStatus status) {
-        return purpose != Purpose.CONTINUE || (!status.empty() && status.usable() && !status.teamWiped());
+        if (purpose != Purpose.CONTINUE) {
+            return true;
+        }
+        if (status.empty() || !status.usable()) {
+            return false;
+        }
+        return status.finished() || !status.teamWiped();
+    }
+
+    /** 卡片上的状态标记行：本轮已结束（通关 / 战败）优先于「队伍已全倒下」，没有则返回空串。 */
+    private static String flagText(SaveStore.SlotStatus status) {
+        if (status.finished()) {
+            return status.summary().finishedText();
+        }
+        return status.teamWiped() ? "队伍已全倒下" : "";
     }
 
     private static String describe(SaveStore.SlotStatus status) {

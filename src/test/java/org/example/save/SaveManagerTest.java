@@ -167,7 +167,8 @@ class SaveManagerTest {
 
         GameSession restored = manager.load(SaveSlot.SLOT_1).orElseThrow();
         assertTrue(restored.getRogueRunData().isGameOver());
-        // UI 读档时据 isRogueRunFinished 拒绝载入已结束的一轮（提示回去开新游戏），必须随存档保留
+        // UI 读档时据 isRogueRunFinished 判断「这一轮没得继续了」：改为引导玩家在同一档位开新一轮
+        // 或回退到上一个存档点，但结束标记本身必须随存档保留
         assertTrue(restored.isRogueRunFinished(), "已结束的一轮读档后仍应判定为已结束");
     }
 
@@ -290,6 +291,104 @@ class SaveManagerTest {
                 "档位 1 的成长应已落盘");
         assertEquals(0, store.loadGrowth(SaveSlot.SLOT_2).globalIvBonus(),
                 "档位 2 不应受到档位 1 的影响");
+    }
+
+    /** 「上一个存档点」能读回上一份进度：战败之后据此退回进战斗之前重来（SL 大法）。 */
+    @Test
+    void 读档可回退到上一个存档点(@TempDir Path dir) {
+        SaveStore store = new SaveStore(dir);
+        SaveManager manager = new SaveManager(store);
+        Player player = newPlayer("小明");
+        GameSession session = new GameSession(player, new GrowthProgress());
+        session.setSegment(2);
+        RunData run = session.getRogueRunData();
+        run.setAp(5);
+        run.setGold(300);
+        manager.save(SaveSlot.SLOT_1, player, session);
+
+        run.setAp(1);
+        run.setGold(40);
+        run.setGameOver(true); // 模拟「又走了一步之后战败」
+        manager.save(SaveSlot.SLOT_1, player, session);
+
+        assertTrue(store.hasPrevious(SaveSlot.SLOT_1), "第二次落盘应留下上一个存档点");
+        GameSession previous = manager.loadPrevious(SaveSlot.SLOT_1).orElseThrow();
+        assertEquals(5, previous.getRogueRunData().getAp(), "回退读档应拿回上一份行动点");
+        assertEquals(300, previous.getRogueRunData().getGold(), "回退读档应拿回上一份金币");
+        assertFalse(previous.isRogueRunFinished(), "回退后应回到还没结束的那一刻");
+
+        GameSession latest = manager.load(SaveSlot.SLOT_1).orElseThrow();
+        assertEquals(1, latest.getRogueRunData().getAp(), "当前档位仍是最新那份，回退前不受影响");
+        assertTrue(latest.isRogueRunFinished());
+    }
+
+    /** 没有上一个存档点时回退读档返回空，UI 据此提示「无法回退」而不是把档读坏。 */
+    @Test
+    void 没有上一个存档点时回退读档返回空(@TempDir Path dir) {
+        SaveManager manager = new SaveManager(new SaveStore(dir));
+
+        assertTrue(manager.loadPrevious(SaveSlot.SLOT_3).isEmpty());
+    }
+
+    /** 同一档位开新一轮：图鉴成长跨轮继承，远征进度（金币 / 队伍 / 回合数据）回到初始状态。 */
+    @Test
+    void 同档位开新一轮保留图鉴成长(@TempDir Path dir) {
+        SaveStore store = new SaveStore(dir);
+        SaveManager manager = new SaveManager(store);
+        Species species = service.getInitialPool().get(0);
+        GameSession first = manager.newGame(SaveSlot.SLOT_1, "小明",
+                service.createPokemon(species.getId(), 5));
+        for (int i = 0; i < 6; i++) {
+            first.getGrowthProgress().recordCapture("bulbasaur");
+        }
+        first.getRogueRunData().setSegment(4);
+        first.getRogueRunData().setGold(888);
+        manager.save(SaveSlot.SLOT_1, first.getPlayer(), first);
+        first.getRogueRunData().setGold(500);
+        first.getRogueRunData().setGameOver(true); // 这一轮结束：进度真的变了，于是留下了一个存档点
+        manager.save(SaveSlot.SLOT_1, first.getPlayer(), first);
+        assertTrue(store.hasPrevious(SaveSlot.SLOT_1));
+
+        GameSession rerun = manager.newRun(SaveSlot.SLOT_1, "小明",
+                service.createPokemon(service.getInitialPool().get(1).getId(), 5));
+
+        assertEquals(3, rerun.getGrowthProgress().globalIvBonus(),
+                "新一轮必须继承该档位已攒下的图鉴成长（6 次捕捉 → 3 点加成）");
+        assertEquals(3, store.loadGrowth(SaveSlot.SLOT_1).globalIvBonus(),
+                "继承的成长要能继续落盘到同一个档位");
+        assertEquals(RouteConfig.STARTING_GOLD, rerun.getRogueRunData().getGold(),
+                "金币回到初始值");
+        assertEquals(0, rerun.getRogueRunData().getAp(), "行动点回到初始值");
+        assertEquals(0, rerun.getRogueRunData().getSegment(),
+                "段号回到「尚未开始远征」（界面兜底显示第 1 段的逻辑不参与这里）");
+        assertFalse(rerun.getRogueRunData().isGameOver(), "上一轮的结束标记必须被清掉");
+        assertEquals(1, rerun.getPlayer().getPartySize(), "队伍重新从初始精灵开始");
+        assertEquals(service.getInitialPool().get(1).getId(),
+                rerun.getPlayer().getActive().getSpecies().getId(), "新队伍带的是这次选的初始精灵");
+        assertFalse(store.exists(SaveSlot.SLOT_1), "旧进度快照已清掉，等待这一步之后的自动保存");
+        assertFalse(store.hasPrevious(SaveSlot.SLOT_1), "同档重开也不该留着上一轮的存档点");
+    }
+
+    /** 把进度另存到别的档位时，图鉴成长要跟着一起搬（此后成长写在新档位，不再回流原档位）。 */
+    @Test
+    void 另存档位时图鉴成长一并搬迁(@TempDir Path dir) {
+        SaveStore store = new SaveStore(dir);
+        SaveManager manager = new SaveManager(store);
+        Player player = newPlayer("小明");
+        GameSession session = new GameSession(player, store.createGrowth(SaveSlot.SLOT_1));
+        for (int i = 0; i < 4; i++) {
+            session.getGrowthProgress().recordCapture("bulbasaur");
+        }
+
+        manager.save(SaveSlot.SLOT_2, player, session);
+
+        assertEquals(2, store.loadGrowth(SaveSlot.SLOT_2).globalIvBonus(),
+                "换档后成长应写到新档位");
+        session.getGrowthProgress().recordCapture("charmander"); // 触发一次自动落盘
+        assertEquals(2, store.loadGrowth(SaveSlot.SLOT_2).dexEntries().size(),
+                "此后的成长落盘应指向新档位");
+        assertEquals(1, store.loadGrowth(SaveSlot.SLOT_1).dexEntries().size(),
+                "原档位的成长文件不应再被写入（记录仍只有 bulbasaur）");
     }
 
     /** 一个档位有存档不影响另一个档位的「空档」状态。 */
