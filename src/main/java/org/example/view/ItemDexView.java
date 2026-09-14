@@ -100,7 +100,7 @@ public final class ItemDexView {
             " -fx-effect: dropshadow(gaussian, rgba(255, 255, 255, 1.0), 1.2, 1.0, 0, 0);";
 
     /** 条目插图目录（classpath；文件名与名字一致）：道具用主菜单 / 商店同套素材（/images/tool/），
-     *  装备再查携带道具目录（/images/portable Items/，目前少量有图，其余回退首字色块）。 */
+     *  装备再查携带道具目录（/images/portable Items/，77 件装备全量有图，其余回退首字色块）。 */
     private static final String ITEM_IMAGE_DIR = "/images/tool/";
     private static final String EQUIPMENT_IMAGE_DIR = "/images/portable Items/";
 
