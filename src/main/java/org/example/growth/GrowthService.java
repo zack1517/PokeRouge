@@ -239,8 +239,12 @@ public final class GrowthService implements BattleGrowthPort {
             for (int lv = pokemon.getLevel() - gained + 1; lv <= pokemon.getLevel(); lv++) {
                 log.add(pokemon.getName() + " 升到了 Lv." + lv + "！");
                 learnAt(pokemon, lv, log, pending);
+                // 进化前先按当前种族补齐该级缺口（同等级多技能的追加条目不可因换族而丢失）
+                learnOverdueMoves(pokemon, log);
                 evolve(pokemon, log);
             }
+            // 与 grow 同一条规则：收尾补学（进化换族 / 跳级使用糖果留下的缺口）
+            learnOverdueMoves(pokemon, log);
         }
         return log;
     }
@@ -266,9 +270,12 @@ public final class GrowthService implements BattleGrowthPort {
         for (int lv = before + 1; lv <= p.getLevel(); lv++) {
             log.add(p.getName() + " 升到了 Lv." + lv + "！");
             learnAt(p, lv, log, pending);
+            // 进化前先按当前种族补齐该级缺口：同等级多技能中的追加条目（如妙蛙种子 16 级的
+            // 终极吸取）必须在换族前结算，否则会被进化后的新学招表覆盖而永久丢失
+            learnOverdueMoves(p, log);
             evolve(p, log);
         }
-        // 补学：等级已达标但尚未学会的技能（进化切换种族 / 学招数据调整 / 旧档重建都可能留下缺口）
+        // 收尾补学：进化切换种族 / 学招数据调整 / 旧档重建留下的缺口一并补齐
         learnOverdueMoves(p, log);
     }
 

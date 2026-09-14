@@ -108,10 +108,18 @@ public class Species implements Serializable {
     }
 
     /**
-     * 兼容旧版 API：返回该种族的“出生技能/默认技能”列表。
+     * 兼容旧版 API：返回该种族的“出生技能/默认技能”列表（1 级即会的技能）。
+     *
+     * <p><b>必须只含 1 级习得的技能</b>：下游（如旧战斗模型的种族转换）会把返回的每一条
+     * 记为「1 级可学」，若把高等级学招混入此列表，低等级精灵会绕过学招等级门槛直接学会
+     * 全部招式（历史缺陷：6 级妙蛙种子学会了 16 级的终极吸取）。</p>
      */
     public List<String> getMoveIds() {
-        return learnableMoves.stream().map(LearnableMove::getMoveId).distinct().toList();
+        return learnableMoves.stream()
+                .filter(lm -> lm.getLevel() <= 1)
+                .map(LearnableMove::getMoveId)
+                .distinct()
+                .toList();
     }
 
     /**
